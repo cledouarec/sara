@@ -9,6 +9,7 @@ mod logging;
 mod output;
 
 use commands::Commands;
+use sara_core::config::load_config;
 
 /// Help heading for global options
 const GLOBAL_OPTIONS: &str = "Global Options";
@@ -70,15 +71,26 @@ impl Cli {
         }
     }
 
-    /// Returns the output configuration.
-    pub fn output_config(&self) -> output::OutputConfig {
+    /// Returns the output configuration, merging config file settings with CLI flags.
+    /// CLI flags override config file settings.
+    pub fn output_config(
+        &self,
+        file_config: Option<&sara_core::config::Config>,
+    ) -> output::OutputConfig {
         // Check environment variables
-        let no_color = self.no_color || std::env::var("NO_COLOR").is_ok();
+        let env_no_color = std::env::var("NO_COLOR").is_ok();
 
-        output::OutputConfig {
-            colors: !no_color,
-            emojis: !self.no_emoji,
-        }
+        // Start with config file values, or defaults if no config
+        let (config_colors, config_emojis) = file_config
+            .map(|c| (c.output.colors, c.output.emojis))
+            .unwrap_or((true, true));
+
+        // CLI flags override config file (--no-color and --no-emoji disable the feature)
+        // Environment variable NO_COLOR also disables colors
+        let colors = config_colors && !self.no_color && !env_no_color;
+        let emojis = config_emojis && !self.no_emoji;
+
+        output::OutputConfig { colors, emojis }
     }
 
     /// Returns the config file path, checking SARA_CONFIG env var first.
@@ -106,13 +118,31 @@ fn main() -> ExitCode {
     // Initialize logging
     logging::init(cli.verbosity());
 
+    // Load config file (optional - use defaults if not found or error)
+    let config_path = cli.config_path();
+    let file_config = if config_path.exists() {
+        match load_config(&config_path) {
+            Ok(config) => Some(config),
+            Err(e) => {
+                tracing::warn!(
+                    "Failed to load config file {}: {}",
+                    config_path.display(),
+                    e
+                );
+                None
+            }
+        }
+    } else {
+        None
+    };
+
     // Run the command
-    let result = commands::run(&cli);
+    let result = commands::run(&cli, file_config.as_ref());
 
     match result {
         Ok(code) => code,
         Err(e) => {
-            let config = cli.output_config();
+            let config = cli.output_config(file_config.as_ref());
             output::print_error(&config, &format!("{}", e));
             ExitCode::from(1)
         }

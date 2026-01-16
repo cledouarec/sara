@@ -82,27 +82,40 @@ pub fn colorize(config: &OutputConfig, text: &str, color: Color, style: Style) -
 }
 
 /// Formats a message with emoji prefix based on config.
-fn format_message(config: &OutputConfig, emoji: &Emoji, message: &str) -> String {
+/// When emojis are disabled, the text prefix is colorized to match the message.
+fn format_message(config: &OutputConfig, emoji: &Emoji, color: Color, message: &str) -> String {
     let prefix = get_emoji(config, emoji);
-    format!("{} {}", prefix, message)
+    // Only colorize the prefix when using text fallback (not emoji)
+    let colored_prefix = if config.emojis {
+        prefix.to_string()
+    } else {
+        colorize(config, prefix, color, Style::None)
+    };
+    format!("{} {}", colored_prefix, message)
 }
 
 /// Prints a success message.
 pub fn print_success(config: &OutputConfig, message: &str) {
     let msg = colorize(config, message, Color::Green, Style::None);
-    println!("{}", format_message(config, &EMOJI_SUCCESS, &msg));
+    println!(
+        "{}",
+        format_message(config, &EMOJI_SUCCESS, Color::Green, &msg)
+    );
 }
 
 /// Prints an error message.
 pub fn print_error(config: &OutputConfig, message: &str) {
     let msg = colorize(config, message, Color::Red, Style::None);
-    eprintln!("{}", format_message(config, &EMOJI_ERROR, &msg));
+    eprintln!("{}", format_message(config, &EMOJI_ERROR, Color::Red, &msg));
 }
 
 /// Prints a warning message.
 pub fn print_warning(config: &OutputConfig, message: &str) {
     let msg = colorize(config, message, Color::Yellow, Style::None);
-    println!("{}", format_message(config, &EMOJI_WARNING, &msg));
+    println!(
+        "{}",
+        format_message(config, &EMOJI_WARNING, Color::Yellow, &msg)
+    );
 }
 
 /// Prints a header message (bold if colors enabled).
