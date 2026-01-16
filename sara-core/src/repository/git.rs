@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use git2::{Commit, ObjectType, Oid, Repository};
+use git2::{Commit, ObjectType, Repository};
 
 use crate::error::SaraError;
 use crate::model::Item;
@@ -90,9 +90,12 @@ impl GitReader {
                     .map_err(|e| SaraError::GitError(e.to_string()))
             }
             GitRef::Commit(sha) => {
-                let oid = Oid::from_str(sha).map_err(|e| SaraError::GitError(e.to_string()))?;
-                self.repo
-                    .find_commit(oid)
+                // Use revparse_single to handle abbreviated SHAs
+                let obj = self
+                    .repo
+                    .revparse_single(sha)
+                    .map_err(|e| SaraError::GitError(e.to_string()))?;
+                obj.peel_to_commit()
                     .map_err(|e| SaraError::GitError(e.to_string()))
             }
             GitRef::Branch(name) => {
