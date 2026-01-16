@@ -1,0 +1,34 @@
+# Rust build artifacts
+target/
+debug/
+release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Environment and config
+.env*
+*.local
+
+# Logs
+*.log
+
+# OS files
+.DS_Store
+Thumbs.db
+*.tmp
+*.swp
+
+# Test coverage
+*.profraw
+*.profdata
+tarpaulin-report.html
+coverage/
+
+# Cargo lock (optional for libraries, keep for binaries)
+# Cargo.lock  # Uncomment if you want to ignore for library crates

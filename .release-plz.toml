@@ -1,0 +1,14 @@
+# release-plz configuration
+# https://release-plz.dev/docs/config
+
+[workspace]
+# PR settings
+pr_draft = false
+pr_labels = ["release"]
+
+# Release settings
+git_release_enable = true
+git_release_draft = false
+
+# Publish to crates.io
+publish = true

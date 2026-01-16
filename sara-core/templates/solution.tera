@@ -1,0 +1,28 @@
+{% include "frontmatter.tera" %}
+
+# Solution: {{ name }}
+
+## Overview
+
+[High-level description of the customer-facing solution]
+
+## Business Context
+
+[Market need, customer problem, or business opportunity this solution addresses]
+
+## Goals & KPIs
+
+- **Goal**: [Description of the objective]
+    - *KPI*: [Measurable indicator to track the success of this goal]
+
+## Stakeholders
+
+- [Stakeholder Name/Role]: [Description of their interest or impact on the solution]
+
+## Constraints
+
+- **Regulatory**: [Mandatory standards or legal compliance requirements]
+- **Physical & Design Context**: [Physical limits, pre-selected hardware, or environmental boundaries]
+- **Operational**: [Integration needs with existing systems or operational environment]
+- **Safety & Security**: [Critical safety behaviors or data protection constraints]
+- **Business**: [Cost, time-to-market, or commercial boundaries]

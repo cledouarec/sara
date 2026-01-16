@@ -1,0 +1,34 @@
+{% include "frontmatter.tera" %}
+
+# Hardware Design: {{ name }}
+
+## Overview
+
+[Detailed description of how this hardware design implements the required functionality.]
+
+## Bill of Materials (BOM)
+
+- **[Part Number]**: [Description], [Quantity], [Manufacturer]
+- **[Part Number]**: [Description], [Quantity], [Manufacturer]
+
+## Schematic & Layout References
+
+- **Schematic**: [Reference or link to the schematic document]
+- **PCB Layout**: [Reference or link to the layout document]
+
+## Test Points
+
+- **[TP ID]**: [Signal Name], [Expected Value/Waveform]
+- **[TP ID]**: [Signal Name], [Expected Value/Waveform]
+
+## Design Calculations & Simulations
+
+[Key calculations: e.g., Power consumption, thermal dissipation, or component sizing.]
+
+## Assembly & Manufacturing
+
+[Specific instructions: e.g., Mounting torque, thermal interface material, or specific soldering standards.]
+
+## Notes
+
+[Additional technical clarifications or constraints.]
