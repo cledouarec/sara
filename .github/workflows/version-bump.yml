@@ -1,0 +1,65 @@
+name: Version Bump
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  bump-version:
+    name: Bump Version and Create Release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.PERSONAL_ACCESS_TOKEN }}
+
+      - name: Get next version
+        id: version
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --bumped-version
+        env:
+          OUTPUT: VERSION
+
+      - name: Generate changelog
+        uses: orhun/git-cliff-action@v4
+        with:
+          config: cliff.toml
+          args: --bump
+        env:
+          OUTPUT: CHANGELOG.md
+
+      - name: Update version in Cargo.toml
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+          # Remove 'v' prefix if present
+          VERSION="${VERSION#v}"
+
+          # Update workspace.package version
+          sed -i "/\[workspace.package\]/,/^\[/ s/version = \".*\"/version = \"$VERSION\"/" Cargo.toml
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Commit and tag
+        run: |
+          VERSION="${{ steps.version.outputs.version }}"
+
+          git add Cargo.toml CHANGELOG.md
+          git commit -m "release: $VERSION"
+          git tag -a "$VERSION" -m "Release $VERSION"
+
+      - name: Push changes
+        run: |
+          git push origin HEAD
+          git push origin "${{ steps.version.outputs.version }}"

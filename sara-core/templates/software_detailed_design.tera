@@ -1,0 +1,39 @@
+{% include "frontmatter.tera" %}
+
+# Software Implementation: {{ name }}
+
+## Overview
+
+[Description of the technical approach and how this module fulfills its requirements.]
+
+## Static View (Structure)
+
+[Description of the code structure: modules, crates, or classes. Diagram optional.]
+
+```mermaid
+graph TD
+    A[Module A] --> B[Module B]
+```
+
+## Dynamic View (Logic)
+
+[Description of the internal behavior, algorithms, or state transitions.]
+
+```mermaid
+stateDiagram-v2
+    [*] --> Idle
+    Idle --> Processing: Event
+    Processing --> Idle: Success
+```
+
+## Interface & API Definitions
+
+[Link to API documentation (e.g., Rustdoc, Swagger) or brief description of key functions/methods.]
+
+## Error Handling & Edge Cases
+
+[Description of how the implementation detects and recovers from failures.]
+
+## Notes
+
+[Additional technical context, technical debt, or integration specificities.]

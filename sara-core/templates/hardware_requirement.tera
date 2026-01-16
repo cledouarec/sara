@@ -1,0 +1,29 @@
+{% include "frontmatter.tera" %}
+
+# Hardware Requirement: {{ name }}
+
+## Requirement Specification
+
+> {{ specification | default(value="The hardware SHALL [action] [under conditions].") }}
+
+## Rationale
+
+[Explain why this requirement is necessary and the value it provides to the system.]
+
+## Technical Specifications
+
+[Free text or table: Define parameters like voltage, current, tolerances, dimensions, or environmental constraints.]
+
+## Acceptance Criteria
+
+- [Measurable criterion 1]
+- [Measurable criterion 2]
+
+## Verification Plan
+
+- **Method**: [test, analysis, inspection, demonstration]
+- **Procedure**: [Briefly describe how the verification will be conducted.]
+
+## Notes
+
+[Additional context or technical clarifications.]

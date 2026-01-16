@@ -1,0 +1,29 @@
+{% include "frontmatter.tera" %}
+
+# Software Requirement: {{ name }}
+
+## Requirement Specification
+
+> {{ specification | default(value="The software SHALL [action] [under conditions].") }}
+
+## Rationale
+
+[Explain why this requirement is necessary and the value it provides to the system.]
+
+## Logic & Interface Details
+
+[Free text, table, or pseudocode: Define algorithms, inputs/outputs, error handling, or state transitions.]
+
+## Acceptance Criteria
+
+- [Measurable criterion 1, e.g., Execution time < 50ms]
+- [Measurable criterion 2, e.g., Handles null pointer gracefully]
+
+## Verification Plan
+
+- **Method**: [test, analysis, inspection, demonstration]
+- **Procedure**: [Briefly describe how the verification will be conducted (e.g., Unit Test, Static Analysis).]
+
+## Notes
+
+[Additional context or technical clarifications.]
