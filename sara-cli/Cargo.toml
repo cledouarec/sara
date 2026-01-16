@@ -1,11 +1,13 @@
 [package]
 name = "sara-cli"
 description = "CLI for Sara - Requirements Knowledge Graph"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [[bin]]
 name = "sara"

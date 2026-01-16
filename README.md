@@ -63,14 +63,6 @@ cargo install --path sara-cli
 sara --version
 ```
 
-### Pre-built Binaries
-
-Download from the [releases page](https://github.com/your-org/sara/releases) for your platform:
-- `sara-linux-x86_64` - Linux (64-bit)
-- `sara-darwin-x86_64` - macOS (Intel)
-- `sara-darwin-arm64` - macOS (Apple Silicon)
-- `sara-windows-x86_64.exe` - Windows (64-bit)
-
 ## Quick Start
 
 ### 1. Create a Document

@@ -1,11 +1,13 @@
 [package]
 name = "sara-core"
 description = "Core library for Sara - Requirements Knowledge Graph CLI"
+readme = "README.md"
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true
 authors.workspace = true
 license.workspace = true
+repository.workspace = true
 
 [dependencies]
 petgraph.workspace = true
