@@ -30,5 +30,5 @@ Thumbs.db
 tarpaulin-report.html
 coverage/
 
-# Cargo lock (optional for libraries, keep for binaries)
-# Cargo.lock  # Uncomment if you want to ignore for library crates
+# Misc
+sara.toml

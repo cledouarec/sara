@@ -289,13 +289,32 @@ pub enum ReportFormat {
     Html,
 }
 
+/// Returns repositories: CLI args take precedence, then config file, then current directory.
+fn get_repositories(
+    cli: &Cli,
+    file_config: Option<&sara_core::config::Config>,
+) -> Result<Vec<PathBuf>, std::io::Error> {
+    if !cli.repository.is_empty() {
+        Ok(cli.repository.clone())
+    } else if let Some(config) = file_config {
+        if !config.repositories.paths.is_empty() {
+            Ok(config.repositories.paths.clone())
+        } else {
+            Ok(vec![std::env::current_dir()?])
+        }
+    } else {
+        Ok(vec![std::env::current_dir()?])
+    }
+}
+
 /// Runs the appropriate command.
-pub fn run(cli: &Cli) -> Result<ExitCode, Box<dyn std::error::Error>> {
-    let output = cli.output_config();
-    let repositories = cli.repositories()?;
+pub fn run(cli: &Cli, file_config: Option<&sara_core::config::Config>) -> Result<ExitCode, Box<dyn std::error::Error>> {
+    let output = cli.output_config(file_config);
+    let repositories = get_repositories(cli, file_config)?;
+
     let ctx = CommandContext {
         output: output.clone(),
-        repositories: repositories.clone(),
+        repositories,
     };
 
     match &cli.command {
