@@ -1,0 +1,31 @@
+[package]
+name = "sara-cli"
+description = "CLI for Sara - Requirements Knowledge Graph"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+
+[[bin]]
+name = "sara"
+path = "src/main.rs"
+
+[dependencies]
+sara-core = { path = "../sara-core" }
+clap.workspace = true
+colored.workspace = true
+console.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+indicatif.workspace = true
+inquire.workspace = true
+thiserror.workspace = true
+strsim.workspace = true
+
+[dev-dependencies]
+assert_cmd.workspace = true
+predicates.workspace = true
+tempfile.workspace = true

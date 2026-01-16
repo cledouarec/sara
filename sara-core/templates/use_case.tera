@@ -1,0 +1,25 @@
+{% include "frontmatter.tera" %}
+
+# Use Case: {{ name }}
+
+## Actor(s)
+
+- **Primary Actor**: [Who initiates or benefits from this use case]
+- **Secondary Actors**: [Other participants or external systems involved]
+
+## Pre-conditions
+
+- [Condition that must be true before the use case can start]
+
+## Main Success Outcome
+
+[High-level description of the successful value delivered to the actor]
+
+## Key Functional Scope
+
+- [Function]: [High-level capability or feature required to fulfill this use case]
+
+## Post-conditions
+
+- [Success Condition]: [The state of the system after successful completion]
+- [Failure Condition]: [The state of the system if the use case fails or is interrupted]

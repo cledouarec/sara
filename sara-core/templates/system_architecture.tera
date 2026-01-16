@@ -1,0 +1,37 @@
+{% include "frontmatter.tera" %}
+
+# Architecture: {{ name }}
+
+## Technical Strategy
+
+[One or two sentences explaining how this architecture satisfies the requirements on the {{ platform | default(value="target") }} platform.]
+
+## Static View (Structure)
+
+[Description of the physical or logical partitioning of the system.]
+
+```mermaid
+graph TD
+    %% Define Components
+    A[Component A]
+    B[Component B]
+    C[(Database/Hardware)]
+
+    %% Define Connections
+    A --- B
+    B --- C
+```
+
+## Dynamic View (Behavior)
+
+[Sequence of interactions between components to fulfill a specific function.]
+
+```mermaid
+sequenceDiagram
+    participant A as Component A
+    participant B as Component B
+
+    A->>B: Trigger Action
+    B-->>B: Internal Processing
+    B->>A: Response/Status
+```

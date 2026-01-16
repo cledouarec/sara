@@ -1,0 +1,30 @@
+{% include "frontmatter.tera" %}
+
+# Scenario: {{ name }}
+
+## Overview
+
+[Briefly explain the goal of this specific path and the intent of the interaction.]
+
+## Initial State
+
+[Describe the specific conditions required: e.g., System Mode, User Permissions, or Hardware status.]
+
+## Trigger
+
+[The specific event—user action, timer, or system signal—that starts this sequence.]
+
+## Step-by-Step Flow
+
+1. [Action]: [Who does what, e.g., User provides input X]
+2. [Reaction]: [How the system responds, e.g., System validates X and displays Y]
+3. [Action]: [Next logical step in the sequence]
+
+## Expected Outcome
+
+- [Success Condition]: [The final state of the system and the specific output provided.]
+- [Verification]: [How an observer or test tool can confirm the scenario ended correctly.]
+
+## Exceptions & Edge Cases
+
+- [Exception Path]: [What happens if a step fails or a specific constraint is violated during this flow.]

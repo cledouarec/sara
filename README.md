@@ -1,0 +1,387 @@
+<p align="center">
+  <img src="assets/logo.svg" alt="SARA Logo" width="150" height="150">
+</p>
+
+<h1 align="center">SARA</h1>
+
+<p align="center">
+  <a href="https://github.com/your-org/sara/actions/workflows/ci.yml"><img src="https://github.com/your-org/sara/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+</p>
+
+**SARA** stands for **S**olution **A**rchitecture **R**equirement for **A**lignment.
+
+SARA is a command-line tool that manages Architecture documents and Requirements as an interconnected knowledge graph, providing a **single source of truth** for all teams and contributors in your organization.
+
+## Why SARA?
+
+### Alignment Across Teams
+
+In complex organizations, requirements and architecture documents are often scattered across teams, tools, and repositories. SARA brings everyone together by creating a unified knowledge graph that ensures:
+
+- **Traceability**: Every requirement traces back to business needs and forward to implementation
+- **Consistency**: All teams work from the same source of truth
+- **Visibility**: Stakeholders can see the complete picture, from solution vision to detailed design
+
+### Markdown-First: A Radical Choice
+
+SARA deliberately uses **plain Markdown files** with YAML frontmatter instead of proprietary formats. This is a conscious decision:
+
+- **No vendor lock-in**: Your requirements live in plain text files you own forever
+- **Universal readability**: Anyone can read and edit documents without special software
+- **Developer-friendly**: Markdown is the lingua franca of technical documentation
+- **Git-native**: Full version control, branching, merging, and code review workflows
+- **AI-ready**: Plain text formats are ideal for AI agents and LLMs - your requirements can be easily parsed, analyzed, and used as context for automated workflows and intelligent assistants
+- **Future-proof**: Switch tools anytime - your data remains accessible
+- **Zero dependencies**: No databases, no servers, no subscriptions
+- **DRY principle**: Reuse your existing documentation - architecture diagrams, solution presentations, and product pages become part of your knowledge graph without duplication
+
+Your requirements are too important to be trapped in a proprietary system. And your documentation should work harder - write once, trace everywhere.
+
+## Features
+
+- **Multi-Repository Support** - Aggregate documents from multiple Git repositories into a unified graph
+- **Validation** - Detect broken references, orphaned items, circular dependencies, and duplicate identifiers
+- **Traceability Queries** - Traverse upstream (toward Solution) or downstream (toward Detailed Designs)
+- **Coverage Reports** - Generate traceability matrices and coverage reports in multiple formats
+- **Version Comparison** - Compare knowledge graphs between Git commits or branches
+- **Document Initialization** - Generate YAML frontmatter templates for new documents
+
+## Installation
+
+### From Source
+
+```bash
+# Clone the repository
+git clone https://github.com/your-org/sara.git
+cd sara
+
+# Build and install
+cargo install --path sara-cli
+
+# Verify installation
+sara --version
+```
+
+### Pre-built Binaries
+
+Download from the [releases page](https://github.com/your-org/sara/releases) for your platform:
+- `sara-linux-x86_64` - Linux (64-bit)
+- `sara-darwin-x86_64` - macOS (Intel)
+- `sara-darwin-arm64` - macOS (Apple Silicon)
+- `sara-windows-x86_64.exe` - Windows (64-bit)
+
+## Quick Start
+
+### 1. Create a Document
+
+Create a Markdown file with YAML frontmatter:
+
+```markdown
+---
+id: "SOL-001"
+type: solution
+name: "Customer Portal"
+description: "Web-based customer self-service portal"
+---
+
+# Customer Portal Solution
+
+This solution provides a self-service portal for customers.
+```
+
+### 2. Create Configuration
+
+Create a `sara.toml` file:
+
+```toml
+[repositories]
+paths = ["./docs"]
+
+[validation]
+strict_orphans = false
+
+[output]
+colors = true
+emojis = true
+```
+
+### 3. Parse and Validate
+
+```bash
+# Parse all documents
+sara parse
+
+# Validate the knowledge graph
+sara validate
+
+# Query a specific item
+sara query SOL-001 --downstream
+
+# Generate a coverage report
+sara report coverage
+```
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `sara diff <REF1> <REF2>` | Compare graphs between Git references |
+| `sara edit <ID>` | Edit existing document metadata by item ID |
+| `sara init <FILE>` | Initialize metadata in a Markdown file |
+| `sara parse` | Parse documents and build the knowledge graph |
+| `sara query <ID>` | Query items and traceability chains |
+| `sara report coverage` | Generate coverage report |
+| `sara report matrix` | Generate traceability matrix |
+| `sara validate` | Validate graph integrity (broken refs, cycles, duplicates) |
+
+## Document Types
+
+Sara recognizes 9 document types forming a requirements hierarchy:
+
+| Type | YAML Value | Description |
+|------|------------|-------------|
+| Solution | `solution` | Customer-facing solution |
+| Use Case | `use_case` | Customer/market need |
+| Scenario | `scenario` | Abstract system behavior |
+| System Requirement | `system_requirement` | Quantifiable system-level need |
+| System Architecture | `system_architecture` | Platform implementation |
+| Hardware Requirement | `hardware_requirement` | Hardware-specific need |
+| Software Requirement | `software_requirement` | Software-specific need |
+| HW Detailed Design | `hardware_detailed_design` | Hardware implementation |
+| SW Detailed Design | `software_detailed_design` | Software implementation |
+
+## Traceability Hierarchy
+
+```
+Solution
+  └── Use Case
+        └── Scenario
+              └── System Requirement
+                    └── System Architecture
+                          ├── Hardware Requirement
+                          │     └── HW Detailed Design
+                          └── Software Requirement
+                                └── SW Detailed Design
+```
+
+## Relationships: The Heart of SARA
+
+Relationships are what transform isolated documents into a connected knowledge graph. They establish traceability between items, enabling impact analysis, coverage tracking, and requirement validation.
+
+### Relationship Types
+
+SARA uses semantic relationship names that reflect the nature of the connection:
+
+| Relationship | Direction | Usage |
+|--------------|-----------|-------|
+| `refines` / `is_refined_by` | Upstream / Downstream | Solution ↔ Use Case ↔ Scenario |
+| `derives_from` / `derives` | Upstream / Downstream | Scenario ↔ System Requirement, System Architecture ↔ HW/SW Requirement |
+| `satisfies` / `is_satisfied_by` | Upstream / Downstream | System Requirement ↔ System Architecture, HW/SW Requirement ↔ Detailed Design |
+
+### Defining Relationships in YAML
+
+Relationships are defined in the YAML frontmatter using reference fields:
+
+```yaml
+---
+id: "SYSREQ-001"
+type: system_requirement
+name: "Authentication Response Time"
+# Upstream: where this requirement comes from
+derives_from:
+  - "SCEN-001"
+  - "SCEN-002"
+# Downstream: what implements this requirement
+is_satisfied_by:
+  - "SYSARCH-001"
+---
+```
+
+### Bidirectional Traceability
+
+You only need to define the relationship in one direction - SARA automatically infers the reverse link:
+
+```yaml
+# In SCEN-001.md - defines downstream link
+---
+id: "SCEN-001"
+derives:
+  - "SYSREQ-001"
+---
+
+# OR in SYSREQ-001.md - defines upstream link (equivalent)
+---
+id: "SYSREQ-001"
+derives_from:
+  - "SCEN-001"
+---
+```
+
+Both approaches create the same bidirectional relationship in the graph.
+
+### Relationship Fields by Item Type
+
+| Item Type | Upstream Field | Downstream Field |
+|-----------|----------------|------------------|
+| Solution | - | `is_refined_by` |
+| Use Case | `refines` | `is_refined_by` |
+| Scenario | `refines` | `derives` |
+| System Requirement | `derives_from` | `is_satisfied_by` |
+| System Architecture | `satisfies` | `derives` |
+| HW/SW Requirement | `derives_from` | `is_satisfied_by` |
+| HW/SW Detailed Design | `satisfies` | - |
+
+### Querying Relationships
+
+Once relationships are defined, you can traverse the graph:
+
+```bash
+# Find everything that traces up to business needs
+sara query SWDD-001 --upstream
+
+# Output:
+# SWDD-001: Auth Service Implementation
+# └── SWREQ-001: JWT Token Generation
+#     └── SYSARCH-001: Authentication Architecture
+#         └── SYSREQ-001: Response Time Requirement
+#             └── SCEN-001: User Login Scenario
+#                 └── UC-001: User Authentication
+#                     └── SOL-001: Customer Portal
+
+# Find everything that implements a scenario
+sara query SCEN-001 --downstream
+```
+
+### Validation Rules
+
+SARA validates your relationships to ensure graph integrity:
+
+- **Broken references**: Links to non-existent items
+- **Circular dependencies**: A → B → C → A (cycles indicate modeling errors)
+- **Orphan items**: Items with no upstream parent (configurable as warning or error)
+- **Invalid relationships**: Wrong relationship type for item types (e.g., a Solution cannot `derive_from`)
+- **Duplicate identifiers**: Same ID used in multiple files
+
+```bash
+# Validate all relationships
+sara validate
+
+# Strict mode: treat orphans as errors
+sara validate --strict
+```
+
+## Configuration
+
+Sara uses a TOML configuration file (`sara.toml` by default):
+
+```toml
+[repositories]
+paths = [
+    "./docs",
+    "../other-repo/specs"
+]
+
+[validation]
+strict_orphans = false  # Treat orphans as errors when true
+
+[output]
+colors = true
+emojis = true
+
+[templates]
+paths = ["./templates"]  # Custom template directories
+```
+
+## Output Formats
+
+Most commands support multiple output formats:
+
+```bash
+# Text output (default)
+sara report coverage
+
+# JSON output
+sara report coverage --format json
+
+# CSV output
+sara report matrix --format csv -o matrix.csv
+```
+
+## Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SARA_CONFIG` | Path to configuration file |
+| `NO_COLOR` | Disable colored output when set |
+
+## Development
+
+### Prerequisites
+
+- Rust 1.75+ (2021 edition)
+
+### Building
+
+```bash
+# Debug build
+cargo build
+
+# Release build
+cargo build --release
+
+# Run tests
+cargo test
+
+# Run clippy
+cargo clippy
+```
+
+### Project Structure
+
+```
+sara-core/       # Library crate (business logic)
+├── src/
+│   ├── model/       # Domain entities
+│   ├── graph/       # Knowledge graph operations
+│   ├── parser/      # Markdown and YAML parsing
+│   ├── repository/  # Multi-repo file discovery
+│   ├── validation/  # Integrity checks
+│   ├── query/       # Query operations
+│   ├── report/      # Report generation
+│   ├── config/      # Configuration handling
+│   └── template/    # Document templates
+
+sara-cli/        # Binary crate (CLI interface)
+├── src/
+│   ├── commands/    # CLI subcommands
+│   └── output/      # Output formatting
+
+tests/           # Integration tests
+└── fixtures/    # Test documents
+```
+
+## License
+
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1. Fork the repository
+2. Create your feature branch (`git checkout -b feature/amazing-feature`)
+3. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/) format:
+   - `feat: add new validation rule` - New features
+   - `fix: resolve broken reference detection` - Bug fixes
+   - `docs: update installation guide` - Documentation changes
+   - `refactor: simplify graph traversal` - Code refactoring
+   - `test: add coverage for edge cases` - Test additions
+   - `build: update dependencies` - Build system and dependencies
+   - `ci: add release workflow` - CI/CD configuration changes
+4. Push to the branch (`git push origin feature/amazing-feature`)
+5. Open a Pull Request
+
+## Code of Conduct
+
+This project adheres to the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). By participating, you are expected to uphold this code. We are committed to providing a friendly, safe, and welcoming environment for all contributors.
