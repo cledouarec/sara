@@ -1,7 +1,7 @@
 //! Diff service implementation.
 
 use crate::graph::{GraphBuilder, GraphDiff};
-use crate::repository::parse_directory;
+use crate::repository::{GitReader, GitRef, parse_directory};
 
 use super::DiffOptions;
 
@@ -59,18 +59,79 @@ impl DiffService {
 
     /// Computes the diff between two references.
     ///
-    /// Note: Full Git reference support is not yet implemented. Currently,
-    /// this compares the current working directory state with itself.
+    /// This method supports full Git reference comparison when the repository
+    /// paths are Git repositories. It will parse the knowledge graph at each
+    /// reference point and compute the differences.
     pub fn diff(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
-        // TODO: Implement full Git reference support
-        // For now, we parse the current state and compare with itself
+        // Try Git-based comparison first
+        if let Some(result) = self.try_git_diff(opts)? {
+            return Ok(result);
+        }
 
-        let is_full_comparison = false;
+        // Fall back to current working directory comparison
+        self.diff_working_directory(opts)
+    }
 
-        // Parse all repositories
+    /// Attempts Git-based diff comparison.
+    /// Returns None if Git comparison is not possible (e.g., not a Git repo).
+    fn try_git_diff(&self, opts: &DiffOptions) -> Result<Option<DiffResult>, DiffError> {
+        // We need at least one repository path
+        if opts.repositories.is_empty() {
+            return Ok(None);
+        }
+
+        // Try to open a Git reader for the first repository
+        let repo_path = &opts.repositories[0];
+        let git_reader = match GitReader::discover(repo_path) {
+            Ok(reader) => reader,
+            Err(_) => return Ok(None), // Not a Git repo, fall back
+        };
+
+        // Parse Git references
+        let git_ref1 = GitRef::parse(&opts.ref1);
+        let git_ref2 = GitRef::parse(&opts.ref2);
+
+        // Parse items at each reference
+        let items1 = git_reader
+            .parse_commit(&git_ref1)
+            .map_err(|e| DiffError::ParseError {
+                path: format!("{}@{}", repo_path.display(), opts.ref1),
+                reason: e.to_string(),
+            })?;
+
+        let items2 = git_reader
+            .parse_commit(&git_ref2)
+            .map_err(|e| DiffError::ParseError {
+                path: format!("{}@{}", repo_path.display(), opts.ref2),
+                reason: e.to_string(),
+            })?;
+
+        // Build graphs from each reference
+        let graph1 = GraphBuilder::new()
+            .add_items(items1)
+            .build()
+            .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
+
+        let graph2 = GraphBuilder::new()
+            .add_items(items2)
+            .build()
+            .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
+
+        // Compute diff
+        let diff = GraphDiff::compute(&graph1, &graph2);
+
+        Ok(Some(DiffResult {
+            diff,
+            ref1: opts.ref1.clone(),
+            ref2: opts.ref2.clone(),
+            is_full_comparison: true,
+        }))
+    }
+
+    /// Falls back to comparing current working directory state with itself.
+    fn diff_working_directory(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
         let items = self.parse_repositories(&opts.repositories)?;
 
-        // Build graphs (currently identical since we don't have Git ref support)
         let graph1 = GraphBuilder::new()
             .add_items(items.clone())
             .build()
@@ -81,14 +142,13 @@ impl DiffService {
             .build()
             .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
 
-        // Compute diff
         let diff = GraphDiff::compute(&graph1, &graph2);
 
         Ok(DiffResult {
             diff,
             ref1: opts.ref1.clone(),
             ref2: opts.ref2.clone(),
-            is_full_comparison,
+            is_full_comparison: false,
         })
     }
 
@@ -142,7 +202,7 @@ mod tests {
     }
 
     #[test]
-    fn test_diff_empty_repositories() {
+    fn test_diff_empty_repositories_non_git() {
         let temp_dir = TempDir::new().unwrap();
 
         let opts = DiffOptions::new("HEAD~1", "HEAD")
@@ -151,12 +211,13 @@ mod tests {
         let service = DiffService::new();
         let result = service.diff(&opts).unwrap();
 
+        // Non-git directory falls back to working directory comparison
         assert!(result.is_empty());
         assert!(!result.is_full_comparison);
     }
 
     #[test]
-    fn test_diff_with_items() {
+    fn test_diff_with_items_non_git() {
         let temp_dir = TempDir::new().unwrap();
 
         create_test_file(
@@ -177,8 +238,9 @@ name: "Test Solution"
         let service = DiffService::new();
         let result = service.diff(&opts).unwrap();
 
-        // Since we compare current state with itself, there should be no changes
+        // Non-git: falls back to comparing current state with itself
         assert!(result.is_empty());
+        assert!(!result.is_full_comparison);
         assert_eq!(result.ref1, "main");
         assert_eq!(result.ref2, "feature");
     }
@@ -192,5 +254,27 @@ name: "Test Solution"
         assert_eq!(opts.ref1, "HEAD~1");
         assert_eq!(opts.ref2, "HEAD");
         assert_eq!(opts.repositories.len(), 2);
+    }
+
+    #[test]
+    fn test_diff_in_git_repo() {
+        // Use the current repository for testing Git comparison
+        let current_dir = std::env::current_dir().unwrap();
+
+        // Only run this test if we're in a git repo
+        if !crate::repository::is_git_repo(&current_dir) {
+            return;
+        }
+
+        let opts = DiffOptions::new("HEAD", "HEAD")
+            .with_repositories(vec![current_dir]);
+
+        let service = DiffService::new();
+        let result = service.diff(&opts).unwrap();
+
+        // Comparing HEAD to HEAD should produce no changes
+        assert!(result.is_empty());
+        // Should be a full Git comparison
+        assert!(result.is_full_comparison);
     }
 }
