@@ -368,7 +368,7 @@ tests/                   # Integration tests
 
 **Purpose**: Improvements that affect multiple user stories
 
-- [x] T102 [P] Add progress indicators for long operations in sara-cli/src/output/progress.rs
+- [ ] ~~T102 [P] Add progress indicators for long operations~~ (removed - parser is fast enough)
 - [x] T103 [P] Implement --no-color and --no-emoji flags in sara-cli/src/main.rs
 - [x] T104 [P] Implement SARA_CONFIG and NO_COLOR environment variable support in sara-cli/src/main.rs
 - [x] T105 [P] Add custom field warning (FR-019) in sara-core/src/validation/rules/metadata.rs

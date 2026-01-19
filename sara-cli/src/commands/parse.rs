@@ -13,9 +13,6 @@ use sara_core::validation::rules::check_duplicate_items;
 use sara_core::validation::validate;
 
 use super::CommandContext;
-use crate::output::progress::{
-    create_graph_building_spinner, create_spinner, finish_and_clear, finish_with_success,
-};
 use crate::output::{OutputConfig, print_error, print_success, print_warning};
 
 /// Options for the parse command.
@@ -101,21 +98,16 @@ fn collect_repositories(ctx: &CommandContext) -> Result<Vec<PathBuf>, Box<dyn st
     }
 }
 
-/// Scans repositories and parses items with progress indicator.
+/// Scans repositories and parses items.
 fn scan_repositories(
     repos: &[PathBuf],
     opts: &ParseOptions,
 ) -> Result<Vec<sara_core::model::Item>, Box<dyn std::error::Error>> {
-    let spinner = create_spinner("Scanning repositories...");
-
-    let items = if let Some(ref git_ref) = opts.at {
-        parse_from_git(repos, git_ref)?
+    if let Some(ref git_ref) = opts.at {
+        parse_from_git(repos, git_ref)
     } else {
-        parse_repositories(repos)?
-    };
-
-    finish_and_clear(&spinner);
-    Ok(items)
+        Ok(parse_repositories(repos)?)
+    }
 }
 
 /// Checks for duplicate items and returns an exit code if duplicates are found.
@@ -134,14 +126,11 @@ fn check_for_duplicates(
     Some(ExitCode::from(1))
 }
 
-/// Builds the knowledge graph with progress indicator.
+/// Builds the knowledge graph.
 fn build_graph(
     items: Vec<sara_core::model::Item>,
 ) -> Result<sara_core::graph::KnowledgeGraph, Box<dyn std::error::Error>> {
-    let graph_spinner = create_graph_building_spinner();
-    let graph = GraphBuilder::new().add_items(items).build()?;
-    finish_with_success(&graph_spinner, "Knowledge graph built");
-    Ok(graph)
+    Ok(GraphBuilder::new().add_items(items).build()?)
 }
 
 /// Handles output: either exports to JSON or prints stats.

@@ -15,7 +15,7 @@ use sara_core::{
     parse_repositories, suggest_next_id,
 };
 
-use crate::output::{OutputConfig, print_error, progress};
+use crate::output::{OutputConfig, print_error};
 
 /// Fields pre-provided via CLI arguments (FR-050).
 #[derive(Debug, Default)]
@@ -42,6 +42,9 @@ pub struct InteractiveSession<'a> {
 
     /// Repository paths for graph building.
     pub repositories: &'a [PathBuf],
+
+    /// Output configuration for colors and emojis.
+    pub output: &'a OutputConfig,
 }
 
 /// Collected input from interactive session.
@@ -570,14 +573,12 @@ fn ensure_graph_loaded(session: &mut InteractiveSession<'_>) {
         return;
     }
 
-    let spinner = progress::create_spinner("Building knowledge graph...");
     match build_graph_from_repositories(session.repositories) {
         Ok(graph) => {
-            progress::finish_and_clear(&spinner);
             session.graph = Some(graph);
         }
         Err(msg) => {
-            progress::finish_with_error(&spinner, msg);
+            print_error(session.output, msg);
         }
     }
 }

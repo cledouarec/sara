@@ -462,6 +462,7 @@ fn run_init_interactive(
         graph: None,
         prefilled,
         repositories: &ctx.repositories,
+        output: &ctx.output,
     };
 
     let result = interactive::run_interactive_session(&mut session);

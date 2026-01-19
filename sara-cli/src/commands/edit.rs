@@ -17,7 +17,7 @@ use super::interactive::{
     PrefilledFields, PromptError, prompt_description, prompt_name, prompt_platform,
     prompt_specification, prompt_traceability,
 };
-use crate::output::{OutputConfig, print_error, print_success, progress};
+use crate::output::{OutputConfig, print_error, print_success};
 
 /// CLI-specific edit options.
 #[derive(Debug)]
@@ -53,10 +53,8 @@ pub fn run(
     let service = EditService::new();
 
     // Build the knowledge graph
-    let spinner = progress::create_spinner("Loading knowledge graph...");
     let items = parse_repositories(&ctx.repositories)?;
     let graph = GraphBuilder::new().add_items(items).build()?;
-    progress::finish_and_clear(&spinner);
 
     // Look up the item (FR-054)
     let item = match service.lookup_item(&graph, &opts.item_id) {

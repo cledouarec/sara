@@ -445,11 +445,9 @@ fn require_tty() -> Result<(), InitError> {
 - Ensures graph availability for ID suggestions (FR-044) and traceability lists (FR-045)
 - Validates parent items exist before allowing creation (FR-052)
 - Performance impact acceptable: parsing is fast (<1s for 500 docs per spec)
-- Display spinner during parse: "Building knowledge graph..."
 
 **Implementation Notes**:
 - Reuse existing `parse_repositories()` function from `sara_core`
-- Use existing progress spinner from `output::progress`
 - Graph is read-only during interactive session
 
 ---
