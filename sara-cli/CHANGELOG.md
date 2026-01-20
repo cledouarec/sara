@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4](https://github.com/cledouarec/sara/compare/sara-cli-v0.1.3...sara-cli-v0.1.4) - 2026-01-20
+
+### Other
+
+- remove progress indicators from CLI
+
 ## [0.1.3](https://github.com/cledouarec/sara/compare/sara-cli-v0.1.2...sara-cli-v0.1.3) - 2026-01-16
 
 ### Fixed
