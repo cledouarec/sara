@@ -11,12 +11,8 @@ pub enum ParseError {
     #[error("Failed to read file {path}: {reason}")]
     FileRead { path: PathBuf, reason: String },
 
-    #[error("Invalid frontmatter in {file} at line {line}: {reason}")]
-    InvalidFrontmatter {
-        file: PathBuf,
-        line: usize,
-        reason: String,
-    },
+    #[error("Invalid frontmatter in {file}: {reason}")]
+    InvalidFrontmatter { file: PathBuf, reason: String },
 
     #[error("Missing frontmatter in {file}")]
     MissingFrontmatter { file: PathBuf },

@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::model::ItemType;
+use crate::model::{FieldName, ItemType};
 use crate::parser::has_frontmatter;
 use crate::template::{
     GeneratorOptions, extract_name_from_content, generate_document, generate_frontmatter,
@@ -11,6 +11,17 @@ use crate::template::{
 };
 
 use super::InitOptions;
+
+/// Creates an InvalidOption error with a formatted message.
+fn invalid_option_error(field: FieldName, valid_types: &[ItemType], actual: ItemType) -> InitError {
+    let valid_names: Vec<_> = valid_types.iter().map(|t| t.display_name()).collect();
+    InitError::InvalidOption(format!(
+        "{} is only valid for {}, not {}",
+        field.as_str(),
+        valid_names.join(", "),
+        actual.display_name()
+    ))
+}
 
 /// Errors that can occur during initialization.
 #[derive(Debug, thiserror::Error)]
@@ -96,90 +107,42 @@ impl InitService {
 
     /// Validates type-specific options.
     fn validate_options(&self, opts: &InitOptions) -> Result<(), InitError> {
-        self.validate_refines(opts)?;
-        self.validate_derives_from(opts)?;
-        self.validate_satisfies(opts)?;
-        self.validate_specification(opts)?;
-        self.validate_platform(opts)?;
+        if !opts.refines.is_empty() && !opts.item_type.requires_refines() {
+            return Err(invalid_option_error(
+                FieldName::Refines,
+                ItemType::refines_types(),
+                opts.item_type,
+            ));
+        }
+        if !opts.derives_from.is_empty() && !opts.item_type.requires_derives_from() {
+            return Err(invalid_option_error(
+                FieldName::DerivesFrom,
+                ItemType::derives_from_types(),
+                opts.item_type,
+            ));
+        }
+        if !opts.satisfies.is_empty() && !opts.item_type.requires_satisfies() {
+            return Err(invalid_option_error(
+                FieldName::Satisfies,
+                ItemType::satisfies_types(),
+                opts.item_type,
+            ));
+        }
+        if opts.specification.is_some() && !opts.item_type.requires_specification() {
+            return Err(invalid_option_error(
+                FieldName::Specification,
+                ItemType::specification_types(),
+                opts.item_type,
+            ));
+        }
+        if opts.platform.is_some() && !opts.item_type.accepts_platform() {
+            return Err(invalid_option_error(
+                FieldName::Platform,
+                ItemType::platform_types(),
+                opts.item_type,
+            ));
+        }
         Ok(())
-    }
-
-    /// Validates --refines is only used with use_case or scenario.
-    fn validate_refines(&self, opts: &InitOptions) -> Result<(), InitError> {
-        if opts.refines.is_empty() {
-            return Ok(());
-        }
-
-        match opts.item_type {
-            ItemType::UseCase | ItemType::Scenario => Ok(()),
-            _ => Err(InitError::InvalidOption(format!(
-                "refines is only valid for use_case and scenario types, not {}",
-                opts.item_type.display_name()
-            ))),
-        }
-    }
-
-    /// Validates --derives-from is only used with requirement types.
-    fn validate_derives_from(&self, opts: &InitOptions) -> Result<(), InitError> {
-        if opts.derives_from.is_empty() {
-            return Ok(());
-        }
-
-        match opts.item_type {
-            ItemType::SystemRequirement
-            | ItemType::HardwareRequirement
-            | ItemType::SoftwareRequirement => Ok(()),
-            _ => Err(InitError::InvalidOption(format!(
-                "derives_from is only valid for requirement types, not {}",
-                opts.item_type.display_name()
-            ))),
-        }
-    }
-
-    /// Validates --satisfies is only used with architecture and design types.
-    fn validate_satisfies(&self, opts: &InitOptions) -> Result<(), InitError> {
-        if opts.satisfies.is_empty() {
-            return Ok(());
-        }
-
-        match opts.item_type {
-            ItemType::SystemArchitecture
-            | ItemType::HardwareDetailedDesign
-            | ItemType::SoftwareDetailedDesign => Ok(()),
-            _ => Err(InitError::InvalidOption(format!(
-                "satisfies is only valid for architecture and design types, not {}",
-                opts.item_type.display_name()
-            ))),
-        }
-    }
-
-    /// Validates --specification is only used with requirement types.
-    fn validate_specification(&self, opts: &InitOptions) -> Result<(), InitError> {
-        if opts.specification.is_none() {
-            return Ok(());
-        }
-
-        match opts.item_type {
-            ItemType::SystemRequirement
-            | ItemType::HardwareRequirement
-            | ItemType::SoftwareRequirement => Ok(()),
-            _ => Err(InitError::InvalidOption(format!(
-                "specification is only valid for requirement types, not {}",
-                opts.item_type.display_name()
-            ))),
-        }
-    }
-
-    /// Validates --platform is only used with system_architecture.
-    fn validate_platform(&self, opts: &InitOptions) -> Result<(), InitError> {
-        if opts.platform.is_none() || opts.item_type == ItemType::SystemArchitecture {
-            return Ok(());
-        }
-
-        Err(InitError::InvalidOption(format!(
-            "platform is only valid for system_architecture type, not {}",
-            opts.item_type.display_name()
-        )))
     }
 
     /// Resolves the ID from options or generates a new one.

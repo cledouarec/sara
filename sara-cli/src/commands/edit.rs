@@ -239,10 +239,12 @@ fn display_change_summary(changes: &[FieldChange]) {
         if change.is_changed() {
             println!(
                 "  {}: {} → {}",
-                change.field, change.old_value, change.new_value
+                change.field.display_name(),
+                change.old_value,
+                change.new_value
             );
         } else {
-            println!("  {}: (unchanged)", change.field);
+            println!("  {}: (unchanged)", change.field.display_name());
         }
     }
 
