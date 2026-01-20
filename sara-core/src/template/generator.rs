@@ -4,7 +4,7 @@ use std::sync::OnceLock;
 
 use tera::{Context, Tera};
 
-use crate::model::ItemType;
+use crate::model::{FieldName, ItemType};
 
 /// Embedded templates - compiled into the binary.
 const FRONTMATTER_TEMPLATE: &str = include_str!("../../templates/frontmatter.tera");
@@ -130,40 +130,40 @@ impl GeneratorOptions {
     /// Builds a Tera context from the options.
     fn to_context(&self) -> Context {
         let mut context = Context::new();
-        context.insert("id", &self.id);
-        context.insert("type", &item_type_to_yaml(self.item_type));
-        context.insert("name", &escape_yaml_string(&self.name));
+        context.insert(FieldName::Id.as_str(), &self.id);
+        context.insert(FieldName::Type.as_str(), self.item_type.as_str());
+        context.insert(FieldName::Name.as_str(), &escape_yaml_string(&self.name));
 
         if let Some(ref desc) = self.description {
-            context.insert("description", &escape_yaml_string(desc));
+            context.insert(FieldName::Description.as_str(), &escape_yaml_string(desc));
         }
 
         // Insert upstream references based on item type
         match self.item_type {
             ItemType::UseCase | ItemType::Scenario => {
                 if !self.refines.is_empty() {
-                    context.insert("refines", &self.refines);
+                    context.insert(FieldName::Refines.as_str(), &self.refines);
                 }
             }
             ItemType::SystemRequirement
             | ItemType::HardwareRequirement
             | ItemType::SoftwareRequirement => {
                 if !self.derives_from.is_empty() {
-                    context.insert("derives_from", &self.derives_from);
+                    context.insert(FieldName::DerivesFrom.as_str(), &self.derives_from);
                 }
             }
             ItemType::SystemArchitecture => {
                 if !self.satisfies.is_empty() {
-                    context.insert("satisfies", &self.satisfies);
+                    context.insert(FieldName::Satisfies.as_str(), &self.satisfies);
                 }
                 // Add platform for system architecture
                 if let Some(ref platform) = self.platform {
-                    context.insert("platform", &escape_yaml_string(platform));
+                    context.insert(FieldName::Platform.as_str(), &escape_yaml_string(platform));
                 }
             }
             ItemType::HardwareDetailedDesign | ItemType::SoftwareDetailedDesign => {
                 if !self.satisfies.is_empty() {
-                    context.insert("satisfies", &self.satisfies);
+                    context.insert(FieldName::Satisfies.as_str(), &self.satisfies);
                 }
             }
             ItemType::Solution => {
@@ -177,7 +177,7 @@ impl GeneratorOptions {
                 .specification
                 .as_deref()
                 .unwrap_or("The system SHALL <describe the requirement>.");
-            context.insert("specification", &escape_yaml_string(spec));
+            context.insert(FieldName::Specification.as_str(), &escape_yaml_string(spec));
         }
 
         context
@@ -213,21 +213,6 @@ pub fn generate_document(opts: &GeneratorOptions) -> String {
     let context = opts.to_context();
     tera.render(opts.template_name(), &context)
         .expect("Failed to render document template")
-}
-
-/// Converts an ItemType to YAML format.
-fn item_type_to_yaml(item_type: ItemType) -> &'static str {
-    match item_type {
-        ItemType::Solution => "solution",
-        ItemType::UseCase => "use_case",
-        ItemType::Scenario => "scenario",
-        ItemType::SystemRequirement => "system_requirement",
-        ItemType::SystemArchitecture => "system_architecture",
-        ItemType::HardwareRequirement => "hardware_requirement",
-        ItemType::SoftwareRequirement => "software_requirement",
-        ItemType::HardwareDetailedDesign => "hardware_detailed_design",
-        ItemType::SoftwareDetailedDesign => "software_detailed_design",
-    }
 }
 
 /// Escapes a string for YAML.

@@ -31,7 +31,7 @@ pub use graph::{
 };
 pub use init::{InitError, InitOptions, InitResult, InitService, parse_item_type};
 pub use model::{
-    EditSummary, EditUpdates, FieldChange, Item, ItemId, ItemType, RelationshipType,
+    EditSummary, EditUpdates, FieldChange, FieldName, Item, ItemId, ItemType, RelationshipType,
     SourceLocation, TraceabilityConfig, TraceabilityLinks, UpstreamRefs,
 };
 pub use parser::{extract_body, parse_document, parse_markdown_file, update_frontmatter};

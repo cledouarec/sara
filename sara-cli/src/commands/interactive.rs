@@ -11,8 +11,8 @@ use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use thiserror::Error;
 
 use sara_core::{
-    ItemType, KnowledgeGraph, MissingParentError, TraceabilityLinks, check_parent_exists,
-    parse_repositories, suggest_next_id,
+    FieldName, ItemType, KnowledgeGraph, MissingParentError, TraceabilityLinks,
+    check_parent_exists, parse_repositories, suggest_next_id,
 };
 
 use crate::output::{OutputConfig, print_error, progress};
@@ -270,12 +270,12 @@ enum TraceabilityKind {
 }
 
 impl TraceabilityKind {
-    /// Creates a TraceabilityKind from the relationship field name.
-    fn from_field(field: &str) -> Self {
+    /// Creates a TraceabilityKind from the FieldName.
+    fn from_field(field: FieldName) -> Self {
         match field {
-            "refines" => Self::Refines,
-            "derives_from" => Self::DerivesFrom,
-            "satisfies" => Self::Satisfies,
+            FieldName::Refines => Self::Refines,
+            FieldName::DerivesFrom => Self::DerivesFrom,
+            FieldName::Satisfies => Self::Satisfies,
             _ => Self::Refines, // Fallback
         }
     }
@@ -300,7 +300,7 @@ fn get_traceability_prompt_config(item_type: ItemType) -> Option<TraceabilityPro
         "Select {} this {} {}:",
         config.parent_type.display_name(),
         item_type.display_name(),
-        config.relationship_field.replace('_', " ")
+        config.relationship_field.as_str().replace('_', " ")
     );
 
     Some(TraceabilityPromptConfig {
@@ -755,14 +755,17 @@ mod tests {
     #[test]
     fn test_traceability_field() {
         assert_eq!(ItemType::Solution.traceability_field(), None);
-        assert_eq!(ItemType::UseCase.traceability_field(), Some("refines"));
+        assert_eq!(
+            ItemType::UseCase.traceability_field(),
+            Some(FieldName::Refines)
+        );
         assert_eq!(
             ItemType::SystemRequirement.traceability_field(),
-            Some("derives_from")
+            Some(FieldName::DerivesFrom)
         );
         assert_eq!(
             ItemType::SystemArchitecture.traceability_field(),
-            Some("satisfies")
+            Some(FieldName::Satisfies)
         );
     }
 }

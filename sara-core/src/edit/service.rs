@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use crate::error::EditError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldChange, Item, ItemType, TraceabilityLinks};
+use crate::model::{FieldChange, FieldName, Item, ItemType, TraceabilityLinks};
 use crate::parser::update_frontmatter;
 use crate::query::lookup_item_or_suggest;
 
@@ -151,9 +151,9 @@ impl EditService {
     pub fn build_change_summary(&self, old: &ItemContext, new: &EditedValues) -> Vec<FieldChange> {
         let mut changes = Vec::new();
 
-        changes.push(FieldChange::new("Name", &old.name, &new.name));
+        changes.push(FieldChange::new(FieldName::Name, &old.name, &new.name));
         changes.push(FieldChange::new(
-            "Description",
+            FieldName::Description,
             old.description.as_deref().unwrap_or("(none)"),
             new.description.as_deref().unwrap_or("(none)"),
         ));
@@ -161,19 +161,19 @@ impl EditService {
         // Traceability changes
         self.add_traceability_change(
             &mut changes,
-            "Refines",
+            FieldName::Refines,
             &old.traceability.refines,
             &new.traceability.refines,
         );
         self.add_traceability_change(
             &mut changes,
-            "Derives from",
+            FieldName::DerivesFrom,
             &old.traceability.derives_from,
             &new.traceability.derives_from,
         );
         self.add_traceability_change(
             &mut changes,
-            "Satisfies",
+            FieldName::Satisfies,
             &old.traceability.satisfies,
             &new.traceability.satisfies,
         );
@@ -181,7 +181,7 @@ impl EditService {
         // Type-specific
         if old.specification.is_some() || new.specification.is_some() {
             changes.push(FieldChange::new(
-                "Specification",
+                FieldName::Specification,
                 old.specification.as_deref().unwrap_or("(none)"),
                 new.specification.as_deref().unwrap_or("(none)"),
             ));
@@ -189,7 +189,7 @@ impl EditService {
 
         if old.platform.is_some() || new.platform.is_some() {
             changes.push(FieldChange::new(
-                "Platform",
+                FieldName::Platform,
                 old.platform.as_deref().unwrap_or("(none)"),
                 new.platform.as_deref().unwrap_or("(none)"),
             ));
@@ -202,7 +202,7 @@ impl EditService {
     fn add_traceability_change(
         &self,
         changes: &mut Vec<FieldChange>,
-        field: &str,
+        field: FieldName,
         old: &[String],
         new: &[String],
     ) {
@@ -248,26 +248,53 @@ impl EditService {
         values: &EditedValues,
     ) -> String {
         let mut yaml = format!(
-            "id: \"{}\"\ntype: {}\nname: \"{}\"\n",
+            "{}: \"{}\"\n{}: {}\n{}: \"{}\"\n",
+            FieldName::Id.as_str(),
             item_id,
-            item_type.yaml_value(),
+            FieldName::Type.as_str(),
+            item_type.as_str(),
+            FieldName::Name.as_str(),
             values.name.replace('"', "\\\"")
         );
 
         if let Some(ref desc) = values.description {
-            yaml += &format!("description: \"{}\"\n", desc.replace('"', "\\\""));
+            yaml += &format!(
+                "{}: \"{}\"\n",
+                FieldName::Description.as_str(),
+                desc.replace('"', "\\\"")
+            );
         }
 
-        self.append_traceability_yaml(&mut yaml, "refines", &values.traceability.refines);
-        self.append_traceability_yaml(&mut yaml, "derives_from", &values.traceability.derives_from);
-        self.append_traceability_yaml(&mut yaml, "satisfies", &values.traceability.satisfies);
+        self.append_traceability_yaml(
+            &mut yaml,
+            FieldName::Refines.as_str(),
+            &values.traceability.refines,
+        );
+        self.append_traceability_yaml(
+            &mut yaml,
+            FieldName::DerivesFrom.as_str(),
+            &values.traceability.derives_from,
+        );
+        self.append_traceability_yaml(
+            &mut yaml,
+            FieldName::Satisfies.as_str(),
+            &values.traceability.satisfies,
+        );
 
         if let Some(ref spec) = values.specification {
-            yaml += &format!("specification: \"{}\"\n", spec.replace('"', "\\\""));
+            yaml += &format!(
+                "{}: \"{}\"\n",
+                FieldName::Specification.as_str(),
+                spec.replace('"', "\\\"")
+            );
         }
 
         if let Some(ref plat) = values.platform {
-            yaml += &format!("platform: \"{}\"\n", plat.replace('"', "\\\""));
+            yaml += &format!(
+                "{}: \"{}\"\n",
+                FieldName::Platform.as_str(),
+                plat.replace('"', "\\\"")
+            );
         }
 
         yaml
@@ -439,7 +466,7 @@ mod tests {
 
         let changes = service.build_change_summary(&old, &new);
 
-        let name_change = changes.iter().find(|c| c.field == "Name").unwrap();
+        let name_change = changes.iter().find(|c| c.field == FieldName::Name).unwrap();
         assert!(name_change.is_changed());
         assert_eq!(name_change.old_value, "Old Name");
         assert_eq!(name_change.new_value, "New Name");

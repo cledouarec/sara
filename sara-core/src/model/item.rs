@@ -6,6 +6,7 @@ use serde::{Deserialize, Serialize};
 use std::fmt;
 
 use crate::error::ValidationError;
+use crate::model::FieldName;
 
 /// Represents the type of item in the knowledge graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -68,14 +69,66 @@ impl ItemType {
         }
     }
 
-    /// Returns true if this item type requires a specification field.
+    /// Returns the item types that accept the refines field.
+    pub fn refines_types() -> &'static [ItemType] {
+        &[ItemType::UseCase, ItemType::Scenario]
+    }
+
+    /// Returns true if this item type requires the refines field.
+    pub fn requires_refines(&self) -> bool {
+        Self::refines_types().contains(self)
+    }
+
+    /// Returns the item types that accept the derives_from field.
+    pub fn derives_from_types() -> &'static [ItemType] {
+        &[
+            ItemType::SystemRequirement,
+            ItemType::HardwareRequirement,
+            ItemType::SoftwareRequirement,
+        ]
+    }
+
+    /// Returns true if this item type requires the derives_from field.
+    pub fn requires_derives_from(&self) -> bool {
+        Self::derives_from_types().contains(self)
+    }
+
+    /// Returns the item types that accept the satisfies field.
+    pub fn satisfies_types() -> &'static [ItemType] {
+        &[
+            ItemType::SystemArchitecture,
+            ItemType::HardwareDetailedDesign,
+            ItemType::SoftwareDetailedDesign,
+        ]
+    }
+
+    /// Returns true if this item type requires the satisfies field.
+    pub fn requires_satisfies(&self) -> bool {
+        Self::satisfies_types().contains(self)
+    }
+
+    /// Returns the item types that accept the specification field.
+    pub fn specification_types() -> &'static [ItemType] {
+        &[
+            ItemType::SystemRequirement,
+            ItemType::HardwareRequirement,
+            ItemType::SoftwareRequirement,
+        ]
+    }
+
+    /// Returns true if this item type requires/accepts a specification field.
     pub fn requires_specification(&self) -> bool {
-        matches!(
-            self,
-            ItemType::SystemRequirement
-                | ItemType::HardwareRequirement
-                | ItemType::SoftwareRequirement
-        )
+        Self::specification_types().contains(self)
+    }
+
+    /// Returns the item types that accept the platform field.
+    pub fn platform_types() -> &'static [ItemType] {
+        &[ItemType::SystemArchitecture]
+    }
+
+    /// Returns true if this item type accepts the platform field.
+    pub fn accepts_platform(&self) -> bool {
+        Self::platform_types().contains(self)
     }
 
     /// Returns true if this is a root item type (Solution).
@@ -107,22 +160,22 @@ impl ItemType {
         }
     }
 
-    /// Returns the relationship field name for upstream traceability.
-    pub fn traceability_field(&self) -> Option<&'static str> {
+    /// Returns the upstream traceability field for this item type.
+    pub fn traceability_field(&self) -> Option<FieldName> {
         match self {
             ItemType::Solution => None,
-            ItemType::UseCase | ItemType::Scenario => Some("refines"),
+            ItemType::UseCase | ItemType::Scenario => Some(FieldName::Refines),
             ItemType::SystemRequirement
             | ItemType::HardwareRequirement
-            | ItemType::SoftwareRequirement => Some("derives_from"),
+            | ItemType::SoftwareRequirement => Some(FieldName::DerivesFrom),
             ItemType::SystemArchitecture
             | ItemType::HardwareDetailedDesign
-            | ItemType::SoftwareDetailedDesign => Some("satisfies"),
+            | ItemType::SoftwareDetailedDesign => Some(FieldName::Satisfies),
         }
     }
 
     /// Returns the YAML value (snake_case string) for this item type.
-    pub fn yaml_value(&self) -> &'static str {
+    pub fn as_str(&self) -> &'static str {
         match self {
             ItemType::Solution => "solution",
             ItemType::UseCase => "use_case",
@@ -143,33 +196,33 @@ impl ItemType {
         match self {
             ItemType::Solution => None,
             ItemType::UseCase => Some(TraceabilityConfig {
-                relationship_field: "refines",
+                relationship_field: FieldName::Refines,
                 parent_type: ItemType::Solution,
             }),
             ItemType::Scenario => Some(TraceabilityConfig {
-                relationship_field: "refines",
+                relationship_field: FieldName::Refines,
                 parent_type: ItemType::UseCase,
             }),
             ItemType::SystemRequirement => Some(TraceabilityConfig {
-                relationship_field: "derives_from",
+                relationship_field: FieldName::DerivesFrom,
                 parent_type: ItemType::Scenario,
             }),
             ItemType::SystemArchitecture => Some(TraceabilityConfig {
-                relationship_field: "satisfies",
+                relationship_field: FieldName::Satisfies,
                 parent_type: ItemType::SystemRequirement,
             }),
             ItemType::HardwareRequirement | ItemType::SoftwareRequirement => {
                 Some(TraceabilityConfig {
-                    relationship_field: "derives_from",
+                    relationship_field: FieldName::DerivesFrom,
                     parent_type: ItemType::SystemArchitecture,
                 })
             }
             ItemType::HardwareDetailedDesign => Some(TraceabilityConfig {
-                relationship_field: "satisfies",
+                relationship_field: FieldName::Satisfies,
                 parent_type: ItemType::HardwareRequirement,
             }),
             ItemType::SoftwareDetailedDesign => Some(TraceabilityConfig {
-                relationship_field: "satisfies",
+                relationship_field: FieldName::Satisfies,
                 parent_type: ItemType::SoftwareRequirement,
             }),
         }
@@ -179,8 +232,8 @@ impl ItemType {
 /// Configuration for traceability relationships.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TraceabilityConfig {
-    /// The type of relationship field (refines, derives_from, satisfies).
-    pub relationship_field: &'static str,
+    /// The relationship field (refines, derives_from, satisfies).
+    pub relationship_field: FieldName,
     /// The parent item type to link to.
     pub parent_type: ItemType,
 }

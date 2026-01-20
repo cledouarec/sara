@@ -4,6 +4,8 @@
 
 use std::path::PathBuf;
 
+use super::FieldName;
+
 /// Fields to update via CLI flags (non-interactive mode).
 ///
 /// Used for non-interactive editing where the user specifies which
@@ -65,8 +67,8 @@ impl EditSummary {
 /// A single field change in an edit operation.
 #[derive(Debug, Clone)]
 pub struct FieldChange {
-    /// Name of the field that was changed.
-    pub field: String,
+    /// The field that was changed.
+    pub field: FieldName,
     /// Previous value (for display in diff).
     pub old_value: String,
     /// New value (for display in diff).
@@ -76,12 +78,12 @@ pub struct FieldChange {
 impl FieldChange {
     /// Creates a new field change record.
     pub fn new(
-        field: impl Into<String>,
+        field: FieldName,
         old_value: impl Into<String>,
         new_value: impl Into<String>,
     ) -> Self {
         Self {
-            field: field.into(),
+            field,
             old_value: old_value.into(),
             new_value: new_value.into(),
         }
@@ -166,10 +168,10 @@ mod tests {
 
     #[test]
     fn test_field_change_is_changed() {
-        let changed = FieldChange::new("name", "Old", "New");
+        let changed = FieldChange::new(FieldName::Name, "Old", "New");
         assert!(changed.is_changed());
 
-        let unchanged = FieldChange::new("name", "Same", "Same");
+        let unchanged = FieldChange::new(FieldName::Name, "Same", "Same");
         assert!(!unchanged.is_changed());
     }
 
@@ -179,8 +181,8 @@ mod tests {
             item_id: "SREQ-001".to_string(),
             file_path: PathBuf::from("test.md"),
             changes: vec![
-                FieldChange::new("name", "Old", "New"),
-                FieldChange::new("description", "Same", "Same"),
+                FieldChange::new(FieldName::Name, "Old", "New"),
+                FieldChange::new(FieldName::Description, "Same", "Same"),
             ],
         };
         assert!(summary.has_changes());
@@ -192,7 +194,7 @@ mod tests {
         let summary = EditSummary {
             item_id: "SREQ-001".to_string(),
             file_path: PathBuf::from("test.md"),
-            changes: vec![FieldChange::new("name", "Same", "Same")],
+            changes: vec![FieldChange::new(FieldName::Name, "Same", "Same")],
         };
         assert!(!summary.has_changes());
         assert_eq!(summary.actual_changes().len(), 0);

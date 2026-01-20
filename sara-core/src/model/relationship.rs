@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
+use super::field::FieldName;
 use super::item::{ItemId, ItemType};
 
 /// Represents the type of relationship between items.
@@ -59,24 +60,24 @@ impl RelationshipType {
         matches!(self, Self::DependsOn | Self::IsRequiredBy)
     }
 
-    /// Returns the display name for this relationship type.
-    pub fn display_name(&self) -> &'static str {
+    /// Returns the corresponding FieldName for this relationship type.
+    pub fn field_name(&self) -> FieldName {
         match self {
-            Self::Refines => "refines",
-            Self::IsRefinedBy => "is refined by",
-            Self::Derives => "derives",
-            Self::DerivesFrom => "derives from",
-            Self::Satisfies => "satisfies",
-            Self::IsSatisfiedBy => "is satisfied by",
-            Self::DependsOn => "depends on",
-            Self::IsRequiredBy => "is required by",
+            Self::Refines => FieldName::Refines,
+            Self::IsRefinedBy => FieldName::IsRefinedBy,
+            Self::Derives => FieldName::Derives,
+            Self::DerivesFrom => FieldName::DerivesFrom,
+            Self::Satisfies => FieldName::Satisfies,
+            Self::IsSatisfiedBy => FieldName::IsSatisfiedBy,
+            Self::DependsOn => FieldName::DependsOn,
+            Self::IsRequiredBy => FieldName::IsRequiredBy,
         }
     }
 }
 
 impl std::fmt::Display for RelationshipType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.display_name())
+        write!(f, "{}", self.field_name().as_str())
     }
 }
 

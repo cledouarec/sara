@@ -5,31 +5,7 @@ use std::path::Path;
 
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::SourceLocation;
-
-/// Known fields in YAML frontmatter.
-/// These are the standard fields that are recognized by the parser.
-const KNOWN_FIELDS: &[&str] = &[
-    // Required fields
-    "id",
-    "type",
-    "name",
-    // Optional metadata
-    "description",
-    // Upstream references
-    "refines",
-    "derives_from",
-    "satisfies",
-    // Downstream references
-    "is_refined_by",
-    "derives",
-    "is_satisfied_by",
-    // Type-specific attributes
-    "specification",
-    "depends_on",
-    "platform",
-    "justified_by",
-];
+use crate::model::{FieldName, SourceLocation};
 
 /// Validates metadata completeness for all items.
 ///
@@ -81,7 +57,7 @@ pub fn check_custom_fields(
     let mut warnings = Vec::new();
 
     // Build set of all allowed fields
-    let mut allowed: HashSet<&str> = KNOWN_FIELDS.iter().copied().collect();
+    let mut allowed: HashSet<&str> = FieldName::all().iter().map(|f| f.as_str()).collect();
     for field in allowed_custom_fields {
         allowed.insert(field.as_str());
     }
@@ -111,8 +87,8 @@ pub fn check_custom_fields(
 }
 
 /// Returns the list of known frontmatter fields.
-pub fn known_fields() -> &'static [&'static str] {
-    KNOWN_FIELDS
+pub fn known_fields() -> Vec<&'static str> {
+    FieldName::all().iter().map(|f| f.as_str()).collect()
 }
 
 /// Validates that a specification field contains a proper statement.

@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::ItemType;
+use crate::model::{FieldName, ItemType};
 
 /// A row in the traceability matrix.
 #[derive(Debug, Clone, Serialize)]
@@ -84,9 +84,24 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        Self::add_targets(&item.upstream.refines, "refines", graph, targets);
-        Self::add_targets(&item.upstream.derives_from, "derives_from", graph, targets);
-        Self::add_targets(&item.upstream.satisfies, "satisfies", graph, targets);
+        Self::add_targets(
+            &item.upstream.refines,
+            FieldName::Refines.as_str(),
+            graph,
+            targets,
+        );
+        Self::add_targets(
+            &item.upstream.derives_from,
+            FieldName::DerivesFrom.as_str(),
+            graph,
+            targets,
+        );
+        Self::add_targets(
+            &item.upstream.satisfies,
+            FieldName::Satisfies.as_str(),
+            graph,
+            targets,
+        );
     }
 
     /// Collects downstream relationship targets.
@@ -97,14 +112,19 @@ impl TraceabilityMatrix {
     ) {
         Self::add_targets(
             &item.downstream.is_refined_by,
-            "is_refined_by",
+            FieldName::IsRefinedBy.as_str(),
             graph,
             targets,
         );
-        Self::add_targets(&item.downstream.derives, "derives", graph, targets);
+        Self::add_targets(
+            &item.downstream.derives,
+            FieldName::Derives.as_str(),
+            graph,
+            targets,
+        );
         Self::add_targets(
             &item.downstream.is_satisfied_by,
-            "is_satisfied_by",
+            FieldName::IsSatisfiedBy.as_str(),
             graph,
             targets,
         );
