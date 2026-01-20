@@ -50,7 +50,7 @@ mod tests {
     use std::path::PathBuf;
 
     fn create_item_at(id: &str, file: &str) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), PathBuf::from(file), 1);
+        let source = SourceLocation::new(PathBuf::from("/repo"), PathBuf::from(file));
         ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(ItemType::Solution)

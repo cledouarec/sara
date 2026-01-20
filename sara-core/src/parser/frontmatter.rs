@@ -9,8 +9,6 @@ use crate::error::ParseError;
 pub struct ExtractedFrontmatter {
     /// The raw YAML content between the `---` delimiters.
     pub yaml: String,
-    /// Line number where the frontmatter starts (1-indexed, at the opening `---`).
-    pub start_line: usize,
     /// Line number where the frontmatter ends (at the closing `---`).
     pub end_line: usize,
     /// The remaining Markdown content after the frontmatter.
@@ -57,7 +55,6 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
 
     let end_idx = end_idx.ok_or_else(|| ParseError::InvalidFrontmatter {
         file: file.to_path_buf(),
-        line: 1,
         reason: "Missing closing `---` delimiter".to_string(),
     })?;
 
@@ -75,7 +72,6 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
 
     Ok(ExtractedFrontmatter {
         yaml,
-        start_line: 1,
         end_line: end_idx + 1, // 1-indexed
         body,
     })
@@ -148,7 +144,6 @@ name: "Test"
         let result = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
         assert!(result.yaml.contains("id: \"SOL-001\""));
         assert!(result.yaml.contains("type: solution"));
-        assert_eq!(result.start_line, 1);
         assert_eq!(result.end_line, 5);
         assert_eq!(result.body.trim(), "# Body content");
     }

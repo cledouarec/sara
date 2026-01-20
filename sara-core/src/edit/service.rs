@@ -357,7 +357,7 @@ mod tests {
     use crate::model::{ItemBuilder, ItemId, SourceLocation};
 
     fn create_test_item(id: &str, item_type: ItemType, name: &str) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id), 1);
+        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
         let mut builder = ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(item_type)

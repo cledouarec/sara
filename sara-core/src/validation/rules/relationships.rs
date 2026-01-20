@@ -181,7 +181,7 @@ mod tests {
         upstream: Option<UpstreamRefs>,
         downstream: Option<DownstreamRefs>,
     ) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id), 1);
+        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
         let mut builder = ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(item_type)
