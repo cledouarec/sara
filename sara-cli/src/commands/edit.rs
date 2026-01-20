@@ -2,15 +2,18 @@
 //!
 //! Provides functionality for FR-054 through FR-066 (Edit Command).
 
+use std::error::Error;
 use std::io::{IsTerminal, stdin, stdout};
 use std::process::ExitCode;
 
+use clap::Args;
 use inquire::{Confirm, InquireError};
 
-use sara_core::{
-    EditError, EditService, EditSummary, EditedValues, FieldChange, GraphBuilder, ItemContext,
-    ItemType, KnowledgeGraph, TraceabilityLinks, parse_repositories,
-};
+use sara_core::edit::{EditOptions, EditService, EditedValues, ItemContext};
+use sara_core::error::EditError;
+use sara_core::graph::{GraphBuilder, KnowledgeGraph};
+use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};
+use sara_core::repository::parse_repositories;
 
 use super::CommandContext;
 use super::interactive::{
@@ -19,37 +22,44 @@ use super::interactive::{
 };
 use crate::output::{OutputConfig, print_error, print_success};
 
-/// CLI-specific edit options.
-#[derive(Debug)]
-pub struct CliEditOptions {
+/// Arguments for the edit command.
+#[derive(Args, Debug)]
+#[command(verbatim_doc_comment)]
+pub struct EditArgs {
+    /// The item identifier to edit
     pub item_id: String,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub refines: Option<Vec<String>>,
-    pub derives_from: Option<Vec<String>>,
-    pub satisfies: Option<Vec<String>>,
-    pub specification: Option<String>,
-    pub platform: Option<String>,
-}
 
-impl CliEditOptions {
-    /// Returns true if any modification flag was provided (non-interactive mode).
-    pub fn has_updates(&self) -> bool {
-        self.name.is_some()
-            || self.description.is_some()
-            || self.refines.is_some()
-            || self.derives_from.is_some()
-            || self.satisfies.is_some()
-            || self.specification.is_some()
-            || self.platform.is_some()
-    }
+    /// New item description
+    #[arg(short = 'd', long, help_heading = "Item Properties")]
+    pub description: Option<String>,
+
+    /// New item name
+    #[arg(long, help_heading = "Item Properties")]
+    pub name: Option<String>,
+
+    /// New upstream references (for requirements) - replaces existing
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub derives_from: Option<Vec<String>>,
+
+    /// New upstream references (for use_case, scenario) - replaces existing
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub refines: Option<Vec<String>>,
+
+    /// New upstream references (for architectures, designs) - replaces existing
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub satisfies: Option<Vec<String>>,
+
+    /// New target platform (for system_architecture)
+    #[arg(long, help_heading = "Type-Specific")]
+    pub platform: Option<String>,
+
+    /// New specification statement (for requirements)
+    #[arg(long, help_heading = "Type-Specific")]
+    pub specification: Option<String>,
 }
 
 /// Runs the edit command.
-pub fn run(
-    opts: CliEditOptions,
-    ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let service = EditService::new();
 
     // Build the knowledge graph
@@ -57,7 +67,7 @@ pub fn run(
     let graph = GraphBuilder::new().add_items(items).build()?;
 
     // Look up the item (FR-054)
-    let item = match service.lookup_item(&graph, &opts.item_id) {
+    let item = match service.lookup_item(&graph, &args.item_id) {
         Ok(item) => item,
         Err(e) => {
             print_error(&ctx.output, &format!("{}", e));
@@ -70,6 +80,16 @@ pub fn run(
 
     // Build item context
     let item_ctx = service.get_item_context(item);
+
+    // Build options from args
+    let opts = EditOptions::new(&args.item_id)
+        .maybe_name(args.name.clone())
+        .maybe_description(args.description.clone())
+        .maybe_refines(args.refines.clone())
+        .maybe_derives_from(args.derives_from.clone())
+        .maybe_satisfies(args.satisfies.clone())
+        .maybe_specification(args.specification.clone())
+        .maybe_platform(args.platform.clone());
 
     // Check if interactive or non-interactive mode
     if opts.has_updates() {
@@ -95,7 +115,7 @@ fn run_interactive_edit(
     graph: &KnowledgeGraph,
     item: &ItemContext,
     config: &OutputConfig,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     if let Err(e) = require_tty_for_edit() {
         print_error(config, &format!("{}", e));
         return Ok(ExitCode::from(1));
@@ -115,7 +135,7 @@ fn process_edit_changes(
     item: &ItemContext,
     new_values: &EditedValues,
     config: &OutputConfig,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     let changes = service.build_change_summary(item, new_values);
 
     display_change_summary(&changes);
@@ -135,7 +155,7 @@ fn confirm_and_apply_changes(
     new_values: &EditedValues,
     changes: Vec<FieldChange>,
     config: &OutputConfig,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     match prompt_edit_confirmation() {
         Ok(true) => apply_and_report_changes(service, item, new_values, changes, config),
         Ok(false) | Err(_) => {
@@ -152,7 +172,7 @@ fn apply_and_report_changes(
     new_values: &EditedValues,
     changes: Vec<FieldChange>,
     config: &OutputConfig,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     service.apply_changes(&item.id, item.item_type, new_values, &item.file_path)?;
 
     let changed_count = changes.iter().filter(|c| c.is_changed()).count();
@@ -178,7 +198,7 @@ fn apply_and_report_changes(
 fn handle_prompt_error(
     error: PromptError,
     config: &OutputConfig,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     match error {
         PromptError::Cancelled | PromptError::InquireError(InquireError::OperationInterrupted) => {
             print_cancelled();
@@ -260,13 +280,12 @@ fn prompt_edit_confirmation() -> Result<bool, PromptError> {
 /// Runs the non-interactive edit (FR-057, FR-058).
 fn run_non_interactive_edit(
     service: &EditService,
-    opts: &CliEditOptions,
+    opts: &EditOptions,
     item: &ItemContext,
     config: &OutputConfig,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     // Validate type-specific fields (FR-058)
-    let validation_opts = build_validation_options(opts);
-    if let Err(e) = service.validate_options(&validation_opts, item.item_type) {
+    if let Err(e) = service.validate_options(opts, item.item_type) {
         print_error(config, &format!("{}", e));
         return Ok(ExitCode::from(1));
     }
@@ -302,18 +321,4 @@ fn run_non_interactive_edit(
     service.apply_changes(&item.id, item.item_type, &new_values, &item.file_path)?;
     print_success(config, &format!("Updated {}", item.id));
     Ok(ExitCode::SUCCESS)
-}
-
-/// Builds core EditOptions for validation.
-fn build_validation_options(opts: &CliEditOptions) -> sara_core::CoreEditOptions {
-    let mut core_opts = sara_core::CoreEditOptions::new(&opts.item_id);
-
-    if let Some(ref spec) = opts.specification {
-        core_opts = core_opts.with_specification(spec);
-    }
-    if let Some(ref plat) = opts.platform {
-        core_opts = core_opts.with_platform(plat);
-    }
-
-    core_opts
 }

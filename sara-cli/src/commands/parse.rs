@@ -1,25 +1,31 @@
 //! Implementation of the parse command.
 
+use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::Instant;
 
+use clap::Args;
 use serde::Serialize;
 
-use sara_core::graph::{GraphBuilder, GraphStats};
+use sara_core::graph::{GraphBuilder, GraphStats, KnowledgeGraph};
+use sara_core::model::Item;
 use sara_core::repository::{GitReader, GitRef, parse_repositories};
-use sara_core::validation::rules::check_duplicate_items;
-use sara_core::validation::validate;
+use sara_core::validation::{rules::check_duplicate_items, validate};
 
 use super::CommandContext;
 use crate::output::{OutputConfig, print_error, print_success, print_warning};
 
-/// Options for the parse command.
-pub struct ParseOptions {
-    /// Git reference to read from (optional).
+/// Arguments for the parse command.
+#[derive(Args, Debug)]
+pub struct ParseArgs {
+    /// Read from specific Git commit/branch
+    #[arg(long, value_name = "GIT_REF", help_heading = "Input")]
     pub at: Option<String>,
-    /// Output file path (optional).
+
+    /// Output parsed graph to file (JSON format)
+    #[arg(short, long, help_heading = "Output")]
     pub output: Option<PathBuf>,
 }
 
@@ -58,15 +64,12 @@ struct RelationshipExport {
 }
 
 /// Runs the parse command.
-pub fn run(
-    opts: ParseOptions,
-    ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+pub fn run(args: &ParseArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let start = Instant::now();
     let output_config = &ctx.output;
 
     let repos = collect_repositories(ctx)?;
-    let items = scan_repositories(&repos, &opts)?;
+    let items = scan_repositories(&repos, args)?;
 
     if items.is_empty() {
         print_warning(output_config, "No items found in repositories");
@@ -83,14 +86,14 @@ pub fn run(
         parse_time_ms: start.elapsed().as_millis(),
     };
 
-    handle_output(&opts, &graph, &output, output_config)?;
+    handle_output(args, &graph, &output, output_config)?;
     warn_validation_errors(&graph, output_config);
 
     Ok(ExitCode::SUCCESS)
 }
 
 /// Collects repository paths, defaulting to current directory if none specified.
-fn collect_repositories(ctx: &CommandContext) -> Result<Vec<PathBuf>, Box<dyn std::error::Error>> {
+fn collect_repositories(ctx: &CommandContext) -> Result<Vec<PathBuf>, Box<dyn Error>> {
     if ctx.repositories.is_empty() {
         Ok(vec![std::env::current_dir()?])
     } else {
@@ -99,11 +102,8 @@ fn collect_repositories(ctx: &CommandContext) -> Result<Vec<PathBuf>, Box<dyn st
 }
 
 /// Scans repositories and parses items.
-fn scan_repositories(
-    repos: &[PathBuf],
-    opts: &ParseOptions,
-) -> Result<Vec<sara_core::model::Item>, Box<dyn std::error::Error>> {
-    if let Some(ref git_ref) = opts.at {
+fn scan_repositories(repos: &[PathBuf], args: &ParseArgs) -> Result<Vec<Item>, Box<dyn Error>> {
+    if let Some(ref git_ref) = args.at {
         parse_from_git(repos, git_ref)
     } else {
         Ok(parse_repositories(repos)?)
@@ -111,10 +111,7 @@ fn scan_repositories(
 }
 
 /// Checks for duplicate items and returns an exit code if duplicates are found.
-fn check_for_duplicates(
-    items: &[sara_core::model::Item],
-    output_config: &OutputConfig,
-) -> Option<ExitCode> {
+fn check_for_duplicates(items: &[Item], output_config: &OutputConfig) -> Option<ExitCode> {
     let duplicate_errors = check_duplicate_items(items);
     if duplicate_errors.is_empty() {
         return None;
@@ -127,20 +124,18 @@ fn check_for_duplicates(
 }
 
 /// Builds the knowledge graph.
-fn build_graph(
-    items: Vec<sara_core::model::Item>,
-) -> Result<sara_core::graph::KnowledgeGraph, Box<dyn std::error::Error>> {
+fn build_graph(items: Vec<Item>) -> Result<KnowledgeGraph, Box<dyn Error>> {
     Ok(GraphBuilder::new().add_items(items).build()?)
 }
 
 /// Handles output: either exports to JSON or prints stats.
 fn handle_output(
-    opts: &ParseOptions,
-    graph: &sara_core::graph::KnowledgeGraph,
+    args: &ParseArgs,
+    graph: &KnowledgeGraph,
     output: &ParseOutput,
     output_config: &OutputConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
-    if let Some(ref output_path) = opts.output {
+) -> Result<(), Box<dyn Error>> {
+    if let Some(ref output_path) = args.output {
         export_graph_to_json(graph, output_path, output_config)?;
     } else {
         print_output(output, output_config);
@@ -150,10 +145,10 @@ fn handle_output(
 
 /// Exports the graph to a JSON file.
 fn export_graph_to_json(
-    graph: &sara_core::graph::KnowledgeGraph,
+    graph: &KnowledgeGraph,
     output_path: &PathBuf,
     output_config: &OutputConfig,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn Error>> {
     let export = GraphExport {
         items: graph
             .items()
@@ -187,7 +182,7 @@ fn export_graph_to_json(
 }
 
 /// Warns about validation errors if any are found.
-fn warn_validation_errors(graph: &sara_core::graph::KnowledgeGraph, output_config: &OutputConfig) {
+fn warn_validation_errors(graph: &KnowledgeGraph, output_config: &OutputConfig) {
     let report = validate(graph);
     if report.error_count() > 0 {
         println!();
@@ -202,10 +197,7 @@ fn warn_validation_errors(graph: &sara_core::graph::KnowledgeGraph, output_confi
 }
 
 /// Parses items from a specific Git reference.
-fn parse_from_git(
-    repos: &[PathBuf],
-    git_ref_str: &str,
-) -> Result<Vec<sara_core::model::Item>, Box<dyn std::error::Error>> {
+fn parse_from_git(repos: &[PathBuf], git_ref_str: &str) -> Result<Vec<Item>, Box<dyn Error>> {
     let git_ref = GitRef::parse(git_ref_str);
     let mut all_items = Vec::new();
 

@@ -1,36 +1,57 @@
 //! Diff command implementation.
 
+use std::error::Error;
+use std::path::PathBuf;
 use std::process::ExitCode;
 
-use sara_core::graph::DiffStats;
-use sara_core::{DiffOptions, DiffResult, DiffService, GraphDiff};
+use clap::Args;
 
+use sara_core::diff::{DiffOptions, DiffResult, DiffService};
+use sara_core::graph::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
+
+use super::CommandContext;
 use crate::output::{
     Color, OutputConfig, Style, colorize, print_error, print_success, print_warning,
 };
 
-pub use super::{CommandContext, OutputFormat};
+/// Output format for diff command.
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub enum DiffFormat {
+    #[default]
+    Text,
+    Json,
+}
 
-/// CLI-specific diff options.
-#[derive(Debug)]
-pub struct CliDiffOptions {
+/// Arguments for the diff command.
+#[derive(Args, Debug)]
+pub struct DiffArgs {
+    /// First Git reference
     pub ref1: String,
+
+    /// Second Git reference
     pub ref2: String,
-    pub format: OutputFormat,
+
+    /// Output format
+    #[arg(long, default_value = "text", help_heading = "Output")]
+    pub format: DiffFormat,
+
+    /// Show summary statistics only
+    #[arg(long, help_heading = "Output")]
     pub stat: bool,
 }
 
 /// Runs the diff command.
 pub fn run(
-    opts: CliDiffOptions,
+    args: &DiffArgs,
+    repositories: Vec<PathBuf>,
     ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
+    let opts = DiffOptions::new(&args.ref1, &args.ref2)
+        .with_repositories(repositories)
+        .with_stat(args.stat);
     let service = DiffService::new();
 
-    let diff_opts =
-        DiffOptions::new(&opts.ref1, &opts.ref2).with_repositories(ctx.repositories.clone());
-
-    match service.diff(&diff_opts) {
+    match service.diff(&opts) {
         Ok(result) => {
             if !result.is_full_comparison {
                 print_warning(
@@ -39,9 +60,9 @@ pub fn run(
                 );
             }
 
-            match opts.format {
-                OutputFormat::Text => print_diff_text(&result, &opts, &ctx.output),
-                OutputFormat::Json => print_diff_json(&result.diff),
+            match args.format {
+                DiffFormat::Text => print_diff_text(&result, &opts, &ctx.output),
+                DiffFormat::Json => print_diff_json(&result.diff),
             }
 
             if result.is_empty() {
@@ -57,7 +78,7 @@ pub fn run(
     }
 }
 
-fn print_diff_text(result: &DiffResult, opts: &CliDiffOptions, config: &OutputConfig) {
+fn print_diff_text(result: &DiffResult, opts: &DiffOptions, config: &OutputConfig) {
     print_diff_header(result, config);
 
     if opts.stat {
@@ -102,7 +123,7 @@ fn print_diff_header(result: &DiffResult, config: &OutputConfig) {
 }
 
 fn print_item_section(
-    items: &[sara_core::graph::ItemDiff],
+    items: &[ItemDiff],
     title: &str,
     symbol: &str,
     color: Color,
@@ -121,7 +142,7 @@ fn print_item_section(
     println!();
 }
 
-fn print_modified_items(items: &[sara_core::graph::ItemModification], config: &OutputConfig) {
+fn print_modified_items(items: &[ItemModification], config: &OutputConfig) {
     if items.is_empty() {
         return;
     }
@@ -143,7 +164,7 @@ fn print_modified_items(items: &[sara_core::graph::ItemModification], config: &O
 }
 
 fn print_relationship_section(
-    relationships: &[sara_core::graph::RelationshipDiff],
+    relationships: &[RelationshipDiff],
     title: &str,
     symbol: &str,
     color: Color,
