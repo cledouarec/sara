@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.2](https://github.com/cledouarec/sara/compare/sara-cli-v0.3.1...sara-cli-v0.3.2) - 2026-01-20
+
+### Documentation
+
+- clean changelogs (by @cledouarec) - #23
+
+### Contributors
+
+* @cledouarec
+
 ## [0.3.1](https://github.com/cledouarec/sara/compare/sara-cli-v0.3.0...sara-cli-v0.3.1) - 2026-01-20
 
 ### Added
