@@ -38,9 +38,21 @@ impl EditOptions {
         self
     }
 
+    /// Sets the name if provided.
+    pub fn maybe_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
     /// Sets the description.
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// Sets the description if provided.
+    pub fn maybe_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
         self
     }
 
@@ -50,9 +62,21 @@ impl EditOptions {
         self
     }
 
+    /// Sets the refines references if provided.
+    pub fn maybe_refines(mut self, refines: Option<Vec<String>>) -> Self {
+        self.refines = refines;
+        self
+    }
+
     /// Sets the derives_from references.
     pub fn with_derives_from(mut self, derives_from: Vec<String>) -> Self {
         self.derives_from = Some(derives_from);
+        self
+    }
+
+    /// Sets the derives_from references if provided.
+    pub fn maybe_derives_from(mut self, derives_from: Option<Vec<String>>) -> Self {
+        self.derives_from = derives_from;
         self
     }
 
@@ -62,15 +86,33 @@ impl EditOptions {
         self
     }
 
+    /// Sets the satisfies references if provided.
+    pub fn maybe_satisfies(mut self, satisfies: Option<Vec<String>>) -> Self {
+        self.satisfies = satisfies;
+        self
+    }
+
     /// Sets the specification.
     pub fn with_specification(mut self, specification: impl Into<String>) -> Self {
         self.specification = Some(specification.into());
         self
     }
 
+    /// Sets the specification if provided.
+    pub fn maybe_specification(mut self, specification: Option<String>) -> Self {
+        self.specification = specification;
+        self
+    }
+
     /// Sets the platform.
     pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
         self.platform = Some(platform.into());
+        self
+    }
+
+    /// Sets the platform if provided.
+    pub fn maybe_platform(mut self, platform: Option<String>) -> Self {
+        self.platform = platform;
         self
     }
 

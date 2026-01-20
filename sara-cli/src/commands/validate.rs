@@ -1,34 +1,52 @@
 //! Implementation of the validate command.
 
+use std::error::Error;
 use std::fs;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
+use clap::Args;
+
 use sara_core::graph::GraphBuilder;
 use sara_core::repository::parse_repositories;
-use sara_core::validation::rules::check_duplicate_items;
-use sara_core::validation::{ValidationReport, ValidationReportBuilder, validate, validate_strict};
+use sara_core::validation::{
+    ValidationReport, ValidationReportBuilder, rules::check_duplicate_items, validate,
+    validate_strict,
+};
 
 use super::CommandContext;
 use crate::output::{OutputConfig, print_error, print_success, print_warning};
 
-pub use super::OutputFormat;
+/// Output format for validate command.
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub enum ValidateFormat {
+    #[default]
+    Text,
+    Json,
+}
 
-/// Options for the validate command.
-pub struct ValidateOptions {
-    /// Enable strict orphan checking.
-    pub strict: bool,
-    /// Output format.
-    pub format: OutputFormat,
-    /// Output file path (optional).
+/// Arguments for the validate command.
+#[derive(Args, Debug)]
+pub struct ValidateArgs {
+    /// Validate at specific Git commit/branch
+    #[arg(long, value_name = "GIT_REF", help_heading = "Input")]
+    pub at: Option<String>,
+
+    /// Output format
+    #[arg(long, default_value = "text", help_heading = "Output")]
+    pub format: ValidateFormat,
+
+    /// Write validation report to file
+    #[arg(short, long, help_heading = "Output")]
     pub output: Option<PathBuf>,
+
+    /// Treat orphan items as errors (default: warnings)
+    #[arg(long, help_heading = "Validation")]
+    pub strict: bool,
 }
 
 /// Runs the validate command.
-pub fn run(
-    opts: ValidateOptions,
-    ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+pub fn run(args: &ValidateArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let output_config = &ctx.output;
 
     // Parse repositories
@@ -49,30 +67,30 @@ pub fn run(
             .build();
 
         // Output and return error
-        match opts.format {
-            OutputFormat::Text => print_text_report(&report, output_config),
-            OutputFormat::Json => print_json_report(&report, opts.output.as_ref())?,
+        match args.format {
+            ValidateFormat::Text => print_text_report(&report, output_config),
+            ValidateFormat::Json => print_json_report(&report, args.output.as_ref())?,
         }
         return Ok(ExitCode::from(1));
     }
 
     // Build the graph
     let graph = GraphBuilder::new()
-        .with_strict_mode(opts.strict)
+        .with_strict_mode(args.strict)
         .add_items(items)
         .build()?;
 
     // Validate
-    let report = if opts.strict {
+    let report = if args.strict {
         validate_strict(&graph)
     } else {
         validate(&graph)
     };
 
     // Output results
-    match opts.format {
-        OutputFormat::Text => print_text_report(&report, output_config),
-        OutputFormat::Json => print_json_report(&report, opts.output.as_ref())?,
+    match args.format {
+        ValidateFormat::Text => print_text_report(&report, output_config),
+        ValidateFormat::Json => print_json_report(&report, args.output.as_ref())?,
     }
 
     // Return appropriate exit code
@@ -147,7 +165,7 @@ fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
 fn print_json_report(
     report: &ValidationReport,
     output_path: Option<&PathBuf>,
-) -> Result<(), Box<dyn std::error::Error>> {
+) -> Result<(), Box<dyn Error>> {
     let json = serde_json::to_string_pretty(&report)?;
 
     if let Some(path) = output_path {

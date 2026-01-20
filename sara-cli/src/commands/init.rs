@@ -1,12 +1,67 @@
 //! Init command implementation.
 
+use std::error::Error;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use sara_core::{InitError, InitOptions, InitResult, InitService, ItemType};
+use clap::Args;
+
+use sara_core::init::{InitError, InitOptions, InitResult, InitService, parse_item_type};
 
 use super::CommandContext;
+use super::interactive::{
+    InteractiveSession, PrefilledFields, PromptError, handle_interactive_result,
+    run_interactive_session,
+};
 use crate::output::{OutputConfig, print_error, print_success, print_warning};
+
+/// Arguments for the init command.
+#[derive(Args, Debug)]
+#[command(verbatim_doc_comment)]
+pub struct InitArgs {
+    /// Markdown file to initialize (prompted if not provided in interactive mode)
+    pub file: Option<PathBuf>,
+
+    /// Item description
+    #[arg(short = 'd', long, help_heading = "Item Properties")]
+    pub description: Option<String>,
+
+    /// Item identifier (auto-generated if not provided)
+    #[arg(long, help_heading = "Item Properties")]
+    pub id: Option<String>,
+
+    /// Item name (extracted from title if not provided)
+    #[arg(long, help_heading = "Item Properties")]
+    pub name: Option<String>,
+
+    /// Item type (omit for interactive mode)
+    #[arg(short = 't', long = "type", help_heading = "Item Properties")]
+    pub item_type: Option<String>,
+
+    /// Upstream references (for requirements)
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub derives_from: Vec<String>,
+
+    /// Upstream references (for use_case, scenario)
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub refines: Vec<String>,
+
+    /// Upstream references (for architectures, designs)
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub satisfies: Vec<String>,
+
+    /// Target platform (for system_architecture)
+    #[arg(long, help_heading = "Type-Specific")]
+    pub platform: Option<String>,
+
+    /// Specification statement (for requirements)
+    #[arg(long, help_heading = "Type-Specific")]
+    pub specification: Option<String>,
+
+    /// Overwrite existing frontmatter
+    #[arg(long, help_heading = "Global Options")]
+    pub force: bool,
+}
 
 /// Exit code for invalid option for item type.
 const EXIT_INVALID_OPTION: u8 = 3;
@@ -14,63 +69,90 @@ const EXIT_INVALID_OPTION: u8 = 3;
 /// Exit code for frontmatter already exists.
 const EXIT_FRONTMATTER_EXISTS: u8 = 2;
 
-/// CLI-specific init options that will be converted to core InitOptions.
-#[derive(Debug)]
-pub struct CliInitOptions {
-    pub file: PathBuf,
-    pub item_type: ItemType,
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub refines: Vec<String>,
-    pub derives_from: Vec<String>,
-    pub satisfies: Vec<String>,
-    pub specification: Option<String>,
-    pub platform: Option<String>,
-    pub force: bool,
-}
-
-impl From<CliInitOptions> for InitOptions {
-    fn from(cli: CliInitOptions) -> Self {
-        let mut opts = InitOptions::new(cli.file, cli.item_type);
-
-        if let Some(id) = cli.id {
-            opts = opts.with_id(id);
-        }
-        if let Some(name) = cli.name {
-            opts = opts.with_name(name);
-        }
-        if let Some(desc) = cli.description {
-            opts = opts.with_description(desc);
-        }
-        if !cli.refines.is_empty() {
-            opts = opts.with_refines(cli.refines);
-        }
-        if !cli.derives_from.is_empty() {
-            opts = opts.with_derives_from(cli.derives_from);
-        }
-        if !cli.satisfies.is_empty() {
-            opts = opts.with_satisfies(cli.satisfies);
-        }
-        if let Some(spec) = cli.specification {
-            opts = opts.with_specification(spec);
-        }
-        if let Some(platform) = cli.platform {
-            opts = opts.with_platform(platform);
-        }
-        opts = opts.with_force(cli.force);
-
-        opts
+/// Runs the init command.
+pub fn run(args: &InitArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+    match &args.item_type {
+        None => run_interactive(args, ctx),
+        Some(item_type) => run_non_interactive(args, item_type, ctx),
     }
 }
 
-/// Runs the init command.
-pub fn run(
-    cli_opts: CliInitOptions,
+fn run_interactive(args: &InitArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+    let prefilled = PrefilledFields {
+        file: args.file.clone(),
+        item_type: None,
+        id: args.id.clone(),
+        name: args.name.clone(),
+        description: args.description.clone(),
+        refines: args.refines.clone(),
+        derives_from: args.derives_from.clone(),
+        satisfies: args.satisfies.clone(),
+        specification: args.specification.clone(),
+        platform: args.platform.clone(),
+    };
+
+    let mut session = InteractiveSession {
+        graph: None,
+        prefilled,
+        repositories: &ctx.repositories,
+        output: &ctx.output,
+    };
+
+    let result = run_interactive_session(&mut session);
+    match handle_interactive_result(result, &ctx.output) {
+        Ok(Some(input)) => {
+            let opts = InitOptions::new(input.file, input.item_type)
+                .with_id(input.id)
+                .with_name(input.name)
+                .maybe_description(input.description)
+                .with_refines(input.traceability.refines)
+                .with_derives_from(input.traceability.derives_from)
+                .with_satisfies(input.traceability.satisfies)
+                .maybe_specification(input.type_specific.specification)
+                .maybe_platform(input.type_specific.platform)
+                .with_force(args.force);
+            run_with_options(opts, ctx)
+        }
+        Ok(None) => Ok(ExitCode::from(130)),
+        Err(PromptError::NonInteractiveTerminal) => Ok(ExitCode::from(1)),
+        Err(PromptError::MissingParent(_)) => Ok(ExitCode::from(1)),
+        Err(_) => Ok(ExitCode::from(1)),
+    }
+}
+
+fn run_non_interactive(
+    args: &InitArgs,
+    item_type_str: &str,
     ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
+    let file = args.file.clone().ok_or(
+        "File path is required in non-interactive mode. Usage: sara init <FILE> --type <TYPE>",
+    )?;
+
+    let parsed_type = parse_item_type(item_type_str).ok_or_else(|| {
+        format!(
+            "Invalid item type: {}. Valid types: solution, use_case, scenario, \
+             system_requirement, system_architecture, hardware_requirement, \
+             software_requirement, hardware_detailed_design, software_detailed_design",
+            item_type_str
+        )
+    })?;
+
+    let opts = InitOptions::new(file, parsed_type)
+        .maybe_id(args.id.clone())
+        .maybe_name(args.name.clone())
+        .maybe_description(args.description.clone())
+        .with_refines(args.refines.clone())
+        .with_derives_from(args.derives_from.clone())
+        .with_satisfies(args.satisfies.clone())
+        .maybe_specification(args.specification.clone())
+        .maybe_platform(args.platform.clone())
+        .with_force(args.force);
+    run_with_options(opts, ctx)
+}
+
+fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let config = &ctx.output;
-    let opts: InitOptions = cli_opts.into();
 
     let service = InitService::new();
 
@@ -146,8 +228,8 @@ fn print_item_info(_config: &OutputConfig, result: &InitResult) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
-    use sara_core::parse_item_type;
+    use sara_core::init::parse_item_type;
+    use sara_core::model::ItemType;
 
     #[test]
     fn test_parse_item_type() {
@@ -156,27 +238,5 @@ mod tests {
         assert_eq!(parse_item_type("use_case"), Some(ItemType::UseCase));
         assert_eq!(parse_item_type("UC"), Some(ItemType::UseCase));
         assert_eq!(parse_item_type("invalid"), None);
-    }
-
-    #[test]
-    fn test_cli_options_to_init_options() {
-        let cli_opts = CliInitOptions {
-            file: PathBuf::from("test.md"),
-            item_type: ItemType::Solution,
-            id: Some("SOL-001".to_string()),
-            name: Some("Test".to_string()),
-            description: None,
-            refines: vec![],
-            derives_from: vec![],
-            satisfies: vec![],
-            specification: None,
-            platform: None,
-            force: false,
-        };
-
-        let opts: InitOptions = cli_opts.into();
-        assert_eq!(opts.file, PathBuf::from("test.md"));
-        assert_eq!(opts.item_type, ItemType::Solution);
-        assert_eq!(opts.id, Some("SOL-001".to_string()));
     }
 }

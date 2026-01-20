@@ -11,6 +11,8 @@ pub struct DiffOptions {
     pub ref2: String,
     /// Repository paths to compare.
     pub repositories: Vec<PathBuf>,
+    /// Show summary statistics only.
+    pub stat: bool,
 }
 
 impl DiffOptions {
@@ -20,6 +22,7 @@ impl DiffOptions {
             ref1: ref1.into(),
             ref2: ref2.into(),
             repositories: Vec::new(),
+            stat: false,
         }
     }
 
@@ -32,6 +35,12 @@ impl DiffOptions {
     /// Adds a repository path.
     pub fn add_repository(mut self, path: PathBuf) -> Self {
         self.repositories.push(path);
+        self
+    }
+
+    /// Sets whether to show only summary statistics.
+    pub fn with_stat(mut self, stat: bool) -> Self {
+        self.stat = stat;
         self
     }
 }
