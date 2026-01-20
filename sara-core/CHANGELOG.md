@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Contributors
 
 * @cledouarec
+
 ## [0.3.0](https://github.com/cledouarec/sara/compare/sara-core-v0.2.0...sara-core-v0.3.0) - 2026-01-20
 
 ### Changed
@@ -26,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - remove unused line tracking from SourceLocation
 - consolidate field names into FieldName enum
-
 
 ## [0.1.2](https://github.com/cledouarec/sara/compare/sara-core-v0.1.1...sara-core-v0.1.2) - 2026-01-16
 
