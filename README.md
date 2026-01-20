@@ -13,6 +13,31 @@
 
 SARA is a command-line tool that manages Architecture documents and Requirements as an interconnected knowledge graph, providing a **single source of truth** for all teams and contributors in your organization.
 
+<p align="center">
+  <img src="assets/generated/demo.gif" alt="SARA Demo" width="1024">
+</p>
+
+## Table of Contents
+
+<details>
+<summary>Expand contents</summary>
+
+- [Why SARA?](#why-sara)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Document Types](#document-types)
+- [Traceability Hierarchy](#traceability-hierarchy)
+- [Relationships](#relationships-the-heart-of-sara)
+- [Configuration](#configuration)
+- [Output Formats](#output-formats)
+- [Environment Variables](#environment-variables)
+- [Contributing](#contributing)
+- [License](#license)
+
+</details>
+
 ## Why SARA?
 
 ### Alignment Across Teams
@@ -65,70 +90,9 @@ sara --version
 
 ## Quick Start
 
-### 1. Create a Document
-
-Create a Markdown file with your content:
-
-```markdown
-# Customer Portal Solution
-
-This solution provides a self-service portal for customers.
-```
-
-### 2. Initialize Metadata
-
-Use `sara init` to add YAML frontmatter interactively:
-
-```bash
-sara init docs/customer-portal.md
-```
-
-This will prompt you for the document type, ID, name, and relationships, generating:
-
-```markdown
----
-id: "SOL-001"
-type: solution
-name: "Customer Portal"
-description: "Web-based customer self-service portal"
----
-
-# Customer Portal Solution
-
-This solution provides a self-service portal for customers.
-```
-
-### 3. Create Configuration (Optional)
-
-Create a `sara.toml` file:
-
-```toml
-[repositories]
-paths = ["./docs"]
-
-[validation]
-strict_orphans = false
-
-[output]
-colors = true
-emojis = true
-```
-
-### 4. Parse and Validate
-
-```bash
-# Parse all documents
-sara parse
-
-# Validate the knowledge graph
-sara validate
-
-# Query a specific item
-sara query SOL-001 --downstream
-
-# Generate a coverage report
-sara report coverage
-```
+<p align="center">
+  <img src="assets/generated/demo-init.gif" alt="SARA Demo" width="1024">
+</p>
 
 ## Commands
 
