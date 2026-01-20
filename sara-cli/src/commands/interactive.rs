@@ -213,13 +213,18 @@ pub fn prompt_description(
 }
 
 /// Prompts for identifier with suggested default (FR-044).
-fn prompt_identifier(prefilled: Option<&String>, suggested: &str) -> Result<String, PromptError> {
+fn prompt_identifier(
+    item_type: ItemType,
+    graph: Option<&KnowledgeGraph>,
+    prefilled: Option<&String>,
+) -> Result<String, PromptError> {
     if let Some(id) = prefilled {
         return Ok(id.clone());
     }
 
+    let suggested = suggest_next_id(item_type, graph);
     let id = Text::new("Identifier:")
-        .with_default(suggested)
+        .with_default(&suggested)
         .with_validator(IdValidator)
         .with_help_message("Unique identifier (suggested default shown)")
         .prompt()?;
@@ -604,7 +609,11 @@ fn collect_item_input(
     item_type: ItemType,
 ) -> Result<InteractiveInput, PromptError> {
     let name = prompt_name(session.prefilled.name.as_ref(), None)?;
-    let id = prompt_item_id(session, item_type)?;
+    let id = prompt_identifier(
+        item_type,
+        session.graph.as_ref(),
+        session.prefilled.id.as_ref(),
+    )?;
     let description = prompt_description(session.prefilled.description.as_ref(), None)?;
     let traceability =
         prompt_traceability(item_type, session.graph.as_ref(), &session.prefilled, None)?;
@@ -620,15 +629,6 @@ fn collect_item_input(
         traceability,
         type_specific,
     })
-}
-
-/// Prompts for the item identifier with a suggested default.
-fn prompt_item_id(
-    session: &InteractiveSession<'_>,
-    item_type: ItemType,
-) -> Result<String, PromptError> {
-    let suggested_id = suggest_next_id(item_type, session.graph.as_ref());
-    prompt_identifier(session.prefilled.id.as_ref(), &suggested_id)
 }
 
 /// Collects type-specific fields (specification, platform).
