@@ -10,9 +10,6 @@ use sara_core::validation::rules::check_duplicate_items;
 use sara_core::validation::{ValidationReport, ValidationReportBuilder, validate, validate_strict};
 
 use super::CommandContext;
-use crate::output::progress::{
-    create_graph_building_spinner, create_spinner, finish_and_clear, finish_with_success,
-};
 use crate::output::{OutputConfig, print_error, print_success, print_warning};
 
 pub use super::OutputFormat;
@@ -34,10 +31,8 @@ pub fn run(
 ) -> Result<ExitCode, Box<dyn std::error::Error>> {
     let output_config = &ctx.output;
 
-    // Parse repositories with progress indicator
-    let spinner = create_spinner("Scanning repositories...");
+    // Parse repositories
     let items = parse_repositories(&ctx.repositories)?;
-    finish_and_clear(&spinner);
 
     if items.is_empty() {
         print_warning(output_config, "No items found in repositories");
@@ -61,22 +56,18 @@ pub fn run(
         return Ok(ExitCode::from(1));
     }
 
-    // Build the graph with progress indicator
-    let graph_spinner = create_graph_building_spinner();
+    // Build the graph
     let graph = GraphBuilder::new()
         .with_strict_mode(opts.strict)
         .add_items(items)
         .build()?;
-    finish_with_success(&graph_spinner, "Knowledge graph built");
 
-    // Validate with progress indicator
-    let validation_spinner = create_spinner("Running validation rules...");
+    // Validate
     let report = if opts.strict {
         validate_strict(&graph)
     } else {
         validate(&graph)
     };
-    finish_and_clear(&validation_spinner);
 
     // Output results
     match opts.format {

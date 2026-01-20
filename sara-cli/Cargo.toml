@@ -22,7 +22,6 @@ tracing.workspace = true
 tracing-subscriber.workspace = true
 serde.workspace = true
 serde_json.workspace = true
-indicatif.workspace = true
 inquire.workspace = true
 thiserror.workspace = true
 strsim.workspace = true

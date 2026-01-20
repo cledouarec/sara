@@ -1,7 +1,6 @@
 //! Output formatting modules.
 
 mod formatter;
-pub mod progress;
 
 pub use formatter::{
     Color, EMOJI_ERROR, EMOJI_ITEM, EMOJI_STATS, EMOJI_WARNING, OutputConfig, Style, colorize,
