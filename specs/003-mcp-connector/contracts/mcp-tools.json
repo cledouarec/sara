@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SARA MCP Tools",
+  "description": "MCP tool definitions for SARA requirements knowledge graph",
+  "tools": [
+    {
+      "name": "sara_query",
+      "description": "Query an item from the SARA knowledge graph by ID. Returns item metadata, content, and traceability information. Supports upstream/downstream traversal for impact analysis.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The unique identifier of the item to query (e.g., 'SOL-001', 'SYSREQ-042')"
+          },
+          "direction": {
+            "type": "string",
+            "enum": ["upstream", "downstream", "both", "none"],
+            "default": "none",
+            "description": "Traceability direction to traverse. 'upstream' shows parents (toward Solution), 'downstream' shows children (toward Detailed Design)"
+          },
+          "depth": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 10,
+            "default": 1,
+            "description": "Maximum traversal depth for traceability queries"
+          }
+        },
+        "required": ["item_id"]
+      }
+    },
+    {
+      "name": "sara_validate",
+      "description": "Validate the SARA knowledge graph for integrity issues. Detects broken references, orphaned items, circular dependencies, duplicate identifiers, and invalid relationships.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "strict": {
+            "type": "boolean",
+            "default": false,
+            "description": "If true, treats orphaned items as errors instead of warnings"
+          }
+        }
+      }
+    },
+    {
+      "name": "sara_coverage_report",
+      "description": "Generate a coverage report showing which items have complete traceability chains from Solution to Detailed Design.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "include_uncovered": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include list of uncovered item IDs in the response"
+          }
+        }
+      }
+    },
+    {
+      "name": "sara_matrix_report",
+      "description": "Generate a traceability matrix showing relationships between items at different levels of the requirements hierarchy.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from_type": {
+            "type": "string",
+            "enum": ["solution", "use_case", "scenario", "system_requirement", "system_architecture", "hardware_requirement", "software_requirement", "hardware_detailed_design", "software_detailed_design"],
+            "description": "Source item type for the matrix rows"
+          },
+          "to_type": {
+            "type": "string",
+            "enum": ["solution", "use_case", "scenario", "system_requirement", "system_architecture", "hardware_requirement", "software_requirement", "hardware_detailed_design", "software_detailed_design"],
+            "description": "Target item type for the matrix columns"
+          }
+        }
+      }
+    },
+    {
+      "name": "sara_init",
+      "description": "Initialize a new requirement document with YAML frontmatter. Creates a Markdown file with proper structure for the specified item type.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "file_path": {
+            "type": "string",
+            "description": "Path where the new document should be created (relative to repository root)"
+          },
+          "item_type": {
+            "type": "string",
+            "enum": ["solution", "use_case", "scenario", "system_requirement", "system_architecture", "hardware_requirement", "software_requirement", "hardware_detailed_design", "software_detailed_design"],
+            "description": "Type of requirement document to create"
+          },
+          "item_id": {
+            "type": "string",
+            "description": "Unique identifier for the new item (e.g., 'SOL-002'). If not provided, will be auto-generated."
+          },
+          "name": {
+            "type": "string",
+            "description": "Human-readable name for the item"
+          },
+          "derives_from": {
+            "type": "array",
+            "items": { "type": "string" },
+            "description": "List of upstream item IDs this document derives from or refines"
+          }
+        },
+        "required": ["file_path", "item_type", "name"]
+      }
+    },
+    {
+      "name": "sara_edit",
+      "description": "Edit the metadata of an existing requirement document. Updates YAML frontmatter while preserving the document body.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "item_id": {
+            "type": "string",
+            "description": "The ID of the item to edit"
+          },
+          "updates": {
+            "type": "object",
+            "description": "Fields to update in the YAML frontmatter",
+            "properties": {
+              "name": { "type": "string" },
+              "description": { "type": "string" },
+              "derives_from": { "type": "array", "items": { "type": "string" } },
+              "refines": { "type": "array", "items": { "type": "string" } },
+              "satisfies": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "required": ["item_id", "updates"]
+      }
+    },
+    {
+      "name": "sara_diff",
+      "description": "Compare the knowledge graph between two Git references. Shows added, removed, and modified items.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "from_ref": {
+            "type": "string",
+            "description": "Git reference for the base comparison (commit SHA, branch, or tag)"
+          },
+          "to_ref": {
+            "type": "string",
+            "default": "HEAD",
+            "description": "Git reference for the target comparison (defaults to HEAD)"
+          }
+        },
+        "required": ["from_ref"]
+      }
+    },
+    {
+      "name": "sara_parse",
+      "description": "Parse all documents and rebuild the knowledge graph. Use this to refresh the graph after documents have been modified outside of SARA tools.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "verbose": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include detailed parsing information for each document"
+          }
+        }
+      }
+    },
+    {
+      "name": "sara_list_items",
+      "description": "List all items in the knowledge graph with optional filtering by type.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {
+          "item_type": {
+            "type": "string",
+            "enum": ["solution", "use_case", "scenario", "system_requirement", "system_architecture", "hardware_requirement", "software_requirement", "hardware_detailed_design", "software_detailed_design"],
+            "description": "Filter items by type. If not specified, returns all items."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Maximum number of items to return"
+          }
+        }
+      }
+    },
+    {
+      "name": "sara_stats",
+      "description": "Get statistics about the knowledge graph including item counts by type, relationship counts, and coverage metrics.",
+      "inputSchema": {
+        "type": "object",
+        "properties": {}
+      }
+    }
+  ]
+}

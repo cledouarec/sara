@@ -1,0 +1,119 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "SARA MCP Resources",
+  "description": "MCP resource definitions for browsing the SARA knowledge graph",
+  "resources": [
+    {
+      "uri": "sara://items",
+      "name": "All Items",
+      "description": "List of all items in the SARA knowledge graph",
+      "mimeType": "application/json"
+    },
+    {
+      "uriTemplate": "sara://items/{item_id}",
+      "name": "Item by ID",
+      "description": "Get a specific item from the knowledge graph by its unique identifier",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "sara://stats",
+      "name": "Graph Statistics",
+      "description": "Statistics about the knowledge graph including item counts and coverage",
+      "mimeType": "application/json"
+    },
+    {
+      "uriTemplate": "sara://items/{item_id}/upstream",
+      "name": "Item Upstream Traceability",
+      "description": "Get all items upstream (toward Solution) from the specified item",
+      "mimeType": "application/json"
+    },
+    {
+      "uriTemplate": "sara://items/{item_id}/downstream",
+      "name": "Item Downstream Traceability",
+      "description": "Get all items downstream (toward Detailed Design) from the specified item",
+      "mimeType": "application/json"
+    },
+    {
+      "uriTemplate": "sara://types/{item_type}",
+      "name": "Items by Type",
+      "description": "List all items of a specific type (e.g., solution, use_case, scenario)",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "sara://validation",
+      "name": "Validation Results",
+      "description": "Current validation status of the knowledge graph (cached from last validation)",
+      "mimeType": "application/json"
+    },
+    {
+      "uri": "sara://config",
+      "name": "Configuration",
+      "description": "Current SARA configuration loaded from sara.toml",
+      "mimeType": "application/json"
+    }
+  ],
+  "resourceSchemas": {
+    "item": {
+      "type": "object",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique item identifier"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["solution", "use_case", "scenario", "system_requirement", "system_architecture", "hardware_requirement", "software_requirement", "hardware_detailed_design", "software_detailed_design"]
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable name"
+        },
+        "description": {
+          "type": "string",
+          "description": "Optional description"
+        },
+        "source": {
+          "type": "object",
+          "properties": {
+            "path": { "type": "string" },
+            "line": { "type": "integer" }
+          }
+        },
+        "traceability": {
+          "type": "object",
+          "properties": {
+            "refines": { "type": "array", "items": { "type": "string" } },
+            "is_refined_by": { "type": "array", "items": { "type": "string" } },
+            "derives_from": { "type": "array", "items": { "type": "string" } },
+            "derives": { "type": "array", "items": { "type": "string" } },
+            "satisfies": { "type": "array", "items": { "type": "string" } },
+            "is_satisfied_by": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+      "required": ["id", "type", "name", "source"]
+    },
+    "stats": {
+      "type": "object",
+      "properties": {
+        "total_items": { "type": "integer" },
+        "items_by_type": {
+          "type": "object",
+          "additionalProperties": { "type": "integer" }
+        },
+        "total_relationships": { "type": "integer" },
+        "coverage_percentage": { "type": "number" }
+      }
+    },
+    "itemList": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": { "$ref": "#/resourceSchemas/item" }
+        },
+        "total": { "type": "integer" }
+      }
+    }
+  }
+}
