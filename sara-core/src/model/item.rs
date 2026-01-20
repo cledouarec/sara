@@ -618,7 +618,6 @@ mod tests {
         let source = SourceLocation {
             repository: PathBuf::from("/repo"),
             file_path: PathBuf::from("docs/SOL-001.md"),
-            line: 1,
             git_ref: None,
         };
 

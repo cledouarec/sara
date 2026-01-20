@@ -145,12 +145,11 @@ pub fn parse_markdown_file(
     // Validate item ID format
     let item_id = ItemId::new(&frontmatter.id).map_err(|e| ParseError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
-        line: extracted.start_line,
         reason: format!("Invalid item ID: {}", e),
     })?;
 
     // Create source location
-    let source = SourceLocation::new(repository, file_path, extracted.start_line);
+    let source = SourceLocation::new(repository, file_path);
 
     // Build the item
     let mut builder = ItemBuilder::new()
@@ -168,7 +167,6 @@ pub fn parse_markdown_file(
 
     builder.build().map_err(|e| ParseError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
-        line: extracted.start_line,
         reason: e.to_string(),
     })
 }

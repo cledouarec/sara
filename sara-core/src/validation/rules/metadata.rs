@@ -43,7 +43,6 @@ pub fn check_metadata(
 /// # Arguments
 /// * `yaml_content` - The raw YAML frontmatter content
 /// * `file_path` - Path to the file for error reporting
-/// * `line` - Line number where frontmatter starts
 /// * `allowed_custom_fields` - List of additional allowed field names
 ///
 /// # Returns
@@ -51,7 +50,6 @@ pub fn check_metadata(
 pub fn check_custom_fields(
     yaml_content: &str,
     file_path: &Path,
-    line: usize,
     allowed_custom_fields: &[String],
 ) -> Vec<ValidationError> {
     let mut warnings = Vec::new();
@@ -76,7 +74,6 @@ pub fn check_custom_fields(
                     location: Some(SourceLocation::new(
                         file_path.parent().unwrap_or(Path::new(".")),
                         file_path,
-                        line,
                     )),
                 });
             }
@@ -125,7 +122,7 @@ mod tests {
         item_type: ItemType,
         spec: Option<&str>,
     ) -> crate::model::Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id), 1);
+        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
         let mut builder = ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(item_type)
@@ -141,7 +138,7 @@ mod tests {
 
         builder.build().unwrap_or_else(|_| {
             // If build fails due to missing spec, create with empty spec for testing
-            let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id), 1);
+            let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
             ItemBuilder::new()
                 .id(ItemId::new_unchecked(id))
                 .item_type(item_type)
@@ -156,7 +153,7 @@ mod tests {
     #[test]
     fn test_valid_metadata() {
         let mut graph = KnowledgeGraph::new(false);
-        let source = SourceLocation::new(PathBuf::from("/repo"), "req.md", 1);
+        let source = SourceLocation::new(PathBuf::from("/repo"), "req.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-001"))
             .item_type(ItemType::SystemRequirement)
@@ -187,7 +184,7 @@ type: solution
 name: "Test Solution"
 description: "A description"
 "#;
-        let warnings = check_custom_fields(yaml, Path::new("test.md"), 1, &[]);
+        let warnings = check_custom_fields(yaml, Path::new("test.md"), &[]);
         assert!(
             warnings.is_empty(),
             "Known fields should not generate warnings"
@@ -203,7 +200,7 @@ name: "Test Solution"
 custom_field: "some value"
 another_custom: 123
 "#;
-        let warnings = check_custom_fields(yaml, Path::new("test.md"), 1, &[]);
+        let warnings = check_custom_fields(yaml, Path::new("test.md"), &[]);
         assert_eq!(warnings.len(), 2, "Should detect 2 unrecognized fields");
 
         // Check that the warnings are for the right fields
@@ -230,7 +227,7 @@ name: "Test Solution"
 custom_field: "some value"
 "#;
         let allowed = vec!["custom_field".to_string()];
-        let warnings = check_custom_fields(yaml, Path::new("test.md"), 1, &allowed);
+        let warnings = check_custom_fields(yaml, Path::new("test.md"), &allowed);
         assert!(
             warnings.is_empty(),
             "Allowed custom fields should not generate warnings"
