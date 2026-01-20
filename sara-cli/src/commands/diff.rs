@@ -136,8 +136,9 @@ fn print_item_section(
     println!("{}", colorize(config, title, color, Style::Bold));
     for item in items {
         let sym = colorize(config, symbol, color, Style::None);
-        let id = colorize(config, &item.id, color, Style::None);
-        println!("  {} {} ({})", sym, id, item.item_type);
+        let id = colorize(config, &item.id, Color::Cyan, Style::None);
+        let item_type = colorize(config, &item.item_type, Color::None, Style::Dimmed);
+        println!("  {} {} ({})", sym, id, item_type);
     }
     println!();
 }
@@ -153,8 +154,9 @@ fn print_modified_items(items: &[ItemModification], config: &OutputConfig) {
     );
     for item in items {
         let tilde = colorize(config, "~", Color::Yellow, Style::None);
-        let id = colorize(config, &item.id, Color::Yellow, Style::None);
-        println!("  {} {} ({})", tilde, id, item.item_type);
+        let id = colorize(config, &item.id, Color::Cyan, Style::None);
+        let item_type = colorize(config, &item.item_type, Color::None, Style::Dimmed);
+        println!("  {} {} ({})", tilde, id, item_type);
         for change in &item.changes {
             let old = colorize(config, &change.old_value, Color::None, Style::Dimmed);
             println!("    {}: {} → {}", change.field, old, change.new_value);
@@ -176,24 +178,52 @@ fn print_relationship_section(
 
     println!("{}", colorize(config, title, color, Style::Bold));
     for rel in relationships {
-        println!(
-            "  {} {} {} {}",
-            symbol, rel.from_id, rel.relationship_type, rel.to_id
-        );
+        let sym = colorize(config, symbol, color, Style::None);
+        let from = colorize(config, &rel.from_id, Color::Cyan, Style::None);
+        let rel_type = colorize(config, &rel.relationship_type, Color::None, Style::Dimmed);
+        let to = colorize(config, &rel.to_id, Color::Cyan, Style::None);
+        println!("  {} {} {} {}", sym, from, rel_type, to);
     }
     println!();
 }
 
-fn print_diff_stats(stats: &DiffStats, _config: &OutputConfig) {
+fn print_diff_stats(stats: &DiffStats, config: &OutputConfig) {
     println!("Summary:");
-    println!(
-        "  Items:         +{} -{} ~{}",
-        stats.items_added, stats.items_removed, stats.items_modified
+    let items_added = colorize(
+        config,
+        &format!("+{}", stats.items_added),
+        Color::Green,
+        Style::None,
+    );
+    let items_removed = colorize(
+        config,
+        &format!("-{}", stats.items_removed),
+        Color::Red,
+        Style::None,
+    );
+    let items_modified = colorize(
+        config,
+        &format!("~{}", stats.items_modified),
+        Color::Yellow,
+        Style::None,
     );
     println!(
-        "  Relationships: +{} -{}",
-        stats.relationships_added, stats.relationships_removed
+        "  Items:         {} {} {}",
+        items_added, items_removed, items_modified
     );
+    let rels_added = colorize(
+        config,
+        &format!("+{}", stats.relationships_added),
+        Color::Green,
+        Style::None,
+    );
+    let rels_removed = colorize(
+        config,
+        &format!("-{}", stats.relationships_removed),
+        Color::Red,
+        Style::None,
+    );
+    println!("  Relationships: {} {}", rels_added, rels_removed);
 }
 
 fn print_diff_json(diff: &GraphDiff) {
