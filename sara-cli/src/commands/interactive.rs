@@ -10,10 +10,11 @@ use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use thiserror::Error;
 
-use sara_core::{
-    FieldName, ItemType, KnowledgeGraph, MissingParentError, TraceabilityLinks,
-    check_parent_exists, parse_repositories, suggest_next_id,
-};
+use sara_core::graph::{GraphBuilder, KnowledgeGraph};
+use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
+use sara_core::query::{MissingParentError, check_parent_exists};
+use sara_core::repository::parse_repositories;
+use sara_core::template::suggest_next_id;
 
 use crate::output::{OutputConfig, print_error};
 
@@ -595,13 +596,10 @@ fn build_graph_from_repositories(repositories: &[PathBuf]) -> Result<KnowledgeGr
         "Failed to parse repositories"
     })?;
 
-    sara_core::GraphBuilder::new()
-        .add_items(items)
-        .build()
-        .map_err(|e| {
-            tracing::warn!("Graph build error: {}", e);
-            "Failed to build graph"
-        })
+    GraphBuilder::new().add_items(items).build().map_err(|e| {
+        tracing::warn!("Graph build error: {}", e);
+        "Failed to build graph"
+    })
 }
 
 /// Collects all item input through prompts.

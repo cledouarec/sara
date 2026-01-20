@@ -55,15 +55,33 @@ impl InitOptions {
         self
     }
 
+    /// Sets the ID if provided.
+    pub fn maybe_id(mut self, id: Option<String>) -> Self {
+        self.id = id;
+        self
+    }
+
     /// Sets the name.
     pub fn with_name(mut self, name: impl Into<String>) -> Self {
         self.name = Some(name.into());
         self
     }
 
+    /// Sets the name if provided.
+    pub fn maybe_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
     /// Sets the description.
     pub fn with_description(mut self, description: impl Into<String>) -> Self {
         self.description = Some(description.into());
+        self
+    }
+
+    /// Sets the description if provided.
+    pub fn maybe_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
         self
     }
 
@@ -91,9 +109,21 @@ impl InitOptions {
         self
     }
 
+    /// Sets the specification if provided.
+    pub fn maybe_specification(mut self, specification: Option<String>) -> Self {
+        self.specification = specification;
+        self
+    }
+
     /// Sets the platform.
     pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
         self.platform = Some(platform.into());
+        self
+    }
+
+    /// Sets the platform if provided.
+    pub fn maybe_platform(mut self, platform: Option<String>) -> Self {
+        self.platform = platform;
         self
     }
 

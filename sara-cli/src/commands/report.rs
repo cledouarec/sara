@@ -1,38 +1,81 @@
 //! Report command implementation.
 
+use std::error::Error;
 use std::fs::File;
 use std::io::Write;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use sara_core::{CoverageReport, GraphBuilder, TraceabilityMatrix, parse_repositories};
+use clap::{Args, Subcommand};
+
+use sara_core::graph::GraphBuilder;
+use sara_core::report::{CoverageReport, TraceabilityMatrix};
+use sara_core::repository::parse_repositories;
 
 use super::CommandContext;
 use crate::output::{
     Color, EMOJI_STATS, EMOJI_WARNING, OutputConfig, Style, colorize, get_emoji, print_success,
 };
 
-pub use super::ReportFormat as OutputFormat;
-
-/// Coverage report options.
-#[derive(Debug)]
-pub struct CoverageOptions {
-    pub format: OutputFormat,
-    pub output: Option<PathBuf>,
+/// Report output format.
+#[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
+pub enum ReportFormat {
+    #[default]
+    Text,
+    Json,
+    Csv,
+    Html,
 }
 
-/// Matrix report options.
-#[derive(Debug)]
-pub struct MatrixOptions {
-    pub format: OutputFormat,
-    pub output: Option<PathBuf>,
+/// Arguments for the report command.
+#[derive(Args, Debug)]
+pub struct ReportArgs {
+    /// Report type
+    #[command(subcommand)]
+    pub report_type: ReportType,
+}
+
+/// Report types.
+#[derive(Subcommand, Debug)]
+#[command(disable_help_subcommand = true)]
+pub enum ReportType {
+    /// Generate coverage report
+    Coverage {
+        /// Output format
+        #[arg(long, default_value = "text", help_heading = "Output")]
+        format: ReportFormat,
+
+        /// Write report to file
+        #[arg(short, long, help_heading = "Output")]
+        output: Option<PathBuf>,
+    },
+
+    /// Generate traceability matrix
+    Matrix {
+        /// Output format
+        #[arg(long, default_value = "text", help_heading = "Output")]
+        format: ReportFormat,
+
+        /// Write report to file
+        #[arg(short, long, help_heading = "Output")]
+        output: Option<PathBuf>,
+    },
+}
+
+/// Runs the report command.
+pub fn run(args: &ReportArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+    match &args.report_type {
+        ReportType::Coverage { format, output } => run_coverage(*format, output.clone(), ctx),
+        ReportType::Matrix { format, output } => run_matrix(*format, output.clone(), ctx),
+    }
 }
 
 /// Runs the coverage report command.
-pub fn run_coverage(
-    opts: CoverageOptions,
+fn run_coverage(
+    format: ReportFormat,
+    output_path: Option<PathBuf>,
     ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     let config = &ctx.output;
 
     // Parse repositories
@@ -45,15 +88,15 @@ pub fn run_coverage(
     let report = CoverageReport::generate(&graph);
 
     // Format output
-    let output = match opts.format {
-        OutputFormat::Text => format_coverage_text(&report, config),
-        OutputFormat::Json => format_coverage_json(&report),
-        OutputFormat::Csv => format_coverage_csv(&report),
-        OutputFormat::Html => format_coverage_html(&report),
+    let output = match format {
+        ReportFormat::Text => format_coverage_text(&report, config),
+        ReportFormat::Json => format_coverage_json(&report),
+        ReportFormat::Csv => format_coverage_csv(&report),
+        ReportFormat::Html => format_coverage_html(&report),
     };
 
     // Write to file or stdout
-    if let Some(path) = opts.output {
+    if let Some(path) = output_path {
         let mut file = File::create(&path)?;
         file.write_all(output.as_bytes())?;
         print_success(
@@ -68,10 +111,11 @@ pub fn run_coverage(
 }
 
 /// Runs the matrix report command.
-pub fn run_matrix(
-    opts: MatrixOptions,
+fn run_matrix(
+    format: ReportFormat,
+    output_path: Option<PathBuf>,
     ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn std::error::Error>> {
+) -> Result<ExitCode, Box<dyn Error>> {
     let config = &ctx.output;
 
     // Parse repositories
@@ -84,15 +128,15 @@ pub fn run_matrix(
     let matrix = TraceabilityMatrix::generate(&graph);
 
     // Format output
-    let output = match opts.format {
-        OutputFormat::Text => format_matrix_text(&matrix, config),
-        OutputFormat::Json => format_matrix_json(&matrix),
-        OutputFormat::Csv => matrix.to_csv(),
-        OutputFormat::Html => format_matrix_html(&matrix),
+    let output = match format {
+        ReportFormat::Text => format_matrix_text(&matrix, config),
+        ReportFormat::Json => format_matrix_json(&matrix),
+        ReportFormat::Csv => matrix.to_csv(),
+        ReportFormat::Html => format_matrix_html(&matrix),
     };
 
     // Write to file or stdout
-    if let Some(path) = opts.output {
+    if let Some(path) = output_path {
         let mut file = File::create(&path)?;
         file.write_all(output.as_bytes())?;
         print_success(
