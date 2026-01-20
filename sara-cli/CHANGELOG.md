@@ -16,6 +16,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Contributors
 
 * @cledouarec
+
 ## [0.3.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.2.0...sara-cli-v0.3.0) - 2026-01-20
 
 ### Changed
@@ -26,7 +27,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - consolidate field names into FieldName enum
 - merge prompt_item_id into prompt_identifier
-
 
 ## [0.1.3](https://github.com/cledouarec/sara/compare/sara-cli-v0.1.2...sara-cli-v0.1.3) - 2026-01-16
 
