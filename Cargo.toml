@@ -33,7 +33,7 @@ toml = "0.9.11"
 git2 = { version = "0.20.3", features = ["vendored-openssl"] }
 
 # Terminal output
-colored = "3.0.0"
+colored = "3.1.1"
 console = "0.16.2"
 
 # Logging
