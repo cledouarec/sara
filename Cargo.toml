@@ -59,7 +59,7 @@ tera = "1.20.1"
 indicatif = "0.18.3"
 
 # Interactive prompts
-inquire = "0.9.1"
+inquire = "0.9.2"
 
 # Testing
 assert_cmd = "2.1.2"
