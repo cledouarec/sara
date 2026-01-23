@@ -424,7 +424,7 @@ sara report matrix --format csv -o matrix.csv
 
 ### Prerequisites
 
-- Rust 1.75+ (2021 edition)
+- Rust 1.85+ (2024 edition)
 
 ### Building
 
