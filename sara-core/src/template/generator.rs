@@ -69,6 +69,8 @@ pub struct GeneratorOptions {
     pub derives_from: Vec<String>,
     /// Upstream references (satisfies).
     pub satisfies: Vec<String>,
+    /// Peer dependencies (for requirement types).
+    pub depends_on: Vec<String>,
     /// Specification text (for requirement types).
     pub specification: Option<String>,
     /// Target platform (for system_architecture).
@@ -86,6 +88,7 @@ impl GeneratorOptions {
             refines: Vec::new(),
             derives_from: Vec::new(),
             satisfies: Vec::new(),
+            depends_on: Vec::new(),
             specification: None,
             platform: None,
         }
@@ -112,6 +115,12 @@ impl GeneratorOptions {
     /// Adds a satisfies reference.
     pub fn with_satisfies(mut self, refs: Vec<String>) -> Self {
         self.satisfies = refs;
+        self
+    }
+
+    /// Adds peer dependencies (for requirement types).
+    pub fn with_depends_on(mut self, refs: Vec<String>) -> Self {
+        self.depends_on = refs;
         self
     }
 
@@ -150,6 +159,9 @@ impl GeneratorOptions {
             | ItemType::SoftwareRequirement => {
                 if !self.derives_from.is_empty() {
                     context.insert(FieldName::DerivesFrom.as_str(), &self.derives_from);
+                }
+                if !self.depends_on.is_empty() {
+                    context.insert(FieldName::DependsOn.as_str(), &self.depends_on);
                 }
             }
             ItemType::SystemArchitecture => {

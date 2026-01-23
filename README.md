@@ -67,7 +67,23 @@ sara --version
 
 ### 1. Create a Document
 
-Create a Markdown file with YAML frontmatter:
+Create a Markdown file with your content:
+
+```markdown
+# Customer Portal Solution
+
+This solution provides a self-service portal for customers.
+```
+
+### 2. Initialize Metadata
+
+Use `sara init` to add YAML frontmatter interactively:
+
+```bash
+sara init docs/customer-portal.md
+```
+
+This will prompt you for the document type, ID, name, and relationships, generating:
 
 ```markdown
 ---
@@ -82,7 +98,7 @@ description: "Web-based customer self-service portal"
 This solution provides a self-service portal for customers.
 ```
 
-### 2. Create Configuration
+### 3. Create Configuration (Optional)
 
 Create a `sara.toml` file:
 
@@ -98,7 +114,7 @@ colors = true
 emojis = true
 ```
 
-### 3. Parse and Validate
+### 4. Parse and Validate
 
 ```bash
 # Parse all documents
@@ -145,16 +161,88 @@ Sara recognizes 9 document types forming a requirements hierarchy:
 
 ## Traceability Hierarchy
 
-```
-Solution
-  └── Use Case
-        └── Scenario
-              └── System Requirement
-                    └── System Architecture
-                          ├── Hardware Requirement
-                          │     └── HW Detailed Design
-                          └── Software Requirement
-                                └── SW Detailed Design
+```mermaid
+erDiagram
+    Solution {
+        string id PK
+        string name
+        string description
+    }
+
+    UseCase {
+        string id PK
+        string name
+        string description
+        string[] refines FK
+    }
+
+    Scenario {
+        string id PK
+        string name
+        string description
+        string[] refines FK
+    }
+
+    SystemRequirement {
+        string id PK
+        string name
+        string description
+        string specification
+        string[] derives_from FK
+        string[] depends_on FK
+    }
+
+    SystemArchitecture {
+        string id PK
+        string name
+        string description
+        string platform
+        string[] satisfies FK
+    }
+
+    HardwareRequirement {
+        string id PK
+        string name
+        string description
+        string specification
+        string[] derives_from FK
+        string[] depends_on FK
+    }
+
+    SoftwareRequirement {
+        string id PK
+        string name
+        string description
+        string specification
+        string[] derives_from FK
+        string[] depends_on FK
+    }
+
+    HardwareDetailedDesign {
+        string id PK
+        string name
+        string description
+        string[] satisfies FK
+    }
+
+    SoftwareDetailedDesign {
+        string id PK
+        string name
+        string description
+        string[] satisfies FK
+    }
+
+    Solution ||--o{ UseCase : "is_refined_by"
+    UseCase ||--o{ Scenario : "is_refined_by"
+    Scenario ||--o{ SystemRequirement : "derives"
+    SystemRequirement ||--o{ SystemArchitecture : "is_satisfied_by"
+    SystemArchitecture ||--o{ HardwareRequirement : "derives"
+    SystemArchitecture ||--o{ SoftwareRequirement : "derives"
+    HardwareRequirement ||--o{ HardwareDetailedDesign : "is_satisfied_by"
+    SoftwareRequirement ||--o{ SoftwareDetailedDesign : "is_satisfied_by"
+    SystemRequirement }o--o{ SystemRequirement : "depends_on"
+    HardwareRequirement }o--o{ HardwareRequirement : "depends_on"
+    SoftwareRequirement }o--o{ SoftwareRequirement : "depends_on"
 ```
 
 ## Relationships: The Heart of SARA
@@ -170,6 +258,7 @@ SARA uses semantic relationship names that reflect the nature of the connection:
 | `refines` / `is_refined_by` | Upstream / Downstream | Solution ↔ Use Case ↔ Scenario |
 | `derives_from` / `derives` | Upstream / Downstream | Scenario ↔ System Requirement, System Architecture ↔ HW/SW Requirement |
 | `satisfies` / `is_satisfied_by` | Upstream / Downstream | System Requirement ↔ System Architecture, HW/SW Requirement ↔ Detailed Design |
+| `depends_on` / `is_required_by` | Peer (same type) | Requirement ↔ Requirement (same level dependencies) |
 
 ### Defining Relationships in YAML
 
@@ -187,6 +276,30 @@ derives_from:
 # Downstream: what implements this requirement
 is_satisfied_by:
   - "SYSARCH-001"
+# Peer: dependencies on other requirements of the same type
+depends_on:
+  - "SYSREQ-002"  # Must have session management before auth timing
+---
+```
+
+### Peer Dependencies
+
+Requirements can depend on other requirements of the same type using `depends_on` / `is_required_by`. This is useful for:
+
+- **Prerequisite requirements**: SYSREQ-AUTH depends on SYSREQ-SESSION
+- **Ordering constraints**: HWREQ-POWER must be satisfied before HWREQ-CPU
+- **Shared foundations**: Multiple SW requirements depend on SWREQ-LOGGING
+
+```yaml
+---
+id: "SWREQ-RETRY"
+type: software_requirement
+name: "Retry Logic with Exponential Backoff"
+derives_from:
+  - "SYSARCH-COMM"
+depends_on:
+  - "SWREQ-LOGGING"  # Retry events must be logged
+  - "SWREQ-CONFIG"   # Retry params come from config
 ---
 ```
 
@@ -214,15 +327,15 @@ Both approaches create the same bidirectional relationship in the graph.
 
 ### Relationship Fields by Item Type
 
-| Item Type | Upstream Field | Downstream Field |
-|-----------|----------------|------------------|
-| Solution | - | `is_refined_by` |
-| Use Case | `refines` | `is_refined_by` |
-| Scenario | `refines` | `derives` |
-| System Requirement | `derives_from` | `is_satisfied_by` |
-| System Architecture | `satisfies` | `derives` |
-| HW/SW Requirement | `derives_from` | `is_satisfied_by` |
-| HW/SW Detailed Design | `satisfies` | - |
+| Item Type | Upstream Field | Downstream Field | Peer Field |
+|-----------|----------------|------------------|------------|
+| Solution | - | `is_refined_by` | - |
+| Use Case | `refines` | `is_refined_by` | - |
+| Scenario | `refines` | `derives` | - |
+| System Requirement | `derives_from` | `is_satisfied_by` | `depends_on` / `is_required_by` |
+| System Architecture | `satisfies` | `derives` | - |
+| HW/SW Requirement | `derives_from` | `is_satisfied_by` | `depends_on` / `is_required_by` |
+| HW/SW Detailed Design | `satisfies` | - | - |
 
 ### Querying Relationships
 
@@ -311,7 +424,7 @@ sara report matrix --format csv -o matrix.csv
 
 ### Prerequisites
 
-- Rust 1.75+ (2021 edition)
+- Rust 1.85+ (2024 edition)
 
 ### Building
 

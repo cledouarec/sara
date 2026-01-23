@@ -131,6 +131,20 @@ impl ItemType {
         Self::platform_types().contains(self)
     }
 
+    /// Returns the item types that accept the depends_on field (peer dependencies).
+    pub fn depends_on_types() -> &'static [ItemType] {
+        &[
+            ItemType::SystemRequirement,
+            ItemType::HardwareRequirement,
+            ItemType::SoftwareRequirement,
+        ]
+    }
+
+    /// Returns true if this item type accepts the depends_on field (peer dependencies).
+    pub fn supports_depends_on(&self) -> bool {
+        Self::depends_on_types().contains(self)
+    }
+
     /// Returns true if this is a root item type (Solution).
     pub fn is_root(&self) -> bool {
         matches!(self, ItemType::Solution)
@@ -189,42 +203,64 @@ impl ItemType {
         }
     }
 
-    /// Returns the traceability configuration for this item type, if any.
+    /// Returns all traceability configurations for this item type.
     ///
-    /// Solution has no parent and returns None.
-    pub fn traceability_config(&self) -> Option<TraceabilityConfig> {
+    /// Most item types have a single traceability link (e.g., refines, satisfies).
+    /// Requirement types have two: derives_from (hierarchical) and depends_on (peer).
+    /// Solution has no parent and returns an empty vec.
+    pub fn traceability_configs(&self) -> Vec<TraceabilityConfig> {
         match self {
-            ItemType::Solution => None,
-            ItemType::UseCase => Some(TraceabilityConfig {
+            ItemType::Solution => vec![],
+            ItemType::UseCase => vec![TraceabilityConfig {
                 relationship_field: FieldName::Refines,
-                parent_type: ItemType::Solution,
-            }),
-            ItemType::Scenario => Some(TraceabilityConfig {
+                target_type: ItemType::Solution,
+            }],
+            ItemType::Scenario => vec![TraceabilityConfig {
                 relationship_field: FieldName::Refines,
-                parent_type: ItemType::UseCase,
-            }),
-            ItemType::SystemRequirement => Some(TraceabilityConfig {
-                relationship_field: FieldName::DerivesFrom,
-                parent_type: ItemType::Scenario,
-            }),
-            ItemType::SystemArchitecture => Some(TraceabilityConfig {
-                relationship_field: FieldName::Satisfies,
-                parent_type: ItemType::SystemRequirement,
-            }),
-            ItemType::HardwareRequirement | ItemType::SoftwareRequirement => {
-                Some(TraceabilityConfig {
+                target_type: ItemType::UseCase,
+            }],
+            ItemType::SystemRequirement => vec![
+                TraceabilityConfig {
                     relationship_field: FieldName::DerivesFrom,
-                    parent_type: ItemType::SystemArchitecture,
-                })
-            }
-            ItemType::HardwareDetailedDesign => Some(TraceabilityConfig {
+                    target_type: ItemType::Scenario,
+                },
+                TraceabilityConfig {
+                    relationship_field: FieldName::DependsOn,
+                    target_type: ItemType::SystemRequirement,
+                },
+            ],
+            ItemType::SystemArchitecture => vec![TraceabilityConfig {
                 relationship_field: FieldName::Satisfies,
-                parent_type: ItemType::HardwareRequirement,
-            }),
-            ItemType::SoftwareDetailedDesign => Some(TraceabilityConfig {
+                target_type: ItemType::SystemRequirement,
+            }],
+            ItemType::HardwareRequirement => vec![
+                TraceabilityConfig {
+                    relationship_field: FieldName::DerivesFrom,
+                    target_type: ItemType::SystemArchitecture,
+                },
+                TraceabilityConfig {
+                    relationship_field: FieldName::DependsOn,
+                    target_type: ItemType::HardwareRequirement,
+                },
+            ],
+            ItemType::SoftwareRequirement => vec![
+                TraceabilityConfig {
+                    relationship_field: FieldName::DerivesFrom,
+                    target_type: ItemType::SystemArchitecture,
+                },
+                TraceabilityConfig {
+                    relationship_field: FieldName::DependsOn,
+                    target_type: ItemType::SoftwareRequirement,
+                },
+            ],
+            ItemType::HardwareDetailedDesign => vec![TraceabilityConfig {
                 relationship_field: FieldName::Satisfies,
-                parent_type: ItemType::SoftwareRequirement,
-            }),
+                target_type: ItemType::HardwareRequirement,
+            }],
+            ItemType::SoftwareDetailedDesign => vec![TraceabilityConfig {
+                relationship_field: FieldName::Satisfies,
+                target_type: ItemType::SoftwareRequirement,
+            }],
         }
     }
 }
@@ -232,10 +268,10 @@ impl ItemType {
 /// Configuration for traceability relationships.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TraceabilityConfig {
-    /// The relationship field (refines, derives_from, satisfies).
+    /// The relationship field (refines, derives_from, satisfies, depends_on).
     pub relationship_field: FieldName,
-    /// The parent item type to link to.
-    pub parent_type: ItemType,
+    /// The target item type to link to (parent for hierarchical, same type for peers).
+    pub target_type: ItemType,
 }
 
 impl fmt::Display for ItemType {
