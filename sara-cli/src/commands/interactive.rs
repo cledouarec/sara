@@ -29,6 +29,7 @@ pub struct PrefilledFields {
     pub refines: Vec<String>,
     pub derives_from: Vec<String>,
     pub satisfies: Vec<String>,
+    pub depends_on: Vec<String>,
     pub specification: Option<String>,
     pub platform: Option<String>,
 }
@@ -237,11 +238,18 @@ fn prompt_identifier(
 }
 
 /// Gets items of specific types for traceability selection.
-fn get_items_of_type(graph: Option<&KnowledgeGraph>, item_type: ItemType) -> Vec<SelectOption> {
+///
+/// If `exclude_id` is provided, that item will be filtered out (to prevent self-references).
+fn get_items_of_type(
+    graph: Option<&KnowledgeGraph>,
+    item_type: ItemType,
+    exclude_id: Option<&str>,
+) -> Vec<SelectOption> {
     graph
         .map(|g| {
             g.items()
                 .filter(|item| item.item_type == item_type)
+                .filter(|item| exclude_id.is_none_or(|id| item.id.as_str() != id))
                 .map(|item| SelectOption {
                     id: item.id.as_str().to_string(),
                     name: item.name.clone(),
@@ -271,6 +279,7 @@ enum TraceabilityKind {
     Refines,
     DerivesFrom,
     Satisfies,
+    DependsOn,
 }
 
 impl TraceabilityKind {
@@ -280,6 +289,7 @@ impl TraceabilityKind {
             FieldName::Refines => Self::Refines,
             FieldName::DerivesFrom => Self::DerivesFrom,
             FieldName::Satisfies => Self::Satisfies,
+            FieldName::DependsOn => Self::DependsOn,
             _ => Self::Refines, // Fallback
         }
     }
@@ -288,30 +298,35 @@ impl TraceabilityKind {
 /// Configuration for a traceability prompt (CLI-specific).
 struct TraceabilityPromptConfig {
     kind: TraceabilityKind,
-    parent_type: ItemType,
+    target_type: ItemType,
     prompt_message: String,
 }
 
-/// Returns the traceability prompt configuration for an item type.
+/// Returns the traceability prompt configurations for an item type.
 ///
-/// Uses core's `ItemType::traceability_config()` for domain logic,
+/// Uses core's `ItemType::traceability_configs()` for domain logic,
 /// adds CLI-specific prompt messages.
-fn get_traceability_prompt_config(item_type: ItemType) -> Option<TraceabilityPromptConfig> {
-    let config = item_type.traceability_config()?;
-    let kind = TraceabilityKind::from_field(config.relationship_field);
+fn get_traceability_prompt_configs(item_type: ItemType) -> Vec<TraceabilityPromptConfig> {
+    item_type
+        .traceability_configs()
+        .into_iter()
+        .map(|config| {
+            let kind = TraceabilityKind::from_field(config.relationship_field);
 
-    let prompt_message = format!(
-        "Select {} this {} {}:",
-        config.parent_type.display_name(),
-        item_type.display_name(),
-        config.relationship_field.as_str().replace('_', " ")
-    );
+            let prompt_message = format!(
+                "Select {} this {} {}:",
+                config.target_type.display_name(),
+                item_type.display_name(),
+                config.relationship_field.as_str().replace('_', " ")
+            );
 
-    Some(TraceabilityPromptConfig {
-        kind,
-        parent_type: config.parent_type,
-        prompt_message,
-    })
+            TraceabilityPromptConfig {
+                kind,
+                target_type: config.target_type,
+                prompt_message,
+            }
+        })
+        .collect()
 }
 
 /// Gets the prefilled values for a traceability kind.
@@ -320,6 +335,7 @@ fn get_prefilled_for_kind(prefilled: &PrefilledFields, kind: TraceabilityKind) -
         TraceabilityKind::Refines => &prefilled.refines,
         TraceabilityKind::DerivesFrom => &prefilled.derives_from,
         TraceabilityKind::Satisfies => &prefilled.satisfies,
+        TraceabilityKind::DependsOn => &prefilled.depends_on,
     }
 }
 
@@ -333,12 +349,13 @@ fn get_preselected_for_kind(
             TraceabilityKind::Refines => p.refines.clone(),
             TraceabilityKind::DerivesFrom => p.derives_from.clone(),
             TraceabilityKind::Satisfies => p.satisfies.clone(),
+            TraceabilityKind::DependsOn => p.depends_on.clone(),
         })
         .unwrap_or_default()
 }
 
 /// Prompts for selecting parent items and returns the selected IDs.
-fn prompt_parent_selection(
+fn prompt_target_selection(
     options: Vec<SelectOption>,
     prompt_message: &str,
     preselected_ids: &[String],
@@ -366,34 +383,42 @@ fn apply_selection_to_input(
         TraceabilityKind::Refines => input.refines = ids,
         TraceabilityKind::DerivesFrom => input.derives_from = ids,
         TraceabilityKind::Satisfies => input.satisfies = ids,
+        TraceabilityKind::DependsOn => input.depends_on = ids,
     }
 }
 
 /// Prompts for traceability relationships (FR-045, FR-056).
 ///
 /// If `preselected` is Some, those items will be pre-checked in the MultiSelect.
+/// Requirement types prompt for both hierarchical (derives_from) and peer (depends_on) links.
+/// If `exclude_id` is Some, that item will be filtered out of the selection list
+/// (used during edit to prevent self-references in peer dependencies).
 pub fn prompt_traceability(
     item_type: ItemType,
     graph: Option<&KnowledgeGraph>,
     prefilled: &PrefilledFields,
     preselected: Option<&PreselectedTraceability>,
+    exclude_id: Option<&str>,
 ) -> Result<TraceabilityLinks, PromptError> {
     let mut input = TraceabilityLinks::default();
 
-    let Some(config) = get_traceability_prompt_config(item_type) else {
-        return Ok(input);
-    };
-
-    let prefilled_values = get_prefilled_for_kind(prefilled, config.kind);
-    if !prefilled_values.is_empty() {
-        apply_selection_to_input(&mut input, config.kind, prefilled_values.to_vec());
+    let configs = get_traceability_prompt_configs(item_type);
+    if configs.is_empty() {
         return Ok(input);
     }
 
-    let options = get_items_of_type(graph, config.parent_type);
-    let preselected_ids = get_preselected_for_kind(preselected, config.kind);
-    let selected = prompt_parent_selection(options, &config.prompt_message, &preselected_ids)?;
-    apply_selection_to_input(&mut input, config.kind, selected);
+    for config in configs {
+        let prefilled_values = get_prefilled_for_kind(prefilled, config.kind);
+        if !prefilled_values.is_empty() {
+            apply_selection_to_input(&mut input, config.kind, prefilled_values.to_vec());
+            continue;
+        }
+
+        let options = get_items_of_type(graph, config.target_type, exclude_id);
+        let preselected_ids = get_preselected_for_kind(preselected, config.kind);
+        let selected = prompt_target_selection(options, &config.prompt_message, &preselected_ids)?;
+        apply_selection_to_input(&mut input, config.kind, selected);
+    }
 
     Ok(input)
 }
@@ -501,6 +526,15 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
         format!("\n  Satisfies: {}", input.traceability.satisfies.join(", "))
     };
 
+    let depends_on = if input.traceability.depends_on.is_empty() {
+        String::new()
+    } else {
+        format!(
+            "\n  Depends on: {}",
+            input.traceability.depends_on.join(", ")
+        )
+    };
+
     let specification = input
         .type_specific
         .specification
@@ -522,7 +556,7 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
          \x20 Type: {}\n\
          \x20 ID:   {}\n\
          \x20 Name: {}\n\
-         \x20 File: {}{}{}{}{}{}{}\n",
+         \x20 File: {}{}{}{}{}{}{}{}\n",
         input.item_type.display_name(),
         input.id,
         input.name,
@@ -531,6 +565,7 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
         refines,
         derives_from,
         satisfies,
+        depends_on,
         specification,
         platform,
     )
@@ -614,8 +649,13 @@ fn collect_item_input(
         session.prefilled.id.as_ref(),
     )?;
     let description = prompt_description(session.prefilled.description.as_ref(), None)?;
-    let traceability =
-        prompt_traceability(item_type, session.graph.as_ref(), &session.prefilled, None)?;
+    let traceability = prompt_traceability(
+        item_type,
+        session.graph.as_ref(),
+        &session.prefilled,
+        None,
+        Some(&id),
+    )?;
     let type_specific = collect_type_specific_input(session, item_type)?;
     let file = prompt_file(session.prefilled.file.as_ref())?;
 

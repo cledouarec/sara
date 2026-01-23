@@ -22,6 +22,8 @@ pub struct EditUpdates {
     pub derives_from: Option<Vec<String>>,
     /// New satisfies links (for architectures, designs).
     pub satisfies: Option<Vec<String>>,
+    /// New depends_on links (peer dependencies for requirements).
+    pub depends_on: Option<Vec<String>>,
     /// New specification (for requirement types).
     pub specification: Option<String>,
     /// New platform (for SystemArchitecture).
@@ -36,6 +38,7 @@ impl EditUpdates {
             || self.refines.is_some()
             || self.derives_from.is_some()
             || self.satisfies.is_some()
+            || self.depends_on.is_some()
             || self.specification.is_some()
             || self.platform.is_some()
     }
@@ -108,12 +111,17 @@ pub struct TraceabilityLinks {
     pub derives_from: Vec<String>,
     /// Items this item satisfies (for architectures, designs).
     pub satisfies: Vec<String>,
+    /// Peer dependencies (for requirement types).
+    pub depends_on: Vec<String>,
 }
 
 impl TraceabilityLinks {
     /// Returns true if all traceability fields are empty.
     pub fn is_empty(&self) -> bool {
-        self.refines.is_empty() && self.derives_from.is_empty() && self.satisfies.is_empty()
+        self.refines.is_empty()
+            && self.derives_from.is_empty()
+            && self.satisfies.is_empty()
+            && self.depends_on.is_empty()
     }
 
     /// Creates from an Item's upstream references.
@@ -131,6 +139,37 @@ impl TraceabilityLinks {
                 .collect(),
             satisfies: upstream
                 .satisfies
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            depends_on: Vec::new(),
+        }
+    }
+
+    /// Creates from an Item's upstream references and peer dependencies.
+    pub fn from_item(item: &super::Item) -> Self {
+        Self {
+            refines: item
+                .upstream
+                .refines
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            derives_from: item
+                .upstream
+                .derives_from
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            satisfies: item
+                .upstream
+                .satisfies
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            depends_on: item
+                .attributes
+                .depends_on
                 .iter()
                 .map(|id| id.as_str().to_string())
                 .collect(),
