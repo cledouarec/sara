@@ -50,6 +50,10 @@ pub struct InitArgs {
     #[arg(long, num_args = 1.., help_heading = "Traceability")]
     pub satisfies: Vec<String>,
 
+    /// Peer dependencies (for requirements)
+    #[arg(long, num_args = 1.., help_heading = "Traceability")]
+    pub depends_on: Vec<String>,
+
     /// Target platform (for system_architecture)
     #[arg(long, help_heading = "Type-Specific")]
     pub platform: Option<String>,
@@ -87,6 +91,7 @@ fn run_interactive(args: &InitArgs, ctx: &CommandContext) -> Result<ExitCode, Bo
         refines: args.refines.clone(),
         derives_from: args.derives_from.clone(),
         satisfies: args.satisfies.clone(),
+        depends_on: args.depends_on.clone(),
         specification: args.specification.clone(),
         platform: args.platform.clone(),
     };
@@ -108,6 +113,7 @@ fn run_interactive(args: &InitArgs, ctx: &CommandContext) -> Result<ExitCode, Bo
                 .with_refines(input.traceability.refines)
                 .with_derives_from(input.traceability.derives_from)
                 .with_satisfies(input.traceability.satisfies)
+                .with_depends_on(input.traceability.depends_on)
                 .maybe_specification(input.type_specific.specification)
                 .maybe_platform(input.type_specific.platform)
                 .with_force(args.force);
@@ -145,6 +151,7 @@ fn run_non_interactive(
         .with_refines(args.refines.clone())
         .with_derives_from(args.derives_from.clone())
         .with_satisfies(args.satisfies.clone())
+        .with_depends_on(args.depends_on.clone())
         .maybe_specification(args.specification.clone())
         .maybe_platform(args.platform.clone())
         .with_force(args.force);

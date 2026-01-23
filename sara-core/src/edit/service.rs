@@ -143,6 +143,10 @@ impl EditService {
                     .satisfies
                     .clone()
                     .unwrap_or_else(|| current.traceability.satisfies.clone()),
+                depends_on: opts
+                    .depends_on
+                    .clone()
+                    .unwrap_or_else(|| current.traceability.depends_on.clone()),
             },
         }
     }

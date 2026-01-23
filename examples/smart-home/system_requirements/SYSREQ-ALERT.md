@@ -9,6 +9,8 @@ specification: >
   of event detection
 derives_from:
   - "SCEN-INTRUSION"
+depends_on:
+  - "SYSREQ-LATENCY"
 ---
 
 # Security Alert Delivery

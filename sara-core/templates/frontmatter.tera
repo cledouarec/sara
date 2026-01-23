@@ -29,4 +29,10 @@ satisfies:
   - "{{ ref }}"
 {%- endfor %}
 {%- endif %}
+{%- if depends_on %}
+depends_on:
+{%- for ref in depends_on %}
+  - "{{ ref }}"
+{%- endfor %}
+{%- endif %}
 ---

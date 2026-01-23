@@ -142,6 +142,13 @@ impl InitService {
                 opts.item_type,
             ));
         }
+        if !opts.depends_on.is_empty() && !opts.item_type.supports_depends_on() {
+            return Err(invalid_option_error(
+                FieldName::DependsOn,
+                ItemType::depends_on_types(),
+                opts.item_type,
+            ));
+        }
         Ok(())
     }
 
@@ -195,6 +202,9 @@ impl InitService {
         }
         if !opts.satisfies.is_empty() {
             gen_opts = gen_opts.with_satisfies(opts.satisfies.clone());
+        }
+        if !opts.depends_on.is_empty() {
+            gen_opts = gen_opts.with_depends_on(opts.depends_on.clone());
         }
         if let Some(ref spec) = opts.specification {
             gen_opts = gen_opts.with_specification(spec);

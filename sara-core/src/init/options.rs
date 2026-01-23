@@ -23,6 +23,8 @@ pub struct InitOptions {
     pub derives_from: Vec<String>,
     /// Upstream references (satisfies) - valid for architecture and design types.
     pub satisfies: Vec<String>,
+    /// Peer dependencies (depends_on) - valid for requirement types.
+    pub depends_on: Vec<String>,
     /// Specification text - valid for requirement types.
     pub specification: Option<String>,
     /// Target platform - valid for system_architecture.
@@ -43,6 +45,7 @@ impl InitOptions {
             refines: Vec::new(),
             derives_from: Vec::new(),
             satisfies: Vec::new(),
+            depends_on: Vec::new(),
             specification: None,
             platform: None,
             force: false,
@@ -100,6 +103,12 @@ impl InitOptions {
     /// Sets the satisfies references.
     pub fn with_satisfies(mut self, satisfies: Vec<String>) -> Self {
         self.satisfies = satisfies;
+        self
+    }
+
+    /// Sets the depends_on references (peer dependencies).
+    pub fn with_depends_on(mut self, depends_on: Vec<String>) -> Self {
+        self.depends_on = depends_on;
         self
     }
 

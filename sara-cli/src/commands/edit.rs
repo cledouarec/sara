@@ -239,6 +239,7 @@ fn run_edit_prompts(
         Some(graph),
         &prefilled,
         Some(&item.traceability),
+        Some(&item.id),
     )?;
 
     let specification = prompt_specification(item.item_type, None, item.specification.as_deref())?;
@@ -316,6 +317,10 @@ fn run_non_interactive_edit(
                 .satisfies
                 .clone()
                 .unwrap_or_else(|| item.traceability.satisfies.clone()),
+            depends_on: opts
+                .depends_on
+                .clone()
+                .unwrap_or_else(|| item.traceability.depends_on.clone()),
         });
 
     service.apply_changes(&item.id, item.item_type, &new_values, &item.file_path)?;
