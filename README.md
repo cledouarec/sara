@@ -6,7 +6,7 @@
 
 <p align="center">
   <a href="https://github.com/cledouarec/sara/actions/workflows/ci.yml"><img src="https://github.com/cledouarec/sara/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://opensource.org/licenses/MIT"><img src="https://img.shields.io/badge/License-MIT-yellow.svg" alt="License: MIT"></a>
+  <a href="https://opensource.org/license/apache-2-0"><img src="https://img.shields.io/badge/license-Apache%202.0-blue.svg" alt="License: Apache 2.0"></a>
 </p>
 
 **SARA** stands for **S**olution **A**rchitecture **R**equirement for **A**lignment.
