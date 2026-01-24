@@ -14,7 +14,7 @@
 SARA is a command-line tool that manages Architecture documents and Requirements as an interconnected knowledge graph, providing a **single source of truth** for all teams and contributors in your organization.
 
 <p align="center">
-  <img src="assets/generated/demo.gif" alt="SARA Demo" width="1024">
+  <img src="assets/generated/demo.gif" alt="SARA Demo" width="800">
 </p>
 
 ## Table of Contents
@@ -91,7 +91,7 @@ sara --version
 ## Quick Start
 
 <p align="center">
-  <img src="assets/generated/demo-init.gif" alt="SARA Demo" width="1024">
+  <img src="assets/generated/demo-init.gif" alt="SARA Demo" width="800">
 </p>
 
 ## Commands

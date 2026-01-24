@@ -1,8 +1,8 @@
 # Terminal settings
-Set Width 1024
-Set Height 640
+Set Width 800
+Set Height 600
 Set Theme "Dracula"
-Set FontSize 16
+Set FontSize 14
 Set Padding 20
 Set TypingSpeed 50ms
 
