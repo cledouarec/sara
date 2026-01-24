@@ -12,42 +12,7 @@ cargo install sara-cli
 
 ## Quick Start
 
-1. Create a Markdown file with YAML frontmatter:
-
-```markdown
----
-id: "SOL-001"
-type: solution
-name: "Customer Portal"
-description: "Web-based customer self-service portal"
----
-
-# Customer Portal Solution
-
-This solution provides a self-service portal for customers.
-```
-
-2. Create a `sara.toml` configuration file:
-
-```toml
-[repositories]
-paths = ["./docs"]
-
-[validation]
-strict_orphans = false
-
-[output]
-colors = true
-emojis = true
-```
-
-3. Parse and validate:
-
-```bash
-sara parse
-sara validate
-sara query SOL-001 --downstream
-```
+![quick start demo init](../assets/generated/demo-init.gif)
 
 ## Commands
 

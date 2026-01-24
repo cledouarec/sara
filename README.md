@@ -13,6 +13,31 @@
 
 SARA is a command-line tool that manages Architecture documents and Requirements as an interconnected knowledge graph, providing a **single source of truth** for all teams and contributors in your organization.
 
+<p align="center">
+  <img src="assets/generated/demo.gif" alt="SARA Demo" width="1024">
+</p>
+
+## Table of Contents
+
+<details>
+<summary>Expand contents</summary>
+
+- [Why SARA?](#why-sara)
+- [Features](#features)
+- [Installation](#installation)
+- [Quick Start](#quick-start)
+- [Commands](#commands)
+- [Document Types](#document-types)
+- [Traceability Hierarchy](#traceability-hierarchy)
+- [Relationships](#relationships-the-heart-of-sara)
+- [Configuration](#configuration)
+- [Output Formats](#output-formats)
+- [Environment Variables](#environment-variables)
+- [Contributing](#contributing)
+- [License](#license)
+
+</details>
+
 ## Why SARA?
 
 ### Alignment Across Teams
@@ -65,70 +90,9 @@ sara --version
 
 ## Quick Start
 
-### 1. Create a Document
-
-Create a Markdown file with your content:
-
-```markdown
-# Customer Portal Solution
-
-This solution provides a self-service portal for customers.
-```
-
-### 2. Initialize Metadata
-
-Use `sara init` to add YAML frontmatter interactively:
-
-```bash
-sara init docs/customer-portal.md
-```
-
-This will prompt you for the document type, ID, name, and relationships, generating:
-
-```markdown
----
-id: "SOL-001"
-type: solution
-name: "Customer Portal"
-description: "Web-based customer self-service portal"
----
-
-# Customer Portal Solution
-
-This solution provides a self-service portal for customers.
-```
-
-### 3. Create Configuration (Optional)
-
-Create a `sara.toml` file:
-
-```toml
-[repositories]
-paths = ["./docs"]
-
-[validation]
-strict_orphans = false
-
-[output]
-colors = true
-emojis = true
-```
-
-### 4. Parse and Validate
-
-```bash
-# Parse all documents
-sara parse
-
-# Validate the knowledge graph
-sara validate
-
-# Query a specific item
-sara query SOL-001 --downstream
-
-# Generate a coverage report
-sara report coverage
-```
+<p align="center">
+  <img src="assets/generated/demo-init.gif" alt="SARA Demo" width="1024">
+</p>
 
 ## Commands
 
@@ -420,73 +384,13 @@ sara report matrix --format csv -o matrix.csv
 | `SARA_CONFIG` | Path to configuration file |
 | `NO_COLOR` | Disable colored output when set |
 
-## Development
+## Contributing
 
-### Prerequisites
-
-- Rust 1.85+ (2024 edition)
-
-### Building
-
-```bash
-# Debug build
-cargo build
-
-# Release build
-cargo build --release
-
-# Run tests
-cargo test
-
-# Run clippy
-cargo clippy
-```
-
-### Project Structure
-
-```
-sara-core/       # Library crate (business logic)
-├── src/
-│   ├── model/       # Domain entities
-│   ├── graph/       # Knowledge graph operations
-│   ├── parser/      # Markdown and YAML parsing
-│   ├── repository/  # Multi-repo file discovery
-│   ├── validation/  # Integrity checks
-│   ├── query/       # Query operations
-│   ├── report/      # Report generation
-│   ├── config/      # Configuration handling
-│   └── template/    # Document templates
-
-sara-cli/        # Binary crate (CLI interface)
-├── src/
-│   ├── commands/    # CLI subcommands
-│   └── output/      # Output formatting
-
-tests/           # Integration tests
-└── fixtures/    # Test documents
-```
+Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
+for details on how to submit pull requests, coding standards, and development
+setup.
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
-
-## Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/amazing-feature`)
-3. Commit your changes using [Conventional Commits](https://www.conventionalcommits.org/) format:
-   - `feat: add new validation rule` - New features
-   - `fix: resolve broken reference detection` - Bug fixes
-   - `docs: update installation guide` - Documentation changes
-   - `refactor: simplify graph traversal` - Code refactoring
-   - `test: add coverage for edge cases` - Test additions
-   - `build: update dependencies` - Build system and dependencies
-   - `ci: add release workflow` - CI/CD configuration changes
-4. Push to the branch (`git push origin feature/amazing-feature`)
-5. Open a Pull Request
-
-## Code of Conduct
-
-This project adheres to the [Rust Code of Conduct](https://www.rust-lang.org/policies/code-of-conduct). By participating, you are expected to uphold this code. We are committed to providing a friendly, safe, and welcoming environment for all contributors.
+This project is licensed under the Apache 2.0 License - see the [LICENSE](LICENSE)
+file for details.
