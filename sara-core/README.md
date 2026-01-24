@@ -17,11 +17,8 @@ This crate provides the business logic for managing architecture documents and r
 
 ## Usage
 
-Add this to your `Cargo.toml`:
-
-```toml
-[dependencies]
-sara-core = "0.1"
+```bash
+cargo add sara-core
 ```
 
 ### Example
