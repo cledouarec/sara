@@ -14,7 +14,7 @@ name = "sara"
 path = "src/main.rs"
 
 [dependencies]
-sara-core = { path = "../sara-core", version = "0.4.0" }
+sara-core = { path = "../sara-core", version = "0.4.1" }
 clap.workspace = true
 colored.workspace = true
 console.workspace = true
