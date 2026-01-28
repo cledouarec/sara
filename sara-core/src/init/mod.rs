@@ -6,5 +6,5 @@
 mod options;
 pub mod service;
 
-pub use options::InitOptions;
+pub use options::{InitOptions, TypeConfig};
 pub use service::{InitError, InitResult, InitService, parse_item_type};

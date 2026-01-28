@@ -3,24 +3,13 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::model::{FieldName, ItemType};
+use crate::model::ItemType;
 use crate::parser::has_frontmatter;
 use crate::template::{
     GeneratorOptions, extract_name_from_content, generate_document, generate_id,
 };
 
-use super::InitOptions;
-
-/// Creates an InvalidOption error with a formatted message.
-fn invalid_option_error(field: FieldName, valid_types: &[ItemType], actual: ItemType) -> InitError {
-    let valid_names: Vec<_> = valid_types.iter().map(|t| t.display_name()).collect();
-    InitError::InvalidOption(format!(
-        "{} is only valid for {}, not {}",
-        field.as_str(),
-        valid_names.join(", "),
-        actual.display_name()
-    ))
-}
+use super::{InitOptions, TypeConfig};
 
 /// Errors that can occur during initialization.
 #[derive(Debug, thiserror::Error)]
@@ -71,9 +60,6 @@ impl InitService {
     ///
     /// This will either create a new file or update an existing file with frontmatter.
     pub fn init(&self, opts: &InitOptions) -> Result<InitResult, InitError> {
-        // Validate type-specific options
-        self.validate_options(opts)?;
-
         // Check for existing frontmatter
         if opts.file.exists() && !opts.force {
             let content = fs::read_to_string(&opts.file)?;
@@ -81,6 +67,8 @@ impl InitService {
                 return Err(InitError::FrontmatterExists(opts.file.clone()));
             }
         }
+
+        let item_type = opts.item_type();
 
         // Resolve ID and name
         let id = self.resolve_id(opts);
@@ -92,70 +80,35 @@ impl InitService {
         // Write the file
         let (updated_existing, replaced_frontmatter) = self.write_file(opts, &gen_opts)?;
 
+        // Check if specification is needed
+        let needs_specification = self.check_needs_specification(&opts.type_config);
+
         Ok(InitResult {
             id,
             name,
-            item_type: opts.item_type,
+            item_type,
             file: opts.file.clone(),
             updated_existing,
             replaced_frontmatter,
-            needs_specification: opts.item_type.requires_specification()
-                && opts.specification.is_none(),
+            needs_specification,
         })
     }
 
-    /// Validates type-specific options.
-    fn validate_options(&self, opts: &InitOptions) -> Result<(), InitError> {
-        if !opts.refines.is_empty() && !opts.item_type.requires_refines() {
-            return Err(invalid_option_error(
-                FieldName::Refines,
-                ItemType::refines_types(),
-                opts.item_type,
-            ));
+    /// Checks if the type needs a specification but doesn't have one.
+    fn check_needs_specification(&self, type_config: &TypeConfig) -> bool {
+        match type_config {
+            TypeConfig::SystemRequirement { specification, .. }
+            | TypeConfig::SoftwareRequirement { specification, .. }
+            | TypeConfig::HardwareRequirement { specification, .. } => specification.is_none(),
+            _ => false,
         }
-        if !opts.derives_from.is_empty() && !opts.item_type.requires_derives_from() {
-            return Err(invalid_option_error(
-                FieldName::DerivesFrom,
-                ItemType::derives_from_types(),
-                opts.item_type,
-            ));
-        }
-        if !opts.satisfies.is_empty() && !opts.item_type.requires_satisfies() {
-            return Err(invalid_option_error(
-                FieldName::Satisfies,
-                ItemType::satisfies_types(),
-                opts.item_type,
-            ));
-        }
-        if opts.specification.is_some() && !opts.item_type.requires_specification() {
-            return Err(invalid_option_error(
-                FieldName::Specification,
-                ItemType::specification_types(),
-                opts.item_type,
-            ));
-        }
-        if opts.platform.is_some() && !opts.item_type.accepts_platform() {
-            return Err(invalid_option_error(
-                FieldName::Platform,
-                ItemType::platform_types(),
-                opts.item_type,
-            ));
-        }
-        if !opts.depends_on.is_empty() && !opts.item_type.supports_depends_on() {
-            return Err(invalid_option_error(
-                FieldName::DependsOn,
-                ItemType::depends_on_types(),
-                opts.item_type,
-            ));
-        }
-        Ok(())
     }
 
     /// Resolves the ID from options or generates a new one.
     fn resolve_id(&self, opts: &InitOptions) -> String {
         opts.id
             .clone()
-            .unwrap_or_else(|| generate_id(opts.item_type, None))
+            .unwrap_or_else(|| generate_id(opts.item_type(), None))
     }
 
     /// Resolves the name from options, file content, or file stem.
@@ -188,28 +141,123 @@ impl InitService {
         id: String,
         name: String,
     ) -> GeneratorOptions {
-        let mut gen_opts = GeneratorOptions::new(opts.item_type, id, name);
+        let mut gen_opts = GeneratorOptions::new(opts.item_type(), id, name);
 
         if let Some(ref desc) = opts.description {
             gen_opts = gen_opts.with_description(desc);
         }
-        if !opts.refines.is_empty() {
-            gen_opts = gen_opts.with_refines(opts.refines.clone());
-        }
-        if !opts.derives_from.is_empty() {
-            gen_opts = gen_opts.with_derives_from(opts.derives_from.clone());
-        }
-        if !opts.satisfies.is_empty() {
-            gen_opts = gen_opts.with_satisfies(opts.satisfies.clone());
-        }
-        if !opts.depends_on.is_empty() {
-            gen_opts = gen_opts.with_depends_on(opts.depends_on.clone());
-        }
-        if let Some(ref spec) = opts.specification {
-            gen_opts = gen_opts.with_specification(spec);
-        }
-        if let Some(ref platform) = opts.platform {
-            gen_opts = gen_opts.with_platform(platform);
+
+        // Extract type-specific options from TypeConfig
+        match &opts.type_config {
+            TypeConfig::Solution => {}
+
+            TypeConfig::UseCase { refines } => {
+                if !refines.is_empty() {
+                    gen_opts = gen_opts.with_refines(refines.clone());
+                }
+            }
+
+            TypeConfig::Scenario { refines } => {
+                if !refines.is_empty() {
+                    gen_opts = gen_opts.with_refines(refines.clone());
+                }
+            }
+
+            TypeConfig::SystemRequirement {
+                specification,
+                derives_from,
+                depends_on,
+            } => {
+                if let Some(spec) = specification {
+                    gen_opts = gen_opts.with_specification(spec);
+                }
+                if !derives_from.is_empty() {
+                    gen_opts = gen_opts.with_derives_from(derives_from.clone());
+                }
+                if !depends_on.is_empty() {
+                    gen_opts = gen_opts.with_depends_on(depends_on.clone());
+                }
+            }
+
+            TypeConfig::SystemArchitecture {
+                platform,
+                satisfies,
+            } => {
+                if let Some(p) = platform {
+                    gen_opts = gen_opts.with_platform(p);
+                }
+                if !satisfies.is_empty() {
+                    gen_opts = gen_opts.with_satisfies(satisfies.clone());
+                }
+            }
+
+            TypeConfig::SoftwareRequirement {
+                specification,
+                derives_from,
+                depends_on,
+            } => {
+                if let Some(spec) = specification {
+                    gen_opts = gen_opts.with_specification(spec);
+                }
+                if !derives_from.is_empty() {
+                    gen_opts = gen_opts.with_derives_from(derives_from.clone());
+                }
+                if !depends_on.is_empty() {
+                    gen_opts = gen_opts.with_depends_on(depends_on.clone());
+                }
+            }
+
+            TypeConfig::HardwareRequirement {
+                specification,
+                derives_from,
+                depends_on,
+            } => {
+                if let Some(spec) = specification {
+                    gen_opts = gen_opts.with_specification(spec);
+                }
+                if !derives_from.is_empty() {
+                    gen_opts = gen_opts.with_derives_from(derives_from.clone());
+                }
+                if !depends_on.is_empty() {
+                    gen_opts = gen_opts.with_depends_on(depends_on.clone());
+                }
+            }
+
+            TypeConfig::SoftwareDetailedDesign { satisfies } => {
+                if !satisfies.is_empty() {
+                    gen_opts = gen_opts.with_satisfies(satisfies.clone());
+                }
+            }
+
+            TypeConfig::HardwareDetailedDesign { satisfies } => {
+                if !satisfies.is_empty() {
+                    gen_opts = gen_opts.with_satisfies(satisfies.clone());
+                }
+            }
+
+            TypeConfig::Adr {
+                status,
+                deciders,
+                justifies,
+                supersedes,
+                superseded_by,
+            } => {
+                if let Some(s) = status {
+                    gen_opts = gen_opts.with_status(s);
+                }
+                if !deciders.is_empty() {
+                    gen_opts = gen_opts.with_deciders(deciders.clone());
+                }
+                if !justifies.is_empty() {
+                    gen_opts = gen_opts.with_justifies(justifies.clone());
+                }
+                if !supersedes.is_empty() {
+                    gen_opts = gen_opts.with_supersedes(supersedes.clone());
+                }
+                if let Some(sb) = superseded_by {
+                    gen_opts = gen_opts.with_superseded_by(sb);
+                }
+            }
         }
 
         gen_opts
@@ -333,6 +381,9 @@ pub fn parse_item_type(type_str: &str) -> Option<ItemType> {
         "software_detailed_design" | "softwaredetaileddesign" | "swdd" => {
             Some(ItemType::SoftwareDetailedDesign)
         }
+        "architecture_decision_record" | "architecturedecisionrecord" | "adr" => {
+            Some(ItemType::ArchitectureDecisionRecord)
+        }
         _ => None,
     }
 }
@@ -363,7 +414,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let opts = InitOptions::new(file_path.clone(), ItemType::Solution)
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::solution())
             .with_id("SOL-001")
             .with_name("Test Solution");
 
@@ -388,7 +439,7 @@ mod tests {
         // Create existing file without frontmatter
         fs::write(&file_path, "# My Document\n\nSome content here.").unwrap();
 
-        let opts = InitOptions::new(file_path.clone(), ItemType::UseCase).with_id("UC-001");
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::use_case()).with_id("UC-001");
 
         let service = InitService::new();
         let result = service.init(&opts).unwrap();
@@ -411,7 +462,7 @@ mod tests {
         // Create existing file with frontmatter
         fs::write(&file_path, "---\nid: OLD-001\n---\n# Content").unwrap();
 
-        let opts = InitOptions::new(file_path, ItemType::Solution).with_id("SOL-001");
+        let opts = InitOptions::new(file_path, TypeConfig::solution()).with_id("SOL-001");
 
         let service = InitService::new();
         let result = service.init(&opts);
@@ -427,7 +478,7 @@ mod tests {
         // Create existing file with frontmatter
         fs::write(&file_path, "---\nid: OLD-001\n---\n# Content").unwrap();
 
-        let opts = InitOptions::new(file_path.clone(), ItemType::Solution)
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::solution())
             .with_id("SOL-001")
             .with_name("New Solution")
             .with_force(true);
@@ -445,58 +496,35 @@ mod tests {
     }
 
     #[test]
-    fn test_validate_refines_valid() {
-        let temp_dir = TempDir::new().unwrap();
-        let opts = InitOptions::new(temp_dir.path().join("test.md"), ItemType::UseCase)
-            .with_refines(vec!["SOL-001".to_string()]);
-
-        let service = InitService::new();
-        assert!(service.validate_options(&opts).is_ok());
-    }
-
-    #[test]
-    fn test_validate_refines_invalid() {
-        let temp_dir = TempDir::new().unwrap();
-        let opts = InitOptions::new(temp_dir.path().join("test.md"), ItemType::SystemRequirement)
-            .with_refines(vec!["SOL-001".to_string()]);
-
-        let service = InitService::new();
-        assert!(service.validate_options(&opts).is_err());
-    }
-
-    #[test]
-    fn test_validate_platform_valid() {
-        let temp_dir = TempDir::new().unwrap();
-        let opts = InitOptions::new(
-            temp_dir.path().join("test.md"),
-            ItemType::SystemArchitecture,
-        )
-        .with_platform("AWS");
-
-        let service = InitService::new();
-        assert!(service.validate_options(&opts).is_ok());
-    }
-
-    #[test]
-    fn test_validate_platform_invalid() {
-        let temp_dir = TempDir::new().unwrap();
-        let opts = InitOptions::new(temp_dir.path().join("test.md"), ItemType::Solution)
-            .with_platform("AWS");
-
-        let service = InitService::new();
-        assert!(service.validate_options(&opts).is_err());
-    }
-
-    #[test]
     fn test_needs_specification() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let opts = InitOptions::new(file_path, ItemType::SystemRequirement).with_id("SYSREQ-001");
+        let opts =
+            InitOptions::new(file_path, TypeConfig::system_requirement()).with_id("SYSREQ-001");
 
         let service = InitService::new();
         let result = service.init(&opts).unwrap();
 
         assert!(result.needs_specification);
+    }
+
+    #[test]
+    fn test_needs_specification_when_provided() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("test.md");
+
+        let type_config = TypeConfig::SystemRequirement {
+            specification: Some("The system SHALL do something".to_string()),
+            derives_from: Vec::new(),
+            depends_on: Vec::new(),
+        };
+
+        let opts = InitOptions::new(file_path, type_config).with_id("SYSREQ-001");
+
+        let service = InitService::new();
+        let result = service.init(&opts).unwrap();
+
+        assert!(!result.needs_specification);
     }
 }

@@ -55,15 +55,19 @@ pub enum Commands {
     ///   sara edit SREQ-001 --name "New Name"  # Non-interactive mode
     Edit(EditArgs),
 
-    /// Initialize metadata in a Markdown file (interactive mode if --type not provided)
+    /// Initialize metadata in a Markdown file
     ///
-    /// When --type is omitted, enters interactive mode which guides you through
+    /// When no subcommand is provided, enters interactive mode which guides you through
     /// creating a new traceability item with prompts for type, name, ID, and
     /// upstream references. Interactive mode requires a TTY terminal.
     ///
+    /// Use a subcommand for non-interactive mode with type-specific options:
+    ///   sara init adr, solution, use-case, scenario, system-requirement, etc.
+    ///
     /// Examples:
-    ///   sara init                    # Interactive mode
-    ///   sara init doc.md -t use_case # Non-interactive mode
+    ///   sara init                                  # Interactive mode
+    ///   sara init adr doc.md --status proposed     # Create ADR
+    ///   sara init sysreq doc.md --specification "" # Create system requirement
     Init(InitArgs),
 
     /// Parse documents and build the knowledge graph

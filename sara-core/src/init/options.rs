@@ -9,47 +9,230 @@ use crate::model::ItemType;
 pub struct InitOptions {
     /// The file path to create or update.
     pub file: PathBuf,
-    /// The item type.
-    pub item_type: ItemType,
     /// Optional ID (will be auto-generated if not provided).
     pub id: Option<String>,
     /// Optional name (will be extracted from file or generated if not provided).
     pub name: Option<String>,
     /// Optional description.
     pub description: Option<String>,
-    /// Upstream references (refines) - valid for use_case and scenario.
-    pub refines: Vec<String>,
-    /// Upstream references (derives_from) - valid for requirement types.
-    pub derives_from: Vec<String>,
-    /// Upstream references (satisfies) - valid for architecture and design types.
-    pub satisfies: Vec<String>,
-    /// Peer dependencies (depends_on) - valid for requirement types.
-    pub depends_on: Vec<String>,
-    /// Specification text - valid for requirement types.
-    pub specification: Option<String>,
-    /// Target platform - valid for system_architecture.
-    pub platform: Option<String>,
     /// Whether to overwrite existing frontmatter.
     pub force: bool,
+    /// Type-specific configuration.
+    pub type_config: TypeConfig,
+}
+
+/// Type-specific configuration for each item type.
+#[derive(Debug, Clone)]
+pub enum TypeConfig {
+    /// Solution - no type-specific options.
+    Solution,
+
+    /// Use Case with optional refines references.
+    UseCase {
+        /// Solution(s) this use case refines.
+        refines: Vec<String>,
+    },
+
+    /// Scenario with optional refines references.
+    Scenario {
+        /// Use case(s) this scenario refines.
+        refines: Vec<String>,
+    },
+
+    /// System Requirement with specification and traceability.
+    SystemRequirement {
+        /// Specification statement.
+        specification: Option<String>,
+        /// Scenario(s) this requirement derives from.
+        derives_from: Vec<String>,
+        /// Peer dependencies.
+        depends_on: Vec<String>,
+    },
+
+    /// System Architecture with platform and traceability.
+    SystemArchitecture {
+        /// Target platform.
+        platform: Option<String>,
+        /// System requirement(s) this architecture satisfies.
+        satisfies: Vec<String>,
+    },
+
+    /// Software Requirement with specification and traceability.
+    SoftwareRequirement {
+        /// Specification statement.
+        specification: Option<String>,
+        /// System architecture/requirement(s) this derives from.
+        derives_from: Vec<String>,
+        /// Peer dependencies.
+        depends_on: Vec<String>,
+    },
+
+    /// Hardware Requirement with specification and traceability.
+    HardwareRequirement {
+        /// Specification statement.
+        specification: Option<String>,
+        /// System architecture/requirement(s) this derives from.
+        derives_from: Vec<String>,
+        /// Peer dependencies.
+        depends_on: Vec<String>,
+    },
+
+    /// Software Detailed Design with traceability.
+    SoftwareDetailedDesign {
+        /// Software requirement(s) this design satisfies.
+        satisfies: Vec<String>,
+    },
+
+    /// Hardware Detailed Design with traceability.
+    HardwareDetailedDesign {
+        /// Hardware requirement(s) this design satisfies.
+        satisfies: Vec<String>,
+    },
+
+    /// Architecture Decision Record with ADR-specific fields.
+    Adr {
+        /// ADR status (proposed, accepted, deprecated, superseded).
+        status: Option<String>,
+        /// Decision makers.
+        deciders: Vec<String>,
+        /// Design artifacts this ADR justifies.
+        justifies: Vec<String>,
+        /// Older ADRs this decision supersedes.
+        supersedes: Vec<String>,
+        /// Newer ADR that supersedes this one.
+        superseded_by: Option<String>,
+    },
+}
+
+impl TypeConfig {
+    /// Returns the item type for this configuration.
+    pub fn item_type(&self) -> ItemType {
+        match self {
+            TypeConfig::Solution => ItemType::Solution,
+            TypeConfig::UseCase { .. } => ItemType::UseCase,
+            TypeConfig::Scenario { .. } => ItemType::Scenario,
+            TypeConfig::SystemRequirement { .. } => ItemType::SystemRequirement,
+            TypeConfig::SystemArchitecture { .. } => ItemType::SystemArchitecture,
+            TypeConfig::SoftwareRequirement { .. } => ItemType::SoftwareRequirement,
+            TypeConfig::HardwareRequirement { .. } => ItemType::HardwareRequirement,
+            TypeConfig::SoftwareDetailedDesign { .. } => ItemType::SoftwareDetailedDesign,
+            TypeConfig::HardwareDetailedDesign { .. } => ItemType::HardwareDetailedDesign,
+            TypeConfig::Adr { .. } => ItemType::ArchitectureDecisionRecord,
+        }
+    }
+
+    /// Creates a Solution config.
+    pub fn solution() -> Self {
+        TypeConfig::Solution
+    }
+
+    /// Creates a UseCase config.
+    pub fn use_case() -> Self {
+        TypeConfig::UseCase {
+            refines: Vec::new(),
+        }
+    }
+
+    /// Creates a Scenario config.
+    pub fn scenario() -> Self {
+        TypeConfig::Scenario {
+            refines: Vec::new(),
+        }
+    }
+
+    /// Creates a SystemRequirement config.
+    pub fn system_requirement() -> Self {
+        TypeConfig::SystemRequirement {
+            specification: None,
+            derives_from: Vec::new(),
+            depends_on: Vec::new(),
+        }
+    }
+
+    /// Creates a SystemArchitecture config.
+    pub fn system_architecture() -> Self {
+        TypeConfig::SystemArchitecture {
+            platform: None,
+            satisfies: Vec::new(),
+        }
+    }
+
+    /// Creates a SoftwareRequirement config.
+    pub fn software_requirement() -> Self {
+        TypeConfig::SoftwareRequirement {
+            specification: None,
+            derives_from: Vec::new(),
+            depends_on: Vec::new(),
+        }
+    }
+
+    /// Creates a HardwareRequirement config.
+    pub fn hardware_requirement() -> Self {
+        TypeConfig::HardwareRequirement {
+            specification: None,
+            derives_from: Vec::new(),
+            depends_on: Vec::new(),
+        }
+    }
+
+    /// Creates a SoftwareDetailedDesign config.
+    pub fn software_detailed_design() -> Self {
+        TypeConfig::SoftwareDetailedDesign {
+            satisfies: Vec::new(),
+        }
+    }
+
+    /// Creates a HardwareDetailedDesign config.
+    pub fn hardware_detailed_design() -> Self {
+        TypeConfig::HardwareDetailedDesign {
+            satisfies: Vec::new(),
+        }
+    }
+
+    /// Creates an ADR config.
+    pub fn adr() -> Self {
+        TypeConfig::Adr {
+            status: None,
+            deciders: Vec::new(),
+            justifies: Vec::new(),
+            supersedes: Vec::new(),
+            superseded_by: None,
+        }
+    }
+
+    /// Creates a TypeConfig from an ItemType with default values.
+    pub fn from_item_type(item_type: ItemType) -> Self {
+        match item_type {
+            ItemType::Solution => TypeConfig::solution(),
+            ItemType::UseCase => TypeConfig::use_case(),
+            ItemType::Scenario => TypeConfig::scenario(),
+            ItemType::SystemRequirement => TypeConfig::system_requirement(),
+            ItemType::SystemArchitecture => TypeConfig::system_architecture(),
+            ItemType::SoftwareRequirement => TypeConfig::software_requirement(),
+            ItemType::HardwareRequirement => TypeConfig::hardware_requirement(),
+            ItemType::SoftwareDetailedDesign => TypeConfig::software_detailed_design(),
+            ItemType::HardwareDetailedDesign => TypeConfig::hardware_detailed_design(),
+            ItemType::ArchitectureDecisionRecord => TypeConfig::adr(),
+        }
+    }
 }
 
 impl InitOptions {
-    /// Creates new init options with required fields.
-    pub fn new(file: PathBuf, item_type: ItemType) -> Self {
+    /// Creates new init options with the specified file and type configuration.
+    pub fn new(file: PathBuf, type_config: TypeConfig) -> Self {
         Self {
             file,
-            item_type,
             id: None,
             name: None,
             description: None,
-            refines: Vec::new(),
-            derives_from: Vec::new(),
-            satisfies: Vec::new(),
-            depends_on: Vec::new(),
-            specification: None,
-            platform: None,
             force: false,
+            type_config,
         }
+    }
+
+    /// Returns the item type for this configuration.
+    pub fn item_type(&self) -> ItemType {
+        self.type_config.item_type()
     }
 
     /// Sets the ID.
@@ -85,54 +268,6 @@ impl InitOptions {
     /// Sets the description if provided.
     pub fn maybe_description(mut self, description: Option<String>) -> Self {
         self.description = description;
-        self
-    }
-
-    /// Sets the refines references.
-    pub fn with_refines(mut self, refines: Vec<String>) -> Self {
-        self.refines = refines;
-        self
-    }
-
-    /// Sets the derives_from references.
-    pub fn with_derives_from(mut self, derives_from: Vec<String>) -> Self {
-        self.derives_from = derives_from;
-        self
-    }
-
-    /// Sets the satisfies references.
-    pub fn with_satisfies(mut self, satisfies: Vec<String>) -> Self {
-        self.satisfies = satisfies;
-        self
-    }
-
-    /// Sets the depends_on references (peer dependencies).
-    pub fn with_depends_on(mut self, depends_on: Vec<String>) -> Self {
-        self.depends_on = depends_on;
-        self
-    }
-
-    /// Sets the specification.
-    pub fn with_specification(mut self, specification: impl Into<String>) -> Self {
-        self.specification = Some(specification.into());
-        self
-    }
-
-    /// Sets the specification if provided.
-    pub fn maybe_specification(mut self, specification: Option<String>) -> Self {
-        self.specification = specification;
-        self
-    }
-
-    /// Sets the platform.
-    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
-        self
-    }
-
-    /// Sets the platform if provided.
-    pub fn maybe_platform(mut self, platform: Option<String>) -> Self {
-        self.platform = platform;
         self
     }
 
