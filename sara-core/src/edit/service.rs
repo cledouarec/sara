@@ -362,22 +362,7 @@ impl EditService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemId, SourceLocation};
-
-    fn create_test_item(id: &str, item_type: ItemType, name: &str) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(name)
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::test_utils::create_test_item_with_name;
 
     #[test]
     fn test_edit_options_has_updates() {
@@ -390,7 +375,7 @@ mod tests {
 
     #[test]
     fn test_item_context_from_item() {
-        let item = create_test_item("SOL-001", ItemType::Solution, "Test Solution");
+        let item = create_test_item_with_name("SOL-001", ItemType::Solution, "Test Solution");
         let ctx = ItemContext::from_item(&item);
 
         assert_eq!(ctx.id, "SOL-001");

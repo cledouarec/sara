@@ -254,27 +254,12 @@ impl GraphDiff {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemBuilder, ItemType, SourceLocation};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType, name: &str) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(name)
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::ItemType;
+    use crate::test_utils::create_test_item_with_name;
 
     #[test]
     fn test_no_changes() {
-        let item = create_test_item("SOL-001", ItemType::Solution, "Solution");
+        let item = create_test_item_with_name("SOL-001", ItemType::Solution, "Solution");
 
         let old_graph = GraphBuilder::new().add_item(item.clone()).build().unwrap();
         let new_graph = GraphBuilder::new().add_item(item).build().unwrap();
@@ -287,7 +272,11 @@ mod tests {
     fn test_added_item() {
         let old_graph = GraphBuilder::new().build().unwrap();
         let new_graph = GraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution, "Solution"))
+            .add_item(create_test_item_with_name(
+                "SOL-001",
+                ItemType::Solution,
+                "Solution",
+            ))
             .build()
             .unwrap();
 
@@ -299,7 +288,11 @@ mod tests {
     #[test]
     fn test_removed_item() {
         let old_graph = GraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution, "Solution"))
+            .add_item(create_test_item_with_name(
+                "SOL-001",
+                ItemType::Solution,
+                "Solution",
+            ))
             .build()
             .unwrap();
         let new_graph = GraphBuilder::new().build().unwrap();
@@ -311,8 +304,8 @@ mod tests {
 
     #[test]
     fn test_modified_item() {
-        let old_item = create_test_item("SOL-001", ItemType::Solution, "Old Name");
-        let new_item = create_test_item("SOL-001", ItemType::Solution, "New Name");
+        let old_item = create_test_item_with_name("SOL-001", ItemType::Solution, "Old Name");
+        let new_item = create_test_item_with_name("SOL-001", ItemType::Solution, "New Name");
 
         let old_graph = GraphBuilder::new().add_item(old_item).build().unwrap();
         let new_graph = GraphBuilder::new().add_item(new_item).build().unwrap();
