@@ -7,7 +7,6 @@ use tera::{Context, Tera};
 use crate::model::{FieldName, ItemType};
 
 /// Embedded templates - compiled into the binary.
-const FRONTMATTER_TEMPLATE: &str = include_str!("../../templates/frontmatter.tera");
 const SOLUTION_TEMPLATE: &str = include_str!("../../templates/solution.tera");
 const USE_CASE_TEMPLATE: &str = include_str!("../../templates/use_case.tera");
 const SCENARIO_TEMPLATE: &str = include_str!("../../templates/scenario.tera");
@@ -30,7 +29,6 @@ fn get_tera() -> &'static Tera {
     TERA.get_or_init(|| {
         let mut tera = Tera::default();
         tera.add_raw_templates(vec![
-            ("frontmatter.tera", FRONTMATTER_TEMPLATE),
             ("solution.tera", SOLUTION_TEMPLATE),
             ("use_case.tera", USE_CASE_TEMPLATE),
             ("scenario.tera", SCENARIO_TEMPLATE),
@@ -211,14 +209,6 @@ impl GeneratorOptions {
     }
 }
 
-/// Generates YAML frontmatter for an item.
-pub fn generate_frontmatter(opts: &GeneratorOptions) -> String {
-    let tera = get_tera();
-    let context = opts.to_context();
-    tera.render("frontmatter.tera", &context)
-        .expect("Failed to render frontmatter template")
-}
-
 /// Generates a complete document with frontmatter and body.
 pub fn generate_document(opts: &GeneratorOptions) -> String {
     let tera = get_tera();
@@ -283,35 +273,6 @@ pub fn extract_name_from_content(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn test_generate_frontmatter_solution() {
-        let opts = GeneratorOptions::new(
-            ItemType::Solution,
-            "SOL-001".to_string(),
-            "Test Solution".to_string(),
-        );
-        let frontmatter = generate_frontmatter(&opts);
-
-        assert!(frontmatter.contains("id: \"SOL-001\""));
-        assert!(frontmatter.contains("type: solution"));
-        assert!(frontmatter.contains("name: \"Test Solution\""));
-    }
-
-    #[test]
-    fn test_generate_frontmatter_requirement() {
-        let opts = GeneratorOptions::new(
-            ItemType::SystemRequirement,
-            "SYSREQ-001".to_string(),
-            "Test Requirement".to_string(),
-        )
-        .with_specification("The system SHALL do something.");
-
-        let frontmatter = generate_frontmatter(&opts);
-
-        assert!(frontmatter.contains("specification:"));
-        assert!(frontmatter.contains("The system SHALL do something."));
-    }
 
     #[test]
     fn test_generate_document_solution() {
