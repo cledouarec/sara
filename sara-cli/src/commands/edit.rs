@@ -321,6 +321,10 @@ fn run_non_interactive_edit(
                 .depends_on
                 .clone()
                 .unwrap_or_else(|| item.traceability.depends_on.clone()),
+            justifies: opts
+                .justifies
+                .clone()
+                .unwrap_or_else(|| item.traceability.justifies.clone()),
         });
 
     service.apply_changes(&item.id, item.item_type, &new_values, &item.file_path)?;

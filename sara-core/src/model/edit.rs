@@ -113,6 +113,8 @@ pub struct TraceabilityLinks {
     pub satisfies: Vec<String>,
     /// Peer dependencies (for requirement types).
     pub depends_on: Vec<String>,
+    /// Design artifacts this ADR justifies (for ArchitectureDecisionRecord).
+    pub justifies: Vec<String>,
 }
 
 impl TraceabilityLinks {
@@ -122,6 +124,7 @@ impl TraceabilityLinks {
             && self.derives_from.is_empty()
             && self.satisfies.is_empty()
             && self.depends_on.is_empty()
+            && self.justifies.is_empty()
     }
 
     /// Creates from an Item's upstream references.
@@ -143,6 +146,11 @@ impl TraceabilityLinks {
                 .map(|id| id.as_str().to_string())
                 .collect(),
             depends_on: Vec::new(),
+            justifies: upstream
+                .justifies
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
         }
     }
 
@@ -169,7 +177,13 @@ impl TraceabilityLinks {
                 .collect(),
             depends_on: item
                 .attributes
-                .depends_on
+                .depends_on()
+                .iter()
+                .map(|id| id.as_str().to_string())
+                .collect(),
+            justifies: item
+                .upstream
+                .justifies
                 .iter()
                 .map(|id| id.as_str().to_string())
                 .collect(),

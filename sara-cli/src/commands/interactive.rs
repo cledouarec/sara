@@ -32,6 +32,8 @@ pub struct PrefilledFields {
     pub depends_on: Vec<String>,
     pub specification: Option<String>,
     pub platform: Option<String>,
+    pub deciders: Vec<String>,
+    pub justifies: Vec<String>,
 }
 
 /// Configuration for an interactive init session.
@@ -63,11 +65,16 @@ pub struct InteractiveInput {
 
 /// Type-specific fields.
 #[derive(Debug, Default)]
-pub struct TypeSpecificInput {
-    /// For requirement types.
-    pub specification: Option<String>,
+pub enum TypeSpecificInput {
+    /// No type-specific fields (Solution, UseCase, Scenario, DetailedDesign).
+    #[default]
+    None,
+    /// For requirement types (SystemRequirement, SoftwareRequirement, HardwareRequirement).
+    Requirement { specification: Option<String> },
     /// For SystemArchitecture.
-    pub platform: Option<String>,
+    SystemArchitecture { platform: Option<String> },
+    /// For Architecture Decision Records.
+    Adr { deciders: Vec<String> },
 }
 
 /// Errors that can occur during interactive prompts.
@@ -280,6 +287,7 @@ enum TraceabilityKind {
     DerivesFrom,
     Satisfies,
     DependsOn,
+    Justifies,
 }
 
 impl TraceabilityKind {
@@ -290,6 +298,7 @@ impl TraceabilityKind {
             FieldName::DerivesFrom => Self::DerivesFrom,
             FieldName::Satisfies => Self::Satisfies,
             FieldName::DependsOn => Self::DependsOn,
+            FieldName::Justifies => Self::Justifies,
             _ => Self::Refines, // Fallback
         }
     }
@@ -336,6 +345,7 @@ fn get_prefilled_for_kind(prefilled: &PrefilledFields, kind: TraceabilityKind) -
         TraceabilityKind::DerivesFrom => &prefilled.derives_from,
         TraceabilityKind::Satisfies => &prefilled.satisfies,
         TraceabilityKind::DependsOn => &prefilled.depends_on,
+        TraceabilityKind::Justifies => &prefilled.justifies,
     }
 }
 
@@ -350,6 +360,7 @@ fn get_preselected_for_kind(
             TraceabilityKind::DerivesFrom => p.derives_from.clone(),
             TraceabilityKind::Satisfies => p.satisfies.clone(),
             TraceabilityKind::DependsOn => p.depends_on.clone(),
+            TraceabilityKind::Justifies => p.justifies.clone(),
         })
         .unwrap_or_default()
 }
@@ -374,16 +385,18 @@ fn prompt_target_selection(
 }
 
 /// Applies selected IDs to the appropriate field in TraceabilityLinks.
+/// Uses extend to accumulate selections across multiple prompts for the same kind.
 fn apply_selection_to_input(
     input: &mut TraceabilityLinks,
     kind: TraceabilityKind,
     ids: Vec<String>,
 ) {
     match kind {
-        TraceabilityKind::Refines => input.refines = ids,
-        TraceabilityKind::DerivesFrom => input.derives_from = ids,
-        TraceabilityKind::Satisfies => input.satisfies = ids,
-        TraceabilityKind::DependsOn => input.depends_on = ids,
+        TraceabilityKind::Refines => input.refines.extend(ids),
+        TraceabilityKind::DerivesFrom => input.derives_from.extend(ids),
+        TraceabilityKind::Satisfies => input.satisfies.extend(ids),
+        TraceabilityKind::DependsOn => input.depends_on.extend(ids),
+        TraceabilityKind::Justifies => input.justifies.extend(ids),
     }
 }
 
@@ -485,6 +498,48 @@ pub fn prompt_platform(
     }
 }
 
+/// Prompts for ADR deciders (for architecture_decision_record).
+///
+/// Asks for each decider one at a time until an empty answer is given.
+/// If `prefilled` is not empty, returns those values without prompting.
+/// If `default` is not empty, pre-populates the list and allows adding more.
+pub fn prompt_deciders(
+    item_type: ItemType,
+    prefilled: &[String],
+    default: &[String],
+) -> Result<Vec<String>, PromptError> {
+    if item_type != ItemType::ArchitectureDecisionRecord {
+        return Ok(Vec::new());
+    }
+
+    if !prefilled.is_empty() {
+        return Ok(prefilled.to_vec());
+    }
+
+    let mut deciders: Vec<String> = default.to_vec();
+
+    loop {
+        let prompt_msg = if deciders.is_empty() {
+            "Decider name (press Enter to skip):"
+        } else {
+            "Additional decider (press Enter to finish):"
+        };
+
+        let input = Text::new(prompt_msg)
+            .with_help_message("Person responsible for this decision")
+            .prompt()?;
+
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+
+        deciders.push(trimmed.to_string());
+    }
+
+    Ok(deciders)
+}
+
 /// Displays a summary and prompts for confirmation (FR-048).
 fn prompt_confirmation(input: &InteractiveInput) -> Result<bool, PromptError> {
     let summary = build_confirmation_summary(input);
@@ -535,19 +590,30 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
         )
     };
 
-    let specification = input
-        .type_specific
-        .specification
-        .as_ref()
-        .map(|s| format!("\n  Specification: {}", s))
-        .unwrap_or_default();
+    let justifies = if input.traceability.justifies.is_empty() {
+        String::new()
+    } else {
+        format!("\n  Justifies: {}", input.traceability.justifies.join(", "))
+    };
 
-    let platform = input
-        .type_specific
-        .platform
-        .as_ref()
-        .map(|p| format!("\n  Platform: {}", p))
-        .unwrap_or_default();
+    let type_specific_info = match &input.type_specific {
+        TypeSpecificInput::None => String::new(),
+        TypeSpecificInput::Requirement { specification } => specification
+            .as_ref()
+            .map(|s| format!("\n  Specification: {}", s))
+            .unwrap_or_default(),
+        TypeSpecificInput::SystemArchitecture { platform } => platform
+            .as_ref()
+            .map(|p| format!("\n  Platform: {}", p))
+            .unwrap_or_default(),
+        TypeSpecificInput::Adr { deciders } => {
+            if deciders.is_empty() {
+                String::new()
+            } else {
+                format!("\n  Deciders: {}", deciders.join(", "))
+            }
+        }
+    };
 
     format!(
         "\n\
@@ -566,8 +632,8 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
         derives_from,
         satisfies,
         depends_on,
-        specification,
-        platform,
+        justifies,
+        type_specific_info,
     )
 }
 
@@ -675,14 +741,24 @@ fn collect_type_specific_input(
     session: &InteractiveSession<'_>,
     item_type: ItemType,
 ) -> Result<TypeSpecificInput, PromptError> {
-    let specification =
-        prompt_specification(item_type, session.prefilled.specification.as_ref(), None)?;
-    let platform = prompt_platform(item_type, session.prefilled.platform.as_ref(), None)?;
-
-    Ok(TypeSpecificInput {
-        specification,
-        platform,
-    })
+    match item_type {
+        ItemType::SystemRequirement
+        | ItemType::SoftwareRequirement
+        | ItemType::HardwareRequirement => {
+            let specification =
+                prompt_specification(item_type, session.prefilled.specification.as_ref(), None)?;
+            Ok(TypeSpecificInput::Requirement { specification })
+        }
+        ItemType::SystemArchitecture => {
+            let platform = prompt_platform(item_type, session.prefilled.platform.as_ref(), None)?;
+            Ok(TypeSpecificInput::SystemArchitecture { platform })
+        }
+        ItemType::ArchitectureDecisionRecord => {
+            let deciders = prompt_deciders(item_type, &session.prefilled.deciders, &[])?;
+            Ok(TypeSpecificInput::Adr { deciders })
+        }
+        _ => Ok(TypeSpecificInput::None),
+    }
 }
 
 /// Confirms the creation with the user (FR-048).

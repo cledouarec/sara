@@ -275,6 +275,8 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
         depends_on: Vec::new(),
         specification: None,
         platform: None,
+        deciders: Vec::new(),
+        justifies: Vec::new(),
     };
 
     let mut session = InteractiveSession {
@@ -307,45 +309,83 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
 
 /// Builds a TypeConfig from interactive session input.
 fn build_type_config_from_interactive(input: &super::interactive::InteractiveInput) -> TypeConfig {
+    use super::interactive::TypeSpecificInput;
     use sara_core::model::ItemType;
 
-    match input.item_type {
-        ItemType::Solution => TypeConfig::Solution,
-        ItemType::UseCase => TypeConfig::UseCase {
+    match (&input.item_type, &input.type_specific) {
+        (ItemType::Solution, _) => TypeConfig::Solution,
+        (ItemType::UseCase, _) => TypeConfig::UseCase {
             refines: input.traceability.refines.clone(),
         },
-        ItemType::Scenario => TypeConfig::Scenario {
+        (ItemType::Scenario, _) => TypeConfig::Scenario {
             refines: input.traceability.refines.clone(),
         },
-        ItemType::SystemRequirement => TypeConfig::SystemRequirement {
-            specification: input.type_specific.specification.clone(),
+        (ItemType::SystemRequirement, TypeSpecificInput::Requirement { specification }) => {
+            TypeConfig::SystemRequirement {
+                specification: specification.clone(),
+                derives_from: input.traceability.derives_from.clone(),
+                depends_on: input.traceability.depends_on.clone(),
+            }
+        }
+        (ItemType::SystemArchitecture, TypeSpecificInput::SystemArchitecture { platform }) => {
+            TypeConfig::SystemArchitecture {
+                platform: platform.clone(),
+                satisfies: input.traceability.satisfies.clone(),
+            }
+        }
+        (ItemType::SoftwareRequirement, TypeSpecificInput::Requirement { specification }) => {
+            TypeConfig::SoftwareRequirement {
+                specification: specification.clone(),
+                derives_from: input.traceability.derives_from.clone(),
+                depends_on: input.traceability.depends_on.clone(),
+            }
+        }
+        (ItemType::HardwareRequirement, TypeSpecificInput::Requirement { specification }) => {
+            TypeConfig::HardwareRequirement {
+                specification: specification.clone(),
+                derives_from: input.traceability.derives_from.clone(),
+                depends_on: input.traceability.depends_on.clone(),
+            }
+        }
+        (ItemType::SoftwareDetailedDesign, _) => TypeConfig::SoftwareDetailedDesign {
+            satisfies: input.traceability.satisfies.clone(),
+        },
+        (ItemType::HardwareDetailedDesign, _) => TypeConfig::HardwareDetailedDesign {
+            satisfies: input.traceability.satisfies.clone(),
+        },
+        (ItemType::ArchitectureDecisionRecord, TypeSpecificInput::Adr { deciders }) => {
+            TypeConfig::Adr {
+                status: None,
+                deciders: deciders.clone(),
+                justifies: input.traceability.justifies.clone(),
+                supersedes: Vec::new(),
+                superseded_by: None,
+            }
+        }
+        // Fallback cases - should not happen in practice
+        (ItemType::SystemRequirement, _) => TypeConfig::SystemRequirement {
+            specification: None,
             derives_from: input.traceability.derives_from.clone(),
             depends_on: input.traceability.depends_on.clone(),
         },
-        ItemType::SystemArchitecture => TypeConfig::SystemArchitecture {
-            platform: input.type_specific.platform.clone(),
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        ItemType::SoftwareRequirement => TypeConfig::SoftwareRequirement {
-            specification: input.type_specific.specification.clone(),
+        (ItemType::SoftwareRequirement, _) => TypeConfig::SoftwareRequirement {
+            specification: None,
             derives_from: input.traceability.derives_from.clone(),
             depends_on: input.traceability.depends_on.clone(),
         },
-        ItemType::HardwareRequirement => TypeConfig::HardwareRequirement {
-            specification: input.type_specific.specification.clone(),
+        (ItemType::HardwareRequirement, _) => TypeConfig::HardwareRequirement {
+            specification: None,
             derives_from: input.traceability.derives_from.clone(),
             depends_on: input.traceability.depends_on.clone(),
         },
-        ItemType::SoftwareDetailedDesign => TypeConfig::SoftwareDetailedDesign {
+        (ItemType::SystemArchitecture, _) => TypeConfig::SystemArchitecture {
+            platform: None,
             satisfies: input.traceability.satisfies.clone(),
         },
-        ItemType::HardwareDetailedDesign => TypeConfig::HardwareDetailedDesign {
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        ItemType::ArchitectureDecisionRecord => TypeConfig::Adr {
+        (ItemType::ArchitectureDecisionRecord, _) => TypeConfig::Adr {
             status: None,
             deciders: Vec::new(),
-            justifies: Vec::new(),
+            justifies: input.traceability.justifies.clone(),
             supersedes: Vec::new(),
             superseded_by: None,
         },

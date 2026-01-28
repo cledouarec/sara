@@ -159,7 +159,7 @@ fn format_coverage_text(report: &CoverageReport, config: &OutputConfig) -> Strin
         .iter()
         .map(|tc| {
             format!(
-                "  {:<25} {:>5}   {:>8}   {:>7.1}%",
+                "  {:<35} {:>5}   {:>8}   {:>7.1}%",
                 tc.type_name, tc.total, tc.complete, tc.coverage_percent
             )
         })
@@ -188,12 +188,12 @@ fn format_coverage_text(report: &CoverageReport, config: &OutputConfig) -> Strin
 Overall Coverage: {:.1}%
 
 By Item Type:
-  Type                      Items   Complete   Coverage
-  ─────────────────────────────────────────────────────
+  {:<35} {:>5}   {:>8}   Coverage
+  ───────────────────────────────────────────────────────────────
 {type_rows}
 {incomplete_section}
 ",
-        report.overall_coverage
+        report.overall_coverage, "Type", "Items", "Complete"
     )
 }
 
