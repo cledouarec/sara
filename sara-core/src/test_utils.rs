@@ -5,7 +5,9 @@
 
 use std::path::PathBuf;
 
-use crate::model::{AdrStatus, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs};
+use crate::model::{
+    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+};
 
 /// Creates a test item with the given ID and type.
 ///
@@ -131,6 +133,67 @@ pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Ite
         )
         .build()
         .expect("Test ADR should build successfully")
+}
+
+/// Creates a test item with a custom file path.
+///
+/// Useful for testing duplicate detection where file paths matter.
+#[must_use]
+pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> Item {
+    let source = SourceLocation::new(PathBuf::from("/test-repo"), PathBuf::from(file_path));
+    let mut builder = ItemBuilder::new()
+        .id(ItemId::new_unchecked(id))
+        .item_type(item_type)
+        .name(format!("Test {id}"))
+        .source(source);
+
+    if item_type.requires_specification() {
+        builder = builder.specification("Test specification");
+    }
+
+    if item_type.requires_deciders() {
+        builder = builder
+            .status(AdrStatus::Proposed)
+            .deciders(vec!["Test Decider".to_string()]);
+    }
+
+    builder
+        .build()
+        .expect("Test item should build successfully")
+}
+
+/// Creates a test item with both upstream and downstream references.
+///
+/// Useful for testing relationship validation.
+#[must_use]
+pub fn create_test_item_with_refs(
+    id: &str,
+    item_type: ItemType,
+    upstream: UpstreamRefs,
+    downstream: DownstreamRefs,
+) -> Item {
+    let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
+    let mut builder = ItemBuilder::new()
+        .id(ItemId::new_unchecked(id))
+        .item_type(item_type)
+        .name(format!("Test {id}"))
+        .source(source)
+        .upstream(upstream)
+        .downstream(downstream);
+
+    if item_type.requires_specification() {
+        builder = builder.specification("Test specification");
+    }
+
+    if item_type.requires_deciders() {
+        builder = builder
+            .status(AdrStatus::Proposed)
+            .deciders(vec!["Test Decider".to_string()]);
+    }
+
+    builder
+        .build()
+        .expect("Test item should build successfully")
 }
 
 /// Creates a simple graph fixture with Solution -> UseCase -> Scenario chain.

@@ -5,12 +5,9 @@ use std::process::ExitCode;
 
 use clap::Args;
 
-use sara_core::graph::{
-    GraphBuilder, KnowledgeGraph, TraversalNode, TraversalOptions, TraversalResult,
-};
+use sara_core::graph::{KnowledgeGraph, TraversalNode, TraversalOptions, TraversalResult};
 use sara_core::model::{Item, ItemId, ItemType};
 use sara_core::query::{LookupResult, QueryEngine};
-use sara_core::repository::parse_repositories;
 
 use super::CommandContext;
 use crate::output::{
@@ -55,20 +52,13 @@ pub struct QueryArgs {
 
 /// Runs the query command.
 pub fn run(args: &QueryArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
-    let graph = build_graph(ctx)?;
+    let graph = ctx.build_graph()?;
     let engine = QueryEngine::new(&graph);
 
     match engine.lookup(&args.item_id) {
         LookupResult::Found(item) => handle_found_item(args, ctx, item, &graph, &engine),
         LookupResult::NotFound { suggestions } => handle_not_found(args, ctx, &suggestions),
     }
-}
-
-/// Builds the knowledge graph from repositories.
-fn build_graph(ctx: &CommandContext) -> Result<KnowledgeGraph, Box<dyn Error>> {
-    let items = parse_repositories(&ctx.repositories)?;
-    let graph = GraphBuilder::new().add_items(items).build()?;
-    Ok(graph)
 }
 
 /// Handles the case when an item is found.

@@ -17,6 +17,8 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use sara_core::config::Config;
+use sara_core::graph::{GraphBuilder, KnowledgeGraph};
+use sara_core::repository::parse_repositories;
 
 use crate::Cli;
 use crate::output::OutputConfig;
@@ -36,6 +38,16 @@ pub struct CommandContext {
     pub output: OutputConfig,
     /// Repository paths to operate on.
     pub repositories: Vec<PathBuf>,
+}
+
+impl CommandContext {
+    /// Builds the knowledge graph from the configured repositories.
+    ///
+    /// Parses all items from the repository paths and constructs a graph.
+    pub fn build_graph(&self) -> Result<KnowledgeGraph, Box<dyn Error>> {
+        let items = parse_repositories(&self.repositories)?;
+        Ok(GraphBuilder::new().add_items(items).build()?)
+    }
 }
 
 /// Available CLI commands.

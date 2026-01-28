@@ -4,7 +4,44 @@ use std::collections::HashSet;
 
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{ItemId, RelationshipType};
+use crate::model::{Item, ItemId, RelationshipType};
+
+/// Relationship pair configuration for redundancy checking.
+struct RelationshipPair {
+    from_rel: RelationshipType,
+    to_rel: RelationshipType,
+}
+
+/// Checks for redundant declarations in a specific relationship pair.
+fn check_redundant_pair<F>(
+    item: &Item,
+    graph: &KnowledgeGraph,
+    downstream_refs: &[ItemId],
+    has_inverse: F,
+    pair: &RelationshipPair,
+    seen_pairs: &mut HashSet<(String, String)>,
+    warnings: &mut Vec<ValidationError>,
+) where
+    F: Fn(&Item) -> bool,
+{
+    for target_id in downstream_refs {
+        if let Some(target) = graph.get(target_id)
+            && has_inverse(target)
+        {
+            let pair_key = make_pair_key(&item.id, target_id);
+            if seen_pairs.insert(pair_key) {
+                warnings.push(ValidationError::RedundantRelationship {
+                    from_id: item.id.clone(),
+                    to_id: target_id.clone(),
+                    from_rel: pair.from_rel,
+                    to_rel: pair.to_rel,
+                    from_location: Some(item.source.clone()),
+                    to_location: Some(target.source.clone()),
+                });
+            }
+        }
+    }
+}
 
 /// Detects redundant relationships where both items declare the same link.
 ///
@@ -16,65 +53,49 @@ pub fn check_redundant_relationships(graph: &KnowledgeGraph) -> Vec<ValidationEr
     let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
 
     for item in graph.items() {
-        // Check downstream declarations (is_refined_by, derives, is_satisfied_by)
-        // against upstream declarations in target items (refines, derives_from, satisfies)
+        // Check downstream declarations against upstream declarations in target items
 
-        // Check is_refined_by
-        for target_id in &item.downstream.is_refined_by {
-            if let Some(target) = graph.get(target_id)
-                && target.upstream.refines.contains(&item.id)
-            {
-                let pair_key = make_pair_key(&item.id, target_id);
-                if seen_pairs.insert(pair_key) {
-                    warnings.push(ValidationError::RedundantRelationship {
-                        from_id: item.id.clone(),
-                        to_id: target_id.clone(),
-                        from_rel: RelationshipType::IsRefinedBy,
-                        to_rel: RelationshipType::Refines,
-                        from_location: Some(item.source.clone()),
-                        to_location: Some(target.source.clone()),
-                    });
-                }
-            }
-        }
+        // is_refined_by <-> refines
+        check_redundant_pair(
+            item,
+            graph,
+            &item.downstream.is_refined_by,
+            |target| target.upstream.refines.contains(&item.id),
+            &RelationshipPair {
+                from_rel: RelationshipType::IsRefinedBy,
+                to_rel: RelationshipType::Refines,
+            },
+            &mut seen_pairs,
+            &mut warnings,
+        );
 
-        // Check derives
-        for target_id in &item.downstream.derives {
-            if let Some(target) = graph.get(target_id)
-                && target.upstream.derives_from.contains(&item.id)
-            {
-                let pair_key = make_pair_key(&item.id, target_id);
-                if seen_pairs.insert(pair_key) {
-                    warnings.push(ValidationError::RedundantRelationship {
-                        from_id: item.id.clone(),
-                        to_id: target_id.clone(),
-                        from_rel: RelationshipType::Derives,
-                        to_rel: RelationshipType::DerivesFrom,
-                        from_location: Some(item.source.clone()),
-                        to_location: Some(target.source.clone()),
-                    });
-                }
-            }
-        }
+        // derives <-> derives_from
+        check_redundant_pair(
+            item,
+            graph,
+            &item.downstream.derives,
+            |target| target.upstream.derives_from.contains(&item.id),
+            &RelationshipPair {
+                from_rel: RelationshipType::Derives,
+                to_rel: RelationshipType::DerivesFrom,
+            },
+            &mut seen_pairs,
+            &mut warnings,
+        );
 
-        // Check is_satisfied_by
-        for target_id in &item.downstream.is_satisfied_by {
-            if let Some(target) = graph.get(target_id)
-                && target.upstream.satisfies.contains(&item.id)
-            {
-                let pair_key = make_pair_key(&item.id, target_id);
-                if seen_pairs.insert(pair_key) {
-                    warnings.push(ValidationError::RedundantRelationship {
-                        from_id: item.id.clone(),
-                        to_id: target_id.clone(),
-                        from_rel: RelationshipType::IsSatisfiedBy,
-                        to_rel: RelationshipType::Satisfies,
-                        from_location: Some(item.source.clone()),
-                        to_location: Some(target.source.clone()),
-                    });
-                }
-            }
-        }
+        // is_satisfied_by <-> satisfies
+        check_redundant_pair(
+            item,
+            graph,
+            &item.downstream.is_satisfied_by,
+            |target| target.upstream.satisfies.contains(&item.id),
+            &RelationshipPair {
+                from_rel: RelationshipType::IsSatisfiedBy,
+                to_rel: RelationshipType::Satisfies,
+            },
+            &mut seen_pairs,
+            &mut warnings,
+        );
     }
 
     warnings
@@ -95,47 +116,22 @@ fn make_pair_key(id1: &ItemId, id2: &ItemId) -> (String, String) {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{DownstreamRefs, ItemBuilder, ItemType, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_item(
-        id: &str,
-        item_type: ItemType,
-        upstream: Option<UpstreamRefs>,
-        downstream: Option<DownstreamRefs>,
-    ) -> crate::model::Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(up) = upstream {
-            builder = builder.upstream(up);
-        }
-        if let Some(down) = downstream {
-            builder = builder.downstream(down);
-        }
-        if item_type.requires_specification() {
-            builder = builder.specification("Test spec");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::{DownstreamRefs, ItemType, UpstreamRefs};
+    use crate::test_utils::{
+        create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
+    };
 
     #[test]
     fn test_no_redundancy() {
         // SARCH satisfies SYSREQ, but SYSREQ doesn't declare is_satisfied_by
-        let sysreq = create_item("SYSREQ-001", ItemType::SystemRequirement, None, None);
-        let sarch = create_item(
+        let sysreq = create_test_item("SYSREQ-001", ItemType::SystemRequirement);
+        let sarch = create_test_item_with_upstream(
             "SARCH-001",
             ItemType::SystemArchitecture,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 satisfies: vec![ItemId::new_unchecked("SYSREQ-001")],
                 ..Default::default()
-            }),
-            None,
+            },
         );
 
         let graph = GraphBuilder::new()
@@ -151,23 +147,22 @@ mod tests {
     #[test]
     fn test_redundant_satisfies() {
         // Both declare the relationship - this is redundant
-        let sysreq = create_item(
+        let sysreq = create_test_item_with_refs(
             "SYSREQ-001",
             ItemType::SystemRequirement,
-            None,
-            Some(DownstreamRefs {
+            UpstreamRefs::default(),
+            DownstreamRefs {
                 is_satisfied_by: vec![ItemId::new_unchecked("SARCH-001")],
                 ..Default::default()
-            }),
+            },
         );
-        let sarch = create_item(
+        let sarch = create_test_item_with_upstream(
             "SARCH-001",
             ItemType::SystemArchitecture,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 satisfies: vec![ItemId::new_unchecked("SYSREQ-001")],
                 ..Default::default()
-            }),
-            None,
+            },
         );
 
         let graph = GraphBuilder::new()

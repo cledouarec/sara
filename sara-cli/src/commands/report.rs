@@ -8,9 +8,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
-use sara_core::graph::GraphBuilder;
 use sara_core::report::{CoverageReport, TraceabilityMatrix};
-use sara_core::repository::parse_repositories;
 
 use super::CommandContext;
 use crate::output::{
@@ -70,44 +68,43 @@ pub fn run(args: &ReportArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn 
     }
 }
 
+/// Writes report output to file or stdout.
+fn write_report_output(
+    output: &str,
+    output_path: Option<PathBuf>,
+    config: &OutputConfig,
+    report_name: &str,
+) -> Result<ExitCode, Box<dyn Error>> {
+    if let Some(path) = output_path {
+        let mut file = File::create(&path)?;
+        file.write_all(output.as_bytes())?;
+        print_success(
+            config,
+            &format!("{report_name} exported to {}", path.display()),
+        );
+    } else {
+        println!("{output}");
+    }
+    Ok(ExitCode::SUCCESS)
+}
+
 /// Runs the coverage report command.
 fn run_coverage(
     format: ReportFormat,
     output_path: Option<PathBuf>,
     ctx: &CommandContext,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let config = &ctx.output;
-
-    // Parse repositories
-    let items = parse_repositories(&ctx.repositories)?;
-
-    // Build the graph
-    let graph = GraphBuilder::new().add_items(items).build()?;
-
-    // Generate report
+    let graph = ctx.build_graph()?;
     let report = CoverageReport::generate(&graph);
 
-    // Format output
     let output = match format {
-        ReportFormat::Text => format_coverage_text(&report, config),
+        ReportFormat::Text => format_coverage_text(&report, &ctx.output),
         ReportFormat::Json => format_coverage_json(&report),
         ReportFormat::Csv => format_coverage_csv(&report),
         ReportFormat::Html => format_coverage_html(&report),
     };
 
-    // Write to file or stdout
-    if let Some(path) = output_path {
-        let mut file = File::create(&path)?;
-        file.write_all(output.as_bytes())?;
-        print_success(
-            config,
-            &format!("Coverage report exported to {}", path.display()),
-        );
-    } else {
-        println!("{}", output);
-    }
-
-    Ok(ExitCode::SUCCESS)
+    write_report_output(&output, output_path, &ctx.output, "Coverage report")
 }
 
 /// Runs the matrix report command.
@@ -116,38 +113,17 @@ fn run_matrix(
     output_path: Option<PathBuf>,
     ctx: &CommandContext,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let config = &ctx.output;
-
-    // Parse repositories
-    let items = parse_repositories(&ctx.repositories)?;
-
-    // Build the graph
-    let graph = GraphBuilder::new().add_items(items).build()?;
-
-    // Generate matrix
+    let graph = ctx.build_graph()?;
     let matrix = TraceabilityMatrix::generate(&graph);
 
-    // Format output
     let output = match format {
-        ReportFormat::Text => format_matrix_text(&matrix, config),
+        ReportFormat::Text => format_matrix_text(&matrix, &ctx.output),
         ReportFormat::Json => format_matrix_json(&matrix),
         ReportFormat::Csv => matrix.to_csv(),
         ReportFormat::Html => format_matrix_html(&matrix),
     };
 
-    // Write to file or stdout
-    if let Some(path) = output_path {
-        let mut file = File::create(&path)?;
-        file.write_all(output.as_bytes())?;
-        print_success(
-            config,
-            &format!("Traceability matrix exported to {}", path.display()),
-        );
-    } else {
-        println!("{}", output);
-    }
-
-    Ok(ExitCode::SUCCESS)
+    write_report_output(&output, output_path, &ctx.output, "Traceability matrix")
 }
 
 fn format_coverage_text(report: &CoverageReport, config: &OutputConfig) -> String {

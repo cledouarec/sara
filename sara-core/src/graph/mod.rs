@@ -1,4 +1,24 @@
-//! Knowledge graph operations.
+//! Knowledge graph operations for traceability item management.
+//!
+//! This module provides the core data structure for storing and navigating
+//! traceability items and their relationships.
+//!
+//! # Key Types
+//!
+//! - [`KnowledgeGraph`]: The main graph data structure storing items and relationships
+//! - [`GraphBuilder`]: Fluent builder for constructing graphs from parsed items
+//! - [`GraphStats`]: Statistics about graph contents (item counts, relationship counts)
+//!
+//! # Traversal
+//!
+//! The [`traversal`] submodule provides functions for navigating the graph:
+//! - Upstream traversal: Follow references toward Solution items
+//! - Downstream traversal: Follow references toward Detailed Design items
+//!
+//! # Diffing
+//!
+//! The [`diff`] submodule compares two graphs to identify added, removed,
+//! and modified items.
 
 mod builder;
 pub mod diff;
