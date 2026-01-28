@@ -28,10 +28,17 @@ pub enum FieldName {
     DependsOn,
     IsRequiredBy,
 
-    // Type-specific attributes
+    // Requirement-specific fields
     Specification,
     Platform,
     JustifiedBy,
+
+    // ADR-specific fields
+    Status,
+    Deciders,
+    Justifies,
+    Supersedes,
+    SupersededBy,
 }
 
 impl FieldName {
@@ -53,6 +60,11 @@ impl FieldName {
             Self::Specification,
             Self::Platform,
             Self::JustifiedBy,
+            Self::Status,
+            Self::Deciders,
+            Self::Justifies,
+            Self::Supersedes,
+            Self::SupersededBy,
         ]
     }
 
@@ -76,6 +88,11 @@ impl FieldName {
             Self::Specification => "specification",
             Self::Platform => "platform",
             Self::JustifiedBy => "justified_by",
+            Self::Status => "status",
+            Self::Deciders => "deciders",
+            Self::Justifies => "justifies",
+            Self::Supersedes => "supersedes",
+            Self::SupersededBy => "superseded_by",
         }
     }
 
@@ -99,25 +116,36 @@ impl FieldName {
             Self::Specification => "Specification",
             Self::Platform => "Platform",
             Self::JustifiedBy => "Justified by",
+            Self::Status => "Status",
+            Self::Deciders => "Deciders",
+            Self::Justifies => "Justifies",
+            Self::Supersedes => "Supersedes",
+            Self::SupersededBy => "Superseded by",
         }
     }
 
     /// Returns true if this is an upstream traceability field.
     pub const fn is_upstream(&self) -> bool {
-        matches!(self, Self::Refines | Self::DerivesFrom | Self::Satisfies)
+        matches!(
+            self,
+            Self::Refines | Self::DerivesFrom | Self::Satisfies | Self::Justifies
+        )
     }
 
     /// Returns true if this is a downstream traceability field.
     pub const fn is_downstream(&self) -> bool {
         matches!(
             self,
-            Self::IsRefinedBy | Self::Derives | Self::IsSatisfiedBy
+            Self::IsRefinedBy | Self::Derives | Self::IsSatisfiedBy | Self::JustifiedBy
         )
     }
 
     /// Returns true if this is a peer relationship field.
     pub const fn is_peer(&self) -> bool {
-        matches!(self, Self::DependsOn | Self::IsRequiredBy)
+        matches!(
+            self,
+            Self::DependsOn | Self::IsRequiredBy | Self::Supersedes | Self::SupersededBy
+        )
     }
 
     /// Returns true if this is a traceability field (upstream, downstream, or peer).
@@ -166,7 +194,9 @@ mod tests {
         assert!(all.contains(&FieldName::Id));
         assert!(all.contains(&FieldName::Refines));
         assert!(all.contains(&FieldName::Specification));
-        assert_eq!(all.len(), 15);
+        assert!(all.contains(&FieldName::Status));
+        assert!(all.contains(&FieldName::Justifies));
+        assert_eq!(all.len(), 20);
     }
 
     #[test]

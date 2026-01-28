@@ -224,7 +224,7 @@ fn print_output(output: &ParseOutput, config: &OutputConfig) {
         types.sort_by(|a, b| b.1.cmp(a.1));
         let type_lines: Vec<_> = types
             .iter()
-            .map(|(item_type, count)| format!("  {:25} {}", item_type.display_name(), count))
+            .map(|(item_type, count)| format!("  {:35} {}", item_type.display_name(), count))
             .collect();
         format!("Items by type:\n{}\n", type_lines.join("\n"))
     };

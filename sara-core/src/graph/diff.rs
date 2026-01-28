@@ -192,12 +192,12 @@ impl GraphDiff {
             });
         }
 
-        // Check specification change
-        if old.attributes.specification != new.attributes.specification {
+        // Check specification change (for requirement types)
+        if old.attributes.specification() != new.attributes.specification() {
             changes.push(FieldChange {
                 field: "specification".to_string(),
-                old_value: old.attributes.specification.clone().unwrap_or_default(),
-                new_value: new.attributes.specification.clone().unwrap_or_default(),
+                old_value: old.attributes.specification().cloned().unwrap_or_default(),
+                new_value: new.attributes.specification().cloned().unwrap_or_default(),
             });
         }
 

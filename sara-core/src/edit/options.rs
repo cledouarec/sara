@@ -19,6 +19,8 @@ pub struct EditOptions {
     pub satisfies: Option<Vec<String>>,
     /// New depends_on references (if provided).
     pub depends_on: Option<Vec<String>>,
+    /// New justifies references (if provided, for ADRs).
+    pub justifies: Option<Vec<String>>,
     /// New specification (if provided).
     pub specification: Option<String>,
     /// New platform (if provided).
@@ -106,6 +108,18 @@ impl EditOptions {
         self
     }
 
+    /// Sets the justifies references.
+    pub fn with_justifies(mut self, justifies: Vec<String>) -> Self {
+        self.justifies = Some(justifies);
+        self
+    }
+
+    /// Sets the justifies references if provided.
+    pub fn maybe_justifies(mut self, justifies: Option<Vec<String>>) -> Self {
+        self.justifies = justifies;
+        self
+    }
+
     /// Sets the specification.
     pub fn with_specification(mut self, specification: impl Into<String>) -> Self {
         self.specification = Some(specification.into());
@@ -138,6 +152,7 @@ impl EditOptions {
             || self.derives_from.is_some()
             || self.satisfies.is_some()
             || self.depends_on.is_some()
+            || self.justifies.is_some()
             || self.specification.is_some()
             || self.platform.is_some()
     }

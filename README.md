@@ -23,13 +23,25 @@ SARA is a command-line tool that manages Architecture documents and Requirements
 <summary>Expand contents</summary>
 
 - [Why SARA?](#why-sara)
+  - [Alignment Across Teams](#alignment-across-teams)
+  - [Markdown-First: A Radical Choice](#markdown-first-a-radical-choice)
 - [Features](#features)
 - [Installation](#installation)
+  - [From crates.io (Recommended)](#from-cratesio-recommended)
+  - [From Source](#from-source)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
 - [Document Types](#document-types)
 - [Traceability Hierarchy](#traceability-hierarchy)
-- [Relationships](#relationships-the-heart-of-sara)
+- [Relationships: The Heart of SARA](#relationships-the-heart-of-sara)
+  - [Relationship Types](#relationship-types)
+  - [Defining Relationships in YAML](#defining-relationships-in-yaml)
+  - [Peer Dependencies](#peer-dependencies)
+  - [Architecture Decision Records](#architecture-decision-records)
+  - [Bidirectional Traceability](#bidirectional-traceability)
+  - [Relationship Fields by Item Type](#relationship-fields-by-item-type)
+  - [Querying Relationships](#querying-relationships)
+  - [Validation Rules](#validation-rules)
 - [Configuration](#configuration)
 - [Output Formats](#output-formats)
 - [Environment Variables](#environment-variables)
@@ -115,7 +127,7 @@ sara --version
 
 ## Document Types
 
-Sara recognizes 9 document types forming a requirements hierarchy:
+Sara recognizes 10 document types forming a requirements hierarchy:
 
 | Type | YAML Value | Description |
 |------|------------|-------------|
@@ -128,6 +140,7 @@ Sara recognizes 9 document types forming a requirements hierarchy:
 | Software Requirement | `software_requirement` | Software-specific need |
 | HW Detailed Design | `hardware_detailed_design` | Hardware implementation |
 | SW Detailed Design | `software_detailed_design` | Software implementation |
+| Architecture Decision Record | `architecture_decision_record` | Cross-cutting design decision |
 
 ## Traceability Hierarchy
 
@@ -202,6 +215,16 @@ erDiagram
         string[] satisfies FK
     }
 
+    ArchitectureDecisionRecord {
+        string id PK
+        string name
+        string description
+        string status
+        string[] deciders
+        string[] justifies FK
+        string[] supersedes FK
+    }
+
     Solution ||--o{ UseCase : "is_refined_by"
     UseCase ||--o{ Scenario : "is_refined_by"
     Scenario ||--o{ SystemRequirement : "derives"
@@ -213,6 +236,10 @@ erDiagram
     SystemRequirement }o--o{ SystemRequirement : "depends_on"
     HardwareRequirement }o--o{ HardwareRequirement : "depends_on"
     SoftwareRequirement }o--o{ SoftwareRequirement : "depends_on"
+    ArchitectureDecisionRecord ||--o{ SystemArchitecture : "justifies"
+    ArchitectureDecisionRecord ||--o{ SoftwareDetailedDesign : "justifies"
+    ArchitectureDecisionRecord ||--o{ HardwareDetailedDesign : "justifies"
+    ArchitectureDecisionRecord }o--o{ ArchitectureDecisionRecord : "supersedes"
 ```
 
 ## Relationships: The Heart of SARA
@@ -229,6 +256,8 @@ SARA uses semantic relationship names that reflect the nature of the connection:
 | `derives_from` / `derives` | Upstream / Downstream | Scenario ↔ System Requirement, System Architecture ↔ HW/SW Requirement |
 | `satisfies` / `is_satisfied_by` | Upstream / Downstream | System Requirement ↔ System Architecture, HW/SW Requirement ↔ Detailed Design |
 | `depends_on` / `is_required_by` | Peer (same type) | Requirement ↔ Requirement (same level dependencies) |
+| `justifies` / `justified_by` | Upstream / Downstream | ADR ↔ System Architecture, Detailed Design |
+| `supersedes` / `superseded_by` | Peer (same type) | ADR ↔ ADR |
 
 ### Defining Relationships in YAML
 
@@ -273,6 +302,58 @@ depends_on:
 ---
 ```
 
+### Architecture Decision Records
+
+ADRs capture significant design decisions and link them to the artifacts they justify. They have a lifecycle status and track decision-makers:
+
+```yaml
+---
+id: "ADR-001"
+type: architecture_decision_record
+name: "Use JWT for Authentication"
+status: accepted
+deciders:
+  - "Alice Smith"
+  - "Bob Johnson"
+# Design artifacts this decision justifies
+justifies:
+  - "SYSARCH-AUTH"
+  - "SWDD-AUTH-SERVICE"
+---
+
+# Context
+
+We need a stateless authentication mechanism for our microservices.
+
+# Decision
+
+Use JWT (JSON Web Tokens) for authentication between services.
+
+# Consequences
+
+- Stateless: no session storage needed
+- Tokens can be validated without database lookup
+- Must handle token expiration and refresh
+```
+
+When a decision is replaced, use `supersedes` to maintain the decision history:
+
+```yaml
+---
+id: "ADR-002"
+type: architecture_decision_record
+name: "Switch to OAuth 2.0 with JWT"
+status: accepted
+deciders:
+  - "Alice Smith"
+supersedes:
+  - "ADR-001"  # This ADR replaces the previous auth decision
+justifies:
+  - "SYSARCH-AUTH"
+  - "SWDD-AUTH-SERVICE"
+---
+```
+
 ### Bidirectional Traceability
 
 You only need to define the relationship in one direction - SARA automatically infers the reverse link:
@@ -295,17 +376,30 @@ derives_from:
 
 Both approaches create the same bidirectional relationship in the graph.
 
+> [!TIP] Best Practice: Bottom-Up Linking
+>
+> While both directions are supported, we recommend using **upstream links** (bottom-up strategy). Lower-level items should reference the higher-level items they derive from or satisfy:
+>
+> - A Software Detailed Design knows which Software Requirements it `satisfies`
+> - A System Requirement knows which Scenarios it `derives_from`
+> - A Use Case knows which Solution it `refines`
+>
+> This approach reflects natural knowledge flow: implementation details know their purpose, but high-level solutions shouldn't need to know every design decision. A Solution document shouldn't list all Use Cases - that would require constant updates as the system evolves.
+>
+> Both directions remain supported for flexibility in particular cases, but upstream linking should be your default choice.
+
 ### Relationship Fields by Item Type
 
-| Item Type | Upstream Field | Downstream Field | Peer Field |
-|-----------|----------------|------------------|------------|
+| Item Type | Upstream Field | Downstream Field | Peer Dependencies |
+|-----------|----------------|------------------|-------------------|
 | Solution | - | `is_refined_by` | - |
 | Use Case | `refines` | `is_refined_by` | - |
 | Scenario | `refines` | `derives` | - |
 | System Requirement | `derives_from` | `is_satisfied_by` | `depends_on` / `is_required_by` |
-| System Architecture | `satisfies` | `derives` | - |
+| System Architecture | `satisfies` | `derives`, `justified_by` | - |
 | HW/SW Requirement | `derives_from` | `is_satisfied_by` | `depends_on` / `is_required_by` |
-| HW/SW Detailed Design | `satisfies` | - | - |
+| HW/SW Detailed Design | `satisfies` | `justified_by` | - |
+| Architecture Decision Record | `justifies` | - | `supersedes` / `superseded_by` |
 
 ### Querying Relationships
 

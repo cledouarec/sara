@@ -26,11 +26,15 @@ smart-home/
 ├── hardware_requirements/
 │   ├── HWREQ-ZIGBEE.md               # Zigbee radio module
 │   └── HWREQ-HUB.md                  # Central hub hardware
-└── detailed_design/
-    ├── SWDD-MQTT.md                  # MQTT protocol design (SW)
-    ├── SWDD-ALERTPUSH.md             # Push notification design (SW)
-    ├── HWDD-ZIGBEE.md                # Zigbee module design (HW)
-    └── HWDD-HUBBOARD.md              # Hub board design (HW)
+├── detailed_design/
+│   ├── SWDD-MQTT.md                  # MQTT protocol design (SW)
+│   ├── SWDD-ALERTPUSH.md             # Push notification design (SW)
+│   ├── HWDD-ZIGBEE.md                # Zigbee module design (HW)
+│   └── HWDD-HUBBOARD.md              # Hub board design (HW)
+└── adrs/
+    ├── ADR-001.md                    # Hub-based hybrid architecture
+    ├── ADR-002.md                    # Use MQTT for device communication
+    └── ADR-003.md                    # Use Zigbee for wireless mesh
 ```
 
 ## Traceability Graph
@@ -44,7 +48,7 @@ SOL-SMARTHOME
     └── SCEN-INTRUSION          │
         └── SYSREQ-ALERT ───────┤
                                 ▼
-                         SYSARCH-COMM
+                         SYSARCH-COMM ◄── ADR-001
                         /            \
            ┌───────────┘              └───────────┐
            ▼                                      ▼
@@ -52,8 +56,8 @@ SOL-SMARTHOME
     SWREQ-PUSHSDK                          HWREQ-HUB
            │                                      │
            ▼                                      ▼
-    SWDD-MQTT                              HWDD-ZIGBEE
-    SWDD-ALERTPUSH                         HWDD-HUBBOARD
+    SWDD-MQTT ◄── ADR-002               HWDD-ZIGBEE ◄── ADR-003
+    SWDD-ALERTPUSH                        HWDD-HUBBOARD
 ```
 
 ## Relationships
@@ -75,17 +79,21 @@ SOL-SMARTHOME
 | SWDD-ALERTPUSH   | satisfies    | SWREQ-PUSHSDK    |
 | HWDD-ZIGBEE      | satisfies    | HWREQ-ZIGBEE     |
 | HWDD-HUBBOARD    | satisfies    | HWREQ-HUB        |
+| ADR-001          | justifies    | SYSARCH-COMM |
+| ADR-002          | justifies    | SWDD-MQTT |
+| ADR-003          | justifies    | HWDD-ZIGBEE |
 
 ## Element Types
 
-| Type                     | Prefix   | Description                         |
-|--------------------------|----------|-------------------------------------|
-| solution                 | SOL-     | Top-level product/system definition |
-| use_case                 | UC-      | User-facing functionality           |
-| scenario                 | SCEN-    | Specific flow within a use case     |
-| system_requirement       | SYSREQ-  | System-level SHALL statements       |
-| system_architecture      | SYSARCH- | High-level technical architecture   |
-| software_requirement     | SWREQ-   | Software-specific requirements      |
-| hardware_requirement     | HWREQ-   | Hardware-specific requirements      |
-| software_detailed_design | SWDD-    | Software design documents           |
-| hardware_detailed_design | HWDD-    | Hardware design documents           |
+| Type                          | Prefix   | Description                          |
+|-------------------------------|----------|--------------------------------------|
+| solution                      | SOL-     | Top-level product/system definition  |
+| use_case                      | UC-      | User-facing functionality            |
+| scenario                      | SCEN-    | Specific flow within a use case      |
+| system_requirement            | SYSREQ-  | System-level SHALL statements        |
+| system_architecture           | SYSARCH- | High-level technical architecture    |
+| software_requirement          | SWREQ-   | Software-specific requirements       |
+| hardware_requirement          | HWREQ-   | Hardware-specific requirements       |
+| software_detailed_design      | SWDD-    | Software design documents            |
+| hardware_detailed_design      | HWDD-    | Hardware design documents            |
+| architecture_decision_record  | ADR-     | Cross-cutting design decisions       |
