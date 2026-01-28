@@ -7,6 +7,7 @@ pub mod config;
 pub mod diff;
 pub mod edit;
 pub mod error;
+pub mod generator;
 pub mod graph;
 pub mod init;
 pub mod model;
