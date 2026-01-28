@@ -44,6 +44,8 @@ pub enum ValidationErrorCode {
     UnrecognizedField,
     /// Both sides of a relationship declare it.
     RedundantRelationship,
+    /// Field is not valid for this item type.
+    InvalidFieldForType,
 }
 
 impl ValidationErrorCode {
@@ -61,6 +63,7 @@ impl ValidationErrorCode {
             Self::InvalidMetadata => "invalid_metadata",
             Self::UnrecognizedField => "unrecognized_field",
             Self::RedundantRelationship => "redundant_relationship",
+            Self::InvalidFieldForType => "invalid_field_for_type",
         }
     }
 }
@@ -159,6 +162,9 @@ pub enum ValidationError {
         from_location: Option<SourceLocation>,
         to_location: Option<SourceLocation>,
     },
+
+    #[error("Field '{field}' is not valid for item type '{item_type}'")]
+    InvalidFieldForType { field: String, item_type: String },
 }
 
 impl ValidationError {
@@ -200,6 +206,7 @@ impl ValidationError {
             Self::InvalidMetadata { .. } => ValidationErrorCode::InvalidMetadata,
             Self::UnrecognizedField { .. } => ValidationErrorCode::UnrecognizedField,
             Self::RedundantRelationship { .. } => ValidationErrorCode::RedundantRelationship,
+            Self::InvalidFieldForType { .. } => ValidationErrorCode::InvalidFieldForType,
         }
     }
 }
