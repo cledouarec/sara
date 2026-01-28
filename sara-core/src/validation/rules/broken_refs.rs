@@ -31,7 +31,7 @@ pub fn check_broken_references(graph: &KnowledgeGraph) -> Vec<ValidationError> {
 pub fn find_referencing_items(graph: &KnowledgeGraph, target_id: &ItemId) -> Vec<ItemId> {
     graph
         .items()
-        .filter(|item| item.all_references().contains(&target_id))
+        .filter(|item| item.all_references().any(|id| id == target_id))
         .map(|item| item.id.clone())
         .collect()
 }
