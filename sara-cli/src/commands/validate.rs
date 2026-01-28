@@ -15,7 +15,7 @@ use sara_core::validation::{
 };
 
 use super::CommandContext;
-use crate::output::{OutputConfig, print_error, print_success, print_warning};
+use crate::output::{OutputConfig, print_error, print_error_summary, print_success, print_warning};
 
 /// Output format for validate command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -144,7 +144,7 @@ fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
             print_success(config, "Validation passed");
         }
     } else {
-        print_error(
+        print_error_summary(
             config,
             &format!(
                 "Validation failed with {} error(s) and {} warning(s)",
