@@ -258,9 +258,8 @@ mod init_command {
 
         sara()
             .arg("init")
+            .arg("system-requirement")
             .arg(&test_file)
-            .arg("--type")
-            .arg("system_requirement")
             .assert()
             .success();
 
@@ -280,9 +279,8 @@ mod init_command {
 
         sara()
             .arg("init")
+            .arg("swreq") // Using alias
             .arg(&test_file)
-            .arg("--type")
-            .arg("software_requirement")
             .arg("--id")
             .arg("SWREQ-999")
             .assert()
@@ -299,8 +297,8 @@ mod init_command {
 
         fs::write(&test_file, "# No Type\n").unwrap();
 
-        // Should fail without --type
-        sara().arg("init").arg(&test_file).assert().failure();
+        // Without a subcommand, interactive mode fails without TTY
+        sara().arg("init").assert().failure();
     }
 
     #[test]
@@ -318,9 +316,8 @@ mod init_command {
         // Should fail without --force
         sara()
             .arg("init")
+            .arg("use-case")
             .arg(&test_file)
-            .arg("--type")
-            .arg("use_case")
             .assert()
             .failure();
     }
@@ -339,9 +336,8 @@ mod init_command {
 
         sara()
             .arg("init")
+            .arg("uc") // Using alias
             .arg(&test_file)
-            .arg("--type")
-            .arg("use_case")
             .arg("--force")
             .assert()
             .success();
@@ -357,11 +353,11 @@ mod init_command {
 
         fs::write(&test_file, "# Bad Type\n").unwrap();
 
+        // Invalid subcommand should fail
         sara()
             .arg("init")
-            .arg(&test_file)
-            .arg("--type")
             .arg("invalid_type")
+            .arg(&test_file)
             .assert()
             .failure();
     }
@@ -519,45 +515,40 @@ mod interactive_mode {
     use tempfile::TempDir;
 
     #[test]
-    fn test_init_without_type_fails_in_non_tty() {
-        // When --type is omitted and stdin is not a TTY, should fail
-        let temp_dir = TempDir::new().unwrap();
-        let test_file = temp_dir.path().join("INTERACTIVE.md");
-        fs::write(&test_file, "# Interactive Test\n").unwrap();
-
-        // Running without --type triggers interactive mode which fails without TTY
+    fn test_init_without_subcommand_fails_in_non_tty() {
+        // When no subcommand is provided, enters interactive mode which fails without TTY
         sara()
             .arg("init")
-            .arg(&test_file)
             .assert()
             .failure()
             .stderr(predicate::str::contains("terminal").or(predicate::str::contains("TTY")));
     }
 
     #[test]
-    fn test_init_help_shows_interactive_mode() {
-        // The help text should explain interactive mode
+    fn test_init_help_shows_subcommands() {
+        // The help text should show available subcommands
         sara()
             .arg("init")
             .arg("--help")
             .assert()
             .success()
             .stdout(predicate::str::contains("interactive mode"))
-            .stdout(predicate::str::contains("--type is omitted"));
+            .stdout(predicate::str::contains("adr"))
+            .stdout(predicate::str::contains("solution"))
+            .stdout(predicate::str::contains("system-requirement"));
     }
 
     #[test]
-    fn test_init_with_type_bypasses_interactive() {
-        // When --type is provided, should work without TTY
+    fn test_init_with_subcommand_bypasses_interactive() {
+        // When subcommand is provided, should work without TTY
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("NONINTERACTIVE.md");
         fs::write(&test_file, "# Non-Interactive Test\n").unwrap();
 
         sara()
             .arg("init")
-            .arg(&test_file)
-            .arg("--type")
             .arg("solution")
+            .arg(&test_file)
             .assert()
             .success();
 
@@ -566,23 +557,22 @@ mod interactive_mode {
     }
 
     #[test]
-    fn test_init_without_file_in_non_interactive_requires_type() {
-        // When no file and no --type, enters interactive mode which fails without TTY
+    fn test_init_without_subcommand_in_non_interactive_fails() {
+        // When no subcommand, enters interactive mode which fails without TTY
         sara().arg("init").assert().failure();
     }
 
     #[test]
-    fn test_init_prefilled_args_with_type() {
-        // Prefilled arguments should work with --type (non-interactive)
+    fn test_init_prefilled_args_with_subcommand() {
+        // Prefilled arguments should work with subcommand (non-interactive)
         let temp_dir = TempDir::new().unwrap();
         let test_file = temp_dir.path().join("PREFILLED.md");
         fs::write(&test_file, "# Prefilled Test\n").unwrap();
 
         sara()
             .arg("init")
+            .arg("use-case")
             .arg(&test_file)
-            .arg("--type")
-            .arg("use_case")
             .arg("--id")
             .arg("UC-CUSTOM-001")
             .arg("--name")
