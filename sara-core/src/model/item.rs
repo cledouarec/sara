@@ -40,32 +40,35 @@ pub enum AdrStatus {
 
 impl AdrStatus {
     /// Returns the display name for this status.
-    pub fn display_name(&self) -> &'static str {
+    #[must_use]
+    pub const fn display_name(&self) -> &'static str {
         match self {
-            AdrStatus::Proposed => "Proposed",
-            AdrStatus::Accepted => "Accepted",
-            AdrStatus::Deprecated => "Deprecated",
-            AdrStatus::Superseded => "Superseded",
+            Self::Proposed => "Proposed",
+            Self::Accepted => "Accepted",
+            Self::Deprecated => "Deprecated",
+            Self::Superseded => "Superseded",
         }
     }
 
     /// Returns the YAML value (snake_case string) for this status.
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            AdrStatus::Proposed => "proposed",
-            AdrStatus::Accepted => "accepted",
-            AdrStatus::Deprecated => "deprecated",
-            AdrStatus::Superseded => "superseded",
+            Self::Proposed => "proposed",
+            Self::Accepted => "accepted",
+            Self::Deprecated => "deprecated",
+            Self::Superseded => "superseded",
         }
     }
 
     /// Returns all possible ADR status values.
-    pub fn all() -> &'static [AdrStatus] {
+    #[must_use]
+    pub const fn all() -> &'static [AdrStatus] {
         &[
-            AdrStatus::Proposed,
-            AdrStatus::Accepted,
-            AdrStatus::Deprecated,
-            AdrStatus::Superseded,
+            Self::Proposed,
+            Self::Accepted,
+            Self::Deprecated,
+            Self::Superseded,
         ]
     }
 }
@@ -78,194 +81,216 @@ impl fmt::Display for AdrStatus {
 
 impl ItemType {
     /// Returns all item types in hierarchy order (upstream to downstream).
-    pub fn all() -> &'static [ItemType] {
+    #[must_use]
+    pub const fn all() -> &'static [ItemType] {
         &[
-            ItemType::Solution,
-            ItemType::UseCase,
-            ItemType::Scenario,
-            ItemType::SystemRequirement,
-            ItemType::SystemArchitecture,
-            ItemType::HardwareRequirement,
-            ItemType::SoftwareRequirement,
-            ItemType::HardwareDetailedDesign,
-            ItemType::SoftwareDetailedDesign,
-            ItemType::ArchitectureDecisionRecord,
+            Self::Solution,
+            Self::UseCase,
+            Self::Scenario,
+            Self::SystemRequirement,
+            Self::SystemArchitecture,
+            Self::HardwareRequirement,
+            Self::SoftwareRequirement,
+            Self::HardwareDetailedDesign,
+            Self::SoftwareDetailedDesign,
+            Self::ArchitectureDecisionRecord,
         ]
     }
 
     /// Returns the display name for this item type.
-    pub fn display_name(&self) -> &'static str {
+    #[must_use]
+    pub const fn display_name(&self) -> &'static str {
         match self {
-            ItemType::Solution => "Solution",
-            ItemType::UseCase => "Use Case",
-            ItemType::Scenario => "Scenario",
-            ItemType::SystemRequirement => "System Requirement",
-            ItemType::SystemArchitecture => "System Architecture",
-            ItemType::HardwareRequirement => "Hardware Requirement",
-            ItemType::SoftwareRequirement => "Software Requirement",
-            ItemType::HardwareDetailedDesign => "Hardware Detailed Design",
-            ItemType::SoftwareDetailedDesign => "Software Detailed Design",
-            ItemType::ArchitectureDecisionRecord => "Architecture Decision Record",
+            Self::Solution => "Solution",
+            Self::UseCase => "Use Case",
+            Self::Scenario => "Scenario",
+            Self::SystemRequirement => "System Requirement",
+            Self::SystemArchitecture => "System Architecture",
+            Self::HardwareRequirement => "Hardware Requirement",
+            Self::SoftwareRequirement => "Software Requirement",
+            Self::HardwareDetailedDesign => "Hardware Detailed Design",
+            Self::SoftwareDetailedDesign => "Software Detailed Design",
+            Self::ArchitectureDecisionRecord => "Architecture Decision Record",
         }
     }
 
     /// Returns the common ID prefix for this item type.
-    pub fn prefix(&self) -> &'static str {
+    #[must_use]
+    pub const fn prefix(&self) -> &'static str {
         match self {
-            ItemType::Solution => "SOL",
-            ItemType::UseCase => "UC",
-            ItemType::Scenario => "SCEN",
-            ItemType::SystemRequirement => "SYSREQ",
-            ItemType::SystemArchitecture => "SYSARCH",
-            ItemType::HardwareRequirement => "HWREQ",
-            ItemType::SoftwareRequirement => "SWREQ",
-            ItemType::HardwareDetailedDesign => "HWDD",
-            ItemType::SoftwareDetailedDesign => "SWDD",
-            ItemType::ArchitectureDecisionRecord => "ADR",
+            Self::Solution => "SOL",
+            Self::UseCase => "UC",
+            Self::Scenario => "SCEN",
+            Self::SystemRequirement => "SYSREQ",
+            Self::SystemArchitecture => "SYSARCH",
+            Self::HardwareRequirement => "HWREQ",
+            Self::SoftwareRequirement => "SWREQ",
+            Self::HardwareDetailedDesign => "HWDD",
+            Self::SoftwareDetailedDesign => "SWDD",
+            Self::ArchitectureDecisionRecord => "ADR",
         }
     }
 
     /// Returns the item types that accept the refines field.
-    pub fn refines_types() -> &'static [ItemType] {
-        &[ItemType::UseCase, ItemType::Scenario]
+    #[must_use]
+    pub const fn refines_types() -> &'static [ItemType] {
+        &[Self::UseCase, Self::Scenario]
     }
 
     /// Returns true if this item type requires the refines field.
+    #[must_use]
     pub fn requires_refines(&self) -> bool {
         Self::refines_types().contains(self)
     }
 
     /// Returns the item types that accept the derives_from field.
-    pub fn derives_from_types() -> &'static [ItemType] {
+    #[must_use]
+    pub const fn derives_from_types() -> &'static [ItemType] {
         &[
-            ItemType::SystemRequirement,
-            ItemType::HardwareRequirement,
-            ItemType::SoftwareRequirement,
+            Self::SystemRequirement,
+            Self::HardwareRequirement,
+            Self::SoftwareRequirement,
         ]
     }
 
     /// Returns true if this item type requires the derives_from field.
+    #[must_use]
     pub fn requires_derives_from(&self) -> bool {
         Self::derives_from_types().contains(self)
     }
 
     /// Returns the item types that accept the satisfies field.
-    pub fn satisfies_types() -> &'static [ItemType] {
+    #[must_use]
+    pub const fn satisfies_types() -> &'static [ItemType] {
         &[
-            ItemType::SystemArchitecture,
-            ItemType::HardwareDetailedDesign,
-            ItemType::SoftwareDetailedDesign,
+            Self::SystemArchitecture,
+            Self::HardwareDetailedDesign,
+            Self::SoftwareDetailedDesign,
         ]
     }
 
     /// Returns true if this item type requires the satisfies field.
+    #[must_use]
     pub fn requires_satisfies(&self) -> bool {
         Self::satisfies_types().contains(self)
     }
 
     /// Returns the item types that accept the specification field.
-    pub fn specification_types() -> &'static [ItemType] {
+    #[must_use]
+    pub const fn specification_types() -> &'static [ItemType] {
         &[
-            ItemType::SystemRequirement,
-            ItemType::HardwareRequirement,
-            ItemType::SoftwareRequirement,
+            Self::SystemRequirement,
+            Self::HardwareRequirement,
+            Self::SoftwareRequirement,
         ]
     }
 
     /// Returns true if this item type requires/accepts a specification field.
+    #[must_use]
     pub fn requires_specification(&self) -> bool {
         Self::specification_types().contains(self)
     }
 
     /// Returns the item types that accept the platform field.
-    pub fn platform_types() -> &'static [ItemType] {
-        &[ItemType::SystemArchitecture]
+    #[must_use]
+    pub const fn platform_types() -> &'static [ItemType] {
+        &[Self::SystemArchitecture]
     }
 
     /// Returns true if this item type accepts the platform field.
+    #[must_use]
     pub fn accepts_platform(&self) -> bool {
         Self::platform_types().contains(self)
     }
 
     /// Returns the item types that accept the depends_on field (peer dependencies).
-    pub fn depends_on_types() -> &'static [ItemType] {
+    #[must_use]
+    pub const fn depends_on_types() -> &'static [ItemType] {
         &[
-            ItemType::SystemRequirement,
-            ItemType::HardwareRequirement,
-            ItemType::SoftwareRequirement,
+            Self::SystemRequirement,
+            Self::HardwareRequirement,
+            Self::SoftwareRequirement,
         ]
     }
 
     /// Returns true if this item type accepts the depends_on field (peer dependencies).
+    #[must_use]
     pub fn supports_depends_on(&self) -> bool {
         Self::depends_on_types().contains(self)
     }
 
     /// Returns true if this is a root item type (Solution).
-    pub fn is_root(&self) -> bool {
-        matches!(self, ItemType::Solution)
+    #[must_use]
+    pub const fn is_root(&self) -> bool {
+        matches!(self, Self::Solution)
     }
 
     /// Returns true if this is an Architecture Decision Record type.
-    pub fn requires_deciders(&self) -> bool {
-        matches!(self, ItemType::ArchitectureDecisionRecord)
+    #[must_use]
+    pub const fn requires_deciders(&self) -> bool {
+        matches!(self, Self::ArchitectureDecisionRecord)
     }
 
     /// Returns true if this item type supports the status field (ADR only).
-    pub fn supports_status(&self) -> bool {
-        matches!(self, ItemType::ArchitectureDecisionRecord)
+    #[must_use]
+    pub const fn supports_status(&self) -> bool {
+        matches!(self, Self::ArchitectureDecisionRecord)
     }
 
     /// Returns true if this item type supports the supersedes field (ADR peer relationship).
-    pub fn supports_supersedes(&self) -> bool {
-        matches!(self, ItemType::ArchitectureDecisionRecord)
+    #[must_use]
+    pub const fn supports_supersedes(&self) -> bool {
+        matches!(self, Self::ArchitectureDecisionRecord)
     }
 
     /// Returns the required parent item type for this type, if any.
     /// Solution has no parent (root of the hierarchy).
-    pub fn required_parent_type(&self) -> Option<ItemType> {
+    #[must_use]
+    pub const fn required_parent_type(&self) -> Option<ItemType> {
         match self {
-            ItemType::Solution => None,
-            ItemType::UseCase => Some(ItemType::Solution),
-            ItemType::Scenario => Some(ItemType::UseCase),
-            ItemType::SystemRequirement => Some(ItemType::Scenario),
-            ItemType::SystemArchitecture => Some(ItemType::SystemRequirement),
-            ItemType::HardwareRequirement => Some(ItemType::SystemArchitecture),
-            ItemType::SoftwareRequirement => Some(ItemType::SystemArchitecture),
-            ItemType::HardwareDetailedDesign => Some(ItemType::HardwareRequirement),
-            ItemType::SoftwareDetailedDesign => Some(ItemType::SoftwareRequirement),
-            ItemType::ArchitectureDecisionRecord => None,
+            Self::Solution => None,
+            Self::UseCase => Some(Self::Solution),
+            Self::Scenario => Some(Self::UseCase),
+            Self::SystemRequirement => Some(Self::Scenario),
+            Self::SystemArchitecture => Some(Self::SystemRequirement),
+            Self::HardwareRequirement => Some(Self::SystemArchitecture),
+            Self::SoftwareRequirement => Some(Self::SystemArchitecture),
+            Self::HardwareDetailedDesign => Some(Self::HardwareRequirement),
+            Self::SoftwareDetailedDesign => Some(Self::SoftwareRequirement),
+            Self::ArchitectureDecisionRecord => None,
         }
     }
 
     /// Returns the upstream traceability field for this item type.
-    pub fn traceability_field(&self) -> Option<FieldName> {
+    #[must_use]
+    pub const fn traceability_field(&self) -> Option<FieldName> {
         match self {
-            ItemType::Solution => None,
-            ItemType::UseCase | ItemType::Scenario => Some(FieldName::Refines),
-            ItemType::SystemRequirement
-            | ItemType::HardwareRequirement
-            | ItemType::SoftwareRequirement => Some(FieldName::DerivesFrom),
-            ItemType::SystemArchitecture
-            | ItemType::HardwareDetailedDesign
-            | ItemType::SoftwareDetailedDesign => Some(FieldName::Satisfies),
-            ItemType::ArchitectureDecisionRecord => Some(FieldName::Justifies),
+            Self::Solution => None,
+            Self::UseCase | Self::Scenario => Some(FieldName::Refines),
+            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement => {
+                Some(FieldName::DerivesFrom)
+            }
+            Self::SystemArchitecture
+            | Self::HardwareDetailedDesign
+            | Self::SoftwareDetailedDesign => Some(FieldName::Satisfies),
+            Self::ArchitectureDecisionRecord => Some(FieldName::Justifies),
         }
     }
 
     /// Returns the YAML value (snake_case string) for this item type.
-    pub fn as_str(&self) -> &'static str {
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
         match self {
-            ItemType::Solution => "solution",
-            ItemType::UseCase => "use_case",
-            ItemType::Scenario => "scenario",
-            ItemType::SystemRequirement => "system_requirement",
-            ItemType::SystemArchitecture => "system_architecture",
-            ItemType::HardwareRequirement => "hardware_requirement",
-            ItemType::SoftwareRequirement => "software_requirement",
-            ItemType::HardwareDetailedDesign => "hardware_detailed_design",
-            ItemType::SoftwareDetailedDesign => "software_detailed_design",
-            ItemType::ArchitectureDecisionRecord => "architecture_decision_record",
+            Self::Solution => "solution",
+            Self::UseCase => "use_case",
+            Self::Scenario => "scenario",
+            Self::SystemRequirement => "system_requirement",
+            Self::SystemArchitecture => "system_architecture",
+            Self::HardwareRequirement => "hardware_requirement",
+            Self::SoftwareRequirement => "software_requirement",
+            Self::HardwareDetailedDesign => "hardware_detailed_design",
+            Self::SoftwareDetailedDesign => "software_detailed_design",
+            Self::ArchitectureDecisionRecord => "architecture_decision_record",
         }
     }
 
@@ -274,6 +299,7 @@ impl ItemType {
     /// Most item types have a single traceability link (e.g., refines, satisfies).
     /// Requirement types have two: derives_from (hierarchical) and depends_on (peer).
     /// Solution has no parent and returns an empty vec.
+    #[must_use]
     pub fn traceability_configs(&self) -> Vec<TraceabilityConfig> {
         match self {
             ItemType::Solution => vec![],
@@ -401,6 +427,7 @@ impl ItemId {
     }
 
     /// Returns the raw identifier string.
+    #[must_use]
     pub fn as_str(&self) -> &str {
         &self.0
     }
@@ -439,17 +466,17 @@ pub struct UpstreamRefs {
 }
 
 impl UpstreamRefs {
-    /// Returns all upstream item IDs.
-    pub fn all_ids(&self) -> Vec<&ItemId> {
-        let mut ids = Vec::new();
-        ids.extend(self.refines.iter());
-        ids.extend(self.derives_from.iter());
-        ids.extend(self.satisfies.iter());
-        ids.extend(self.justifies.iter());
-        ids
+    /// Returns an iterator over all upstream item IDs.
+    pub fn all_ids(&self) -> impl Iterator<Item = &ItemId> {
+        self.refines
+            .iter()
+            .chain(self.derives_from.iter())
+            .chain(self.satisfies.iter())
+            .chain(self.justifies.iter())
     }
 
     /// Returns true if there are no upstream references.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.refines.is_empty()
             && self.derives_from.is_empty()
@@ -479,17 +506,17 @@ pub struct DownstreamRefs {
 }
 
 impl DownstreamRefs {
-    /// Returns all downstream item IDs.
-    pub fn all_ids(&self) -> Vec<&ItemId> {
-        let mut ids = Vec::new();
-        ids.extend(self.is_refined_by.iter());
-        ids.extend(self.derives.iter());
-        ids.extend(self.is_satisfied_by.iter());
-        ids.extend(self.justified_by.iter());
-        ids
+    /// Returns an iterator over all downstream item IDs.
+    pub fn all_ids(&self) -> impl Iterator<Item = &ItemId> {
+        self.is_refined_by
+            .iter()
+            .chain(self.derives.iter())
+            .chain(self.is_satisfied_by.iter())
+            .chain(self.justified_by.iter())
     }
 
     /// Returns true if there are no downstream references.
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.is_refined_by.is_empty()
             && self.derives.is_empty()
@@ -580,6 +607,7 @@ pub enum ItemAttributes {
 
 impl ItemAttributes {
     /// Creates default attributes for the given item type.
+    #[must_use]
     pub fn for_type(item_type: ItemType) -> Self {
         match item_type {
             ItemType::Solution => ItemAttributes::Solution,
@@ -609,53 +637,59 @@ impl ItemAttributes {
     }
 
     /// Returns the specification if this is a requirement type.
+    #[must_use]
     pub fn specification(&self) -> Option<&String> {
         match self {
-            ItemAttributes::SystemRequirement { specification, .. }
-            | ItemAttributes::SoftwareRequirement { specification, .. }
-            | ItemAttributes::HardwareRequirement { specification, .. } => Some(specification),
+            Self::SystemRequirement { specification, .. }
+            | Self::SoftwareRequirement { specification, .. }
+            | Self::HardwareRequirement { specification, .. } => Some(specification),
             _ => None,
         }
     }
 
     /// Returns the depends_on references if this is a requirement type.
+    #[must_use]
     pub fn depends_on(&self) -> &[ItemId] {
         match self {
-            ItemAttributes::SystemRequirement { depends_on, .. }
-            | ItemAttributes::SoftwareRequirement { depends_on, .. }
-            | ItemAttributes::HardwareRequirement { depends_on, .. } => depends_on,
+            Self::SystemRequirement { depends_on, .. }
+            | Self::SoftwareRequirement { depends_on, .. }
+            | Self::HardwareRequirement { depends_on, .. } => depends_on,
             _ => &[],
         }
     }
 
     /// Returns the platform if this is a SystemArchitecture.
+    #[must_use]
     pub fn platform(&self) -> Option<&String> {
         match self {
-            ItemAttributes::SystemArchitecture { platform, .. } => platform.as_ref(),
+            Self::SystemArchitecture { platform, .. } => platform.as_ref(),
             _ => None,
         }
     }
 
     /// Returns the ADR status if this is an ADR.
+    #[must_use]
     pub fn status(&self) -> Option<AdrStatus> {
         match self {
-            ItemAttributes::Adr { status, .. } => Some(*status),
+            Self::Adr { status, .. } => Some(*status),
             _ => None,
         }
     }
 
     /// Returns the deciders if this is an ADR.
+    #[must_use]
     pub fn deciders(&self) -> &[String] {
         match self {
-            ItemAttributes::Adr { deciders, .. } => deciders,
+            Self::Adr { deciders, .. } => deciders,
             _ => &[],
         }
     }
 
     /// Returns the supersedes references if this is an ADR.
+    #[must_use]
     pub fn supersedes(&self) -> &[ItemId] {
         match self {
-            ItemAttributes::Adr { supersedes, .. } => supersedes,
+            Self::Adr { supersedes, .. } => supersedes,
             _ => &[],
         }
     }
@@ -696,30 +730,21 @@ pub struct Item {
 }
 
 impl Item {
-    /// Returns all referenced item IDs (both upstream and downstream).
-    pub fn all_references(&self) -> Vec<&ItemId> {
-        let mut refs = Vec::new();
-        refs.extend(self.upstream.all_ids());
-        refs.extend(self.downstream.all_ids());
+    /// Returns an iterator over all referenced item IDs (upstream, downstream, and peer).
+    pub fn all_references(&self) -> impl Iterator<Item = &ItemId> {
+        // Upstream and downstream references
+        let upstream_downstream = self.upstream.all_ids().chain(self.downstream.all_ids());
 
-        // Add type-specific references (peer relationships stored in attributes)
-        match &self.attributes {
+        // Peer references from attributes (depends_on for requirements, supersedes for ADRs)
+        let peer_refs: Box<dyn Iterator<Item = &ItemId>> = match &self.attributes {
             ItemAttributes::SystemRequirement { depends_on, .. }
             | ItemAttributes::SoftwareRequirement { depends_on, .. }
-            | ItemAttributes::HardwareRequirement { depends_on, .. } => {
-                refs.extend(depends_on.iter());
-            }
-            ItemAttributes::Adr { supersedes, .. } => {
-                refs.extend(supersedes.iter());
-            }
-            ItemAttributes::Solution
-            | ItemAttributes::UseCase
-            | ItemAttributes::Scenario
-            | ItemAttributes::SystemArchitecture { .. }
-            | ItemAttributes::SoftwareDetailedDesign
-            | ItemAttributes::HardwareDetailedDesign => {}
-        }
-        refs
+            | ItemAttributes::HardwareRequirement { depends_on, .. } => Box::new(depends_on.iter()),
+            ItemAttributes::Adr { supersedes, .. } => Box::new(supersedes.iter()),
+            _ => Box::new(std::iter::empty()),
+        };
+
+        upstream_downstream.chain(peer_refs)
     }
 }
 
@@ -884,6 +909,16 @@ impl ItemBuilder {
         self
     }
 
+    /// Validates and returns the specification, returning an error if missing.
+    fn require_specification(&self, file: &str) -> Result<String, ValidationError> {
+        self.specification
+            .clone()
+            .ok_or_else(|| ValidationError::MissingField {
+                field: "specification".to_string(),
+                file: file.to_string(),
+            })
+    }
+
     /// Builds the attributes for the given item type.
     fn build_attributes(
         &self,
@@ -891,60 +926,33 @@ impl ItemBuilder {
         file: &str,
     ) -> Result<ItemAttributes, ValidationError> {
         match item_type {
+            // Simple types with no additional attributes
             ItemType::Solution => Ok(ItemAttributes::Solution),
             ItemType::UseCase => Ok(ItemAttributes::UseCase),
             ItemType::Scenario => Ok(ItemAttributes::Scenario),
+            ItemType::SoftwareDetailedDesign => Ok(ItemAttributes::SoftwareDetailedDesign),
+            ItemType::HardwareDetailedDesign => Ok(ItemAttributes::HardwareDetailedDesign),
 
-            ItemType::SystemRequirement => {
-                let specification =
-                    self.specification
-                        .clone()
-                        .ok_or_else(|| ValidationError::MissingField {
-                            field: "specification".to_string(),
-                            file: file.to_string(),
-                        })?;
-                Ok(ItemAttributes::SystemRequirement {
-                    specification,
-                    depends_on: self.depends_on.clone(),
-                })
-            }
-
+            // Architecture with optional platform
             ItemType::SystemArchitecture => Ok(ItemAttributes::SystemArchitecture {
                 platform: self.platform.clone(),
             }),
 
-            ItemType::SoftwareRequirement => {
-                let specification =
-                    self.specification
-                        .clone()
-                        .ok_or_else(|| ValidationError::MissingField {
-                            field: "specification".to_string(),
-                            file: file.to_string(),
-                        })?;
-                Ok(ItemAttributes::SoftwareRequirement {
-                    specification,
-                    depends_on: self.depends_on.clone(),
-                })
-            }
+            // Requirement types with specification and dependencies
+            ItemType::SystemRequirement => Ok(ItemAttributes::SystemRequirement {
+                specification: self.require_specification(file)?,
+                depends_on: self.depends_on.clone(),
+            }),
+            ItemType::SoftwareRequirement => Ok(ItemAttributes::SoftwareRequirement {
+                specification: self.require_specification(file)?,
+                depends_on: self.depends_on.clone(),
+            }),
+            ItemType::HardwareRequirement => Ok(ItemAttributes::HardwareRequirement {
+                specification: self.require_specification(file)?,
+                depends_on: self.depends_on.clone(),
+            }),
 
-            ItemType::HardwareRequirement => {
-                let specification =
-                    self.specification
-                        .clone()
-                        .ok_or_else(|| ValidationError::MissingField {
-                            field: "specification".to_string(),
-                            file: file.to_string(),
-                        })?;
-                Ok(ItemAttributes::HardwareRequirement {
-                    specification,
-                    depends_on: self.depends_on.clone(),
-                })
-            }
-
-            ItemType::SoftwareDetailedDesign => Ok(ItemAttributes::SoftwareDetailedDesign),
-
-            ItemType::HardwareDetailedDesign => Ok(ItemAttributes::HardwareDetailedDesign),
-
+            // ADR with status, deciders, and supersedes
             ItemType::ArchitectureDecisionRecord => {
                 let status = self.status.ok_or_else(|| ValidationError::MissingField {
                     field: "status".to_string(),
