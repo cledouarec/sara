@@ -34,36 +34,13 @@ pub fn is_orphan_error(strict_mode: bool) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_item(
-        id: &str,
-        item_type: ItemType,
-        upstream: Option<UpstreamRefs>,
-    ) -> crate::model::Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(up) = upstream {
-            builder = builder.upstream(up);
-        }
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test spec");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::{ItemId, ItemType, UpstreamRefs};
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_solution_not_orphan() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item("SOL-001", ItemType::Solution, None));
+        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
 
         let errors = check_orphans(&graph, false);
         assert!(
@@ -75,7 +52,7 @@ mod tests {
     #[test]
     fn test_use_case_orphan_detected() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item("UC-001", ItemType::UseCase, None));
+        graph.add_item(create_test_item("UC-001", ItemType::UseCase));
 
         let errors = check_orphans(&graph, false);
         assert_eq!(errors.len(), 1);
@@ -91,14 +68,14 @@ mod tests {
     #[test]
     fn test_linked_item_not_orphan() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item("SOL-001", ItemType::Solution, None));
-        graph.add_item(create_item(
+        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
+        graph.add_item(create_test_item_with_upstream(
             "UC-001",
             ItemType::UseCase,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-001")],
                 ..Default::default()
-            }),
+            },
         ));
 
         let errors = check_orphans(&graph, false);

@@ -1,4 +1,21 @@
 //! Output formatting with colors and emojis.
+//!
+//! This module provides consistent output formatting for the CLI, including:
+//!
+//! - Colored text output (errors in red, success in green, etc.)
+//! - Emoji prefixes for visual distinction
+//! - Graceful degradation when colors/emojis are disabled
+//!
+//! # Configuration
+//!
+//! [`OutputConfig`] controls output behavior:
+//! - `colors`: Enable/disable ANSI color codes
+//! - `emojis`: Enable/disable emoji prefixes (falls back to text like `[OK]`)
+//!
+//! # Usage
+//!
+//! Use the helper functions like [`print_success`], [`print_error`], and
+//! [`print_warning`] for consistent formatting across all commands.
 
 use colored::Colorize;
 use console::Emoji;

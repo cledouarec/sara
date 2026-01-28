@@ -1,4 +1,16 @@
 //! Error types for the sara-core library.
+//!
+//! This module defines all error types used throughout the SARA system:
+//!
+//! - [`ParseError`]: Errors during Markdown/YAML parsing
+//! - [`ValidationError`]: Issues detected during graph validation
+//! - [`GraphError`]: Problems during graph construction
+//! - [`EditError`]: Errors during item editing operations
+//!
+//! # Error Codes
+//!
+//! [`ValidationErrorCode`] provides type-safe error identification for programmatic
+//! handling without string matching.
 
 use std::path::PathBuf;
 use thiserror::Error;
