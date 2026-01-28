@@ -141,7 +141,7 @@ impl KnowledgeGraph {
         self.graph
             .node_weights()
             .filter(|item| {
-                // Solutions are allowed to have no parents
+                // Solutions are allowed to have no parents (root of hierarchy)
                 if item.item_type.is_root() {
                     return false;
                 }

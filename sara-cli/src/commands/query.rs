@@ -5,12 +5,9 @@ use std::process::ExitCode;
 
 use clap::Args;
 
-use sara_core::graph::{
-    GraphBuilder, KnowledgeGraph, TraversalNode, TraversalOptions, TraversalResult,
-};
+use sara_core::graph::{KnowledgeGraph, TraversalNode, TraversalOptions, TraversalResult};
 use sara_core::model::{Item, ItemId, ItemType};
 use sara_core::query::{LookupResult, QueryEngine};
-use sara_core::repository::parse_repositories;
 
 use super::CommandContext;
 use crate::output::{
@@ -55,20 +52,13 @@ pub struct QueryArgs {
 
 /// Runs the query command.
 pub fn run(args: &QueryArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
-    let graph = build_graph(ctx)?;
+    let graph = ctx.build_graph()?;
     let engine = QueryEngine::new(&graph);
 
     match engine.lookup(&args.item_id) {
         LookupResult::Found(item) => handle_found_item(args, ctx, item, &graph, &engine),
         LookupResult::NotFound { suggestions } => handle_not_found(args, ctx, &suggestions),
     }
-}
-
-/// Builds the knowledge graph from repositories.
-fn build_graph(ctx: &CommandContext) -> Result<KnowledgeGraph, Box<dyn Error>> {
-    let items = parse_repositories(&ctx.repositories)?;
-    let graph = GraphBuilder::new().add_items(items).build()?;
-    Ok(graph)
 }
 
 /// Handles the case when an item is found.
@@ -159,6 +149,12 @@ fn build_traversal_options(args: &QueryArgs) -> TraversalOptions {
 fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) {
     let emoji = get_emoji(config, &EMOJI_ITEM);
     let id = colorize(config, item.id.as_str(), Color::Cyan, Style::Bold);
+    let item_type = colorize(
+        config,
+        item.item_type.display_name(),
+        Color::None,
+        Style::Dimmed,
+    );
     let desc = item
         .description
         .as_ref()
@@ -170,37 +166,32 @@ fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) 
    Type: {item_type}
    File: {file}{desc}",
         name = item.name,
-        item_type = item.item_type.display_name(),
         file = item.source.file_path.display(),
     );
 }
 
-fn print_direct_relationships(_config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
+fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
     // Print upstream (requires)
     let parents = graph.parents(&item.id);
     if !parents.is_empty() {
-        println!("\n   Requires:");
+        let label = colorize(config, "Requires:", Color::None, Style::Bold);
+        println!("\n   {label}");
         for (i, parent) in parents.iter().enumerate() {
             let branch = format_tree_branch(i == parents.len() - 1);
-            println!(
-                "     {branch} {id}: {name}",
-                id = parent.id.as_str(),
-                name = parent.name
-            );
+            let id = colorize(config, parent.id.as_str(), Color::Cyan, Style::None);
+            println!("     {branch} {id}: {name}", name = parent.name);
         }
     }
 
     // Print downstream (realized by)
     let children = graph.children(&item.id);
     if !children.is_empty() {
-        println!("\n   Realized by:");
+        let label = colorize(config, "Realized by:", Color::None, Style::Bold);
+        println!("\n   {label}");
         for (i, child) in children.iter().enumerate() {
             let branch = format_tree_branch(i == children.len() - 1);
-            println!(
-                "     {branch} {id}: {name}",
-                id = child.id.as_str(),
-                name = child.name
-            );
+            let id = colorize(config, child.id.as_str(), Color::Cyan, Style::None);
+            println!("     {branch} {id}: {name}", name = child.name);
         }
     }
 }
@@ -271,7 +262,7 @@ fn print_tree_node(
     let item_text = format!("{}: {} ({})", id, item.name, type_name);
 
     if is_root {
-        println!("{}", colorize(config, &item_text, Color::None, Style::Bold));
+        println!("{}", item_text);
     } else {
         println!("{}{}{}", prefix, branch, item_text);
     }

@@ -20,11 +20,16 @@ pub fn check_metadata(
 
     for item in graph.items() {
         // Check specification requirement
-        if item.item_type.requires_specification() && item.attributes.specification.is_none() {
+        if item.item_type.requires_specification()
+            && item
+                .attributes
+                .specification()
+                .is_some_and(|spec| spec.is_empty())
+        {
             errors.push(ValidationError::InvalidMetadata {
                 file: item.source.file_path.display().to_string(),
                 reason: format!(
-                    "{} requires a 'specification' field",
+                    "{} requires a non-empty 'specification' field",
                     item.item_type.display_name()
                 ),
             });

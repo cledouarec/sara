@@ -11,9 +11,8 @@ use inquire::{Confirm, InquireError};
 
 use sara_core::edit::{EditOptions, EditService, EditedValues, ItemContext};
 use sara_core::error::EditError;
-use sara_core::graph::{GraphBuilder, KnowledgeGraph};
+use sara_core::graph::KnowledgeGraph;
 use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};
-use sara_core::repository::parse_repositories;
 
 use super::CommandContext;
 use super::interactive::{
@@ -63,8 +62,7 @@ pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Er
     let service = EditService::new();
 
     // Build the knowledge graph
-    let items = parse_repositories(&ctx.repositories)?;
-    let graph = GraphBuilder::new().add_items(items).build()?;
+    let graph = ctx.build_graph()?;
 
     // Look up the item (FR-054)
     let item = match service.lookup_item(&graph, &args.item_id) {
@@ -321,6 +319,10 @@ fn run_non_interactive_edit(
                 .depends_on
                 .clone()
                 .unwrap_or_else(|| item.traceability.depends_on.clone()),
+            justifies: opts
+                .justifies
+                .clone()
+                .unwrap_or_else(|| item.traceability.justifies.clone()),
         });
 
     service.apply_changes(&item.id, item.item_type, &new_values, &item.file_path)?;

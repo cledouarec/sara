@@ -31,7 +31,7 @@ pub fn check_broken_references(graph: &KnowledgeGraph) -> Vec<ValidationError> {
 pub fn find_referencing_items(graph: &KnowledgeGraph, target_id: &ItemId) -> Vec<ItemId> {
     graph
         .items()
-        .filter(|item| item.all_references().contains(&target_id))
+        .filter(|item| item.all_references().any(|id| id == target_id))
         .map(|item| item.id.clone())
         .collect()
 }
@@ -39,43 +39,20 @@ pub fn find_referencing_items(graph: &KnowledgeGraph, target_id: &ItemId) -> Vec
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemType, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_item(
-        id: &str,
-        item_type: ItemType,
-        upstream: Option<UpstreamRefs>,
-    ) -> crate::model::Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(up) = upstream {
-            builder = builder.upstream(up);
-        }
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test spec");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::{ItemType, UpstreamRefs};
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_no_broken_refs() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item("SOL-001", ItemType::Solution, None));
-        graph.add_item(create_item(
+        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
+        graph.add_item(create_test_item_with_upstream(
             "UC-001",
             ItemType::UseCase,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-001")],
                 ..Default::default()
-            }),
+            },
         ));
 
         let errors = check_broken_references(&graph);
@@ -85,13 +62,13 @@ mod tests {
     #[test]
     fn test_broken_ref_detected() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item(
+        graph.add_item(create_test_item_with_upstream(
             "UC-001",
             ItemType::UseCase,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-MISSING")],
                 ..Default::default()
-            }),
+            },
         ));
 
         let errors = check_broken_references(&graph);

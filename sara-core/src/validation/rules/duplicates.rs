@@ -46,25 +46,14 @@ pub fn would_be_duplicate(graph: &KnowledgeGraph, id: &ItemId) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemType, SourceLocation};
-    use std::path::PathBuf;
-
-    fn create_item_at(id: &str, file: &str) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), PathBuf::from(file));
-        ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(ItemType::Solution)
-            .name("Test")
-            .source(source)
-            .build()
-            .unwrap()
-    }
+    use crate::model::ItemType;
+    use crate::test_utils::create_test_item_at;
 
     #[test]
     fn test_no_duplicates() {
         let items = vec![
-            create_item_at("SOL-001", "sol1.md"),
-            create_item_at("SOL-002", "sol2.md"),
+            create_test_item_at("SOL-001", ItemType::Solution, "sol1.md"),
+            create_test_item_at("SOL-002", ItemType::Solution, "sol2.md"),
         ];
 
         let errors = check_duplicate_items(&items);
@@ -74,8 +63,8 @@ mod tests {
     #[test]
     fn test_duplicate_detected() {
         let items = vec![
-            create_item_at("SOL-001", "sol1.md"),
-            create_item_at("SOL-001", "sol1-copy.md"),
+            create_test_item_at("SOL-001", ItemType::Solution, "sol1.md"),
+            create_test_item_at("SOL-001", ItemType::Solution, "sol1-copy.md"),
         ];
 
         let errors = check_duplicate_items(&items);
@@ -92,10 +81,10 @@ mod tests {
     #[test]
     fn test_multiple_duplicates() {
         let items = vec![
-            create_item_at("SOL-001", "sol1.md"),
-            create_item_at("SOL-001", "sol1-copy.md"),
-            create_item_at("SOL-002", "sol2.md"),
-            create_item_at("SOL-002", "sol2-copy.md"),
+            create_test_item_at("SOL-001", ItemType::Solution, "sol1.md"),
+            create_test_item_at("SOL-001", ItemType::Solution, "sol1-copy.md"),
+            create_test_item_at("SOL-002", ItemType::Solution, "sol2.md"),
+            create_test_item_at("SOL-002", ItemType::Solution, "sol2-copy.md"),
         ];
 
         let errors = check_duplicate_items(&items);
@@ -105,7 +94,7 @@ mod tests {
     #[test]
     fn test_would_be_duplicate() {
         let mut graph = KnowledgeGraph::new(false);
-        let item = create_item_at("SOL-001", "sol1.md");
+        let item = create_test_item_at("SOL-001", ItemType::Solution, "sol1.md");
         graph.add_item(item);
 
         assert!(would_be_duplicate(

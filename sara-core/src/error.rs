@@ -1,9 +1,75 @@
 //! Error types for the sara-core library.
+//!
+//! This module defines all error types used throughout the SARA system:
+//!
+//! - [`ParseError`]: Errors during Markdown/YAML parsing
+//! - [`ValidationError`]: Issues detected during graph validation
+//! - [`GraphError`]: Problems during graph construction
+//! - [`EditError`]: Errors during item editing operations
+//!
+//! # Error Codes
+//!
+//! [`ValidationErrorCode`] provides type-safe error identification for programmatic
+//! handling without string matching.
 
 use std::path::PathBuf;
 use thiserror::Error;
 
 use crate::model::{ItemId, ItemType, RelationshipType, SourceLocation};
+
+/// Type-safe error codes for validation errors.
+///
+/// Provides a programmatic way to identify validation error types
+/// without relying on string matching.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ValidationErrorCode {
+    /// Item ID format is invalid.
+    InvalidId,
+    /// Required field is missing.
+    MissingField,
+    /// Reference to non-existent item.
+    BrokenReference,
+    /// Item has no upstream parent (when required).
+    OrphanItem,
+    /// Same ID defined in multiple files.
+    DuplicateIdentifier,
+    /// Cycle detected in the graph.
+    CircularReference,
+    /// Relationship type not allowed between item types.
+    InvalidRelationship,
+    /// Metadata validation failed.
+    InvalidMetadata,
+    /// Unknown field in frontmatter.
+    UnrecognizedField,
+    /// Both sides of a relationship declare it.
+    RedundantRelationship,
+}
+
+impl ValidationErrorCode {
+    /// Returns the string representation of this error code.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        match self {
+            Self::InvalidId => "invalid_id",
+            Self::MissingField => "missing_field",
+            Self::BrokenReference => "broken_reference",
+            Self::OrphanItem => "orphan_item",
+            Self::DuplicateIdentifier => "duplicate_identifier",
+            Self::CircularReference => "circular_reference",
+            Self::InvalidRelationship => "invalid_relationship",
+            Self::InvalidMetadata => "invalid_metadata",
+            Self::UnrecognizedField => "unrecognized_field",
+            Self::RedundantRelationship => "redundant_relationship",
+        }
+    }
+}
+
+impl std::fmt::Display for ValidationErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.as_str())
+    }
+}
 
 /// Errors that can occur during parsing.
 #[derive(Debug, Error)]
@@ -97,6 +163,7 @@ pub enum ValidationError {
 
 impl ValidationError {
     /// Returns the source location if available.
+    #[must_use]
     pub fn location(&self) -> Option<&SourceLocation> {
         match self {
             Self::BrokenReference { location, .. } => location.as_ref(),
@@ -111,7 +178,8 @@ impl ValidationError {
     }
 
     /// Returns true if this is an error (blocks validation).
-    pub fn is_error(&self) -> bool {
+    #[must_use]
+    pub const fn is_error(&self) -> bool {
         !matches!(
             self,
             Self::UnrecognizedField { .. } | Self::RedundantRelationship { .. }
@@ -119,18 +187,19 @@ impl ValidationError {
     }
 
     /// Returns the error code for this validation error.
-    pub fn code(&self) -> &'static str {
+    #[must_use]
+    pub const fn code(&self) -> ValidationErrorCode {
         match self {
-            Self::InvalidId { .. } => "invalid_id",
-            Self::MissingField { .. } => "missing_field",
-            Self::BrokenReference { .. } => "broken_reference",
-            Self::OrphanItem { .. } => "orphan_item",
-            Self::DuplicateIdentifier { .. } => "duplicate_identifier",
-            Self::CircularReference { .. } => "circular_reference",
-            Self::InvalidRelationship { .. } => "invalid_relationship",
-            Self::InvalidMetadata { .. } => "invalid_metadata",
-            Self::UnrecognizedField { .. } => "unrecognized_field",
-            Self::RedundantRelationship { .. } => "redundant_relationship",
+            Self::InvalidId { .. } => ValidationErrorCode::InvalidId,
+            Self::MissingField { .. } => ValidationErrorCode::MissingField,
+            Self::BrokenReference { .. } => ValidationErrorCode::BrokenReference,
+            Self::OrphanItem { .. } => ValidationErrorCode::OrphanItem,
+            Self::DuplicateIdentifier { .. } => ValidationErrorCode::DuplicateIdentifier,
+            Self::CircularReference { .. } => ValidationErrorCode::CircularReference,
+            Self::InvalidRelationship { .. } => ValidationErrorCode::InvalidRelationship,
+            Self::InvalidMetadata { .. } => ValidationErrorCode::InvalidMetadata,
+            Self::UnrecognizedField { .. } => ValidationErrorCode::UnrecognizedField,
+            Self::RedundantRelationship { .. } => ValidationErrorCode::RedundantRelationship,
         }
     }
 }

@@ -149,43 +149,20 @@ pub fn would_create_cycle(graph: &KnowledgeGraph, from: &ItemId, to: &ItemId) ->
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemBuilder, ItemType, RelationshipType, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_item(
-        id: &str,
-        item_type: ItemType,
-        upstream: Option<UpstreamRefs>,
-    ) -> crate::model::Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(up) = upstream {
-            builder = builder.upstream(up);
-        }
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test spec");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::{ItemType, RelationshipType, UpstreamRefs};
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_no_cycles() {
         let graph = GraphBuilder::new()
-            .add_item(create_item("SOL-001", ItemType::Solution, None))
-            .add_item(create_item(
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
                 "UC-001",
                 ItemType::UseCase,
-                Some(UpstreamRefs {
+                UpstreamRefs {
                     refines: vec![ItemId::new_unchecked("SOL-001")],
                     ..Default::default()
-                }),
+                },
             ))
             .build()
             .unwrap();
@@ -199,21 +176,21 @@ mod tests {
         // Create a cycle: SCEN-001 -> SCEN-002 -> SCEN-001
         let mut graph = KnowledgeGraph::new(false);
 
-        let scen1 = create_item(
+        let scen1 = create_test_item_with_upstream(
             "SCEN-001",
             ItemType::Scenario,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SCEN-002")],
                 ..Default::default()
-            }),
+            },
         );
-        let scen2 = create_item(
+        let scen2 = create_test_item_with_upstream(
             "SCEN-002",
             ItemType::Scenario,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SCEN-001")],
                 ..Default::default()
-            }),
+            },
         );
 
         graph.add_item(scen1);
@@ -239,14 +216,14 @@ mod tests {
     fn test_would_create_cycle() {
         let mut graph = KnowledgeGraph::new(false);
 
-        let sol = create_item("SOL-001", ItemType::Solution, None);
-        let uc = create_item(
+        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let uc = create_test_item_with_upstream(
             "UC-001",
             ItemType::UseCase,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-001")],
                 ..Default::default()
-            }),
+            },
         );
 
         graph.add_item(sol);

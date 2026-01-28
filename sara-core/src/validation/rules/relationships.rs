@@ -2,7 +2,7 @@
 
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, RelationshipRules, RelationshipType};
+use crate::model::{Item, ItemId, RelationshipRules, RelationshipType};
 
 /// Validates that all relationships conform to the allowed type rules.
 ///
@@ -20,149 +20,88 @@ pub fn check_relationships(graph: &KnowledgeGraph) -> Vec<ValidationError> {
     errors
 }
 
+/// Checks references of a specific relationship type and collects validation errors.
+fn check_references<'a>(
+    item: &Item,
+    graph: &KnowledgeGraph,
+    refs: impl Iterator<Item = &'a ItemId>,
+    rel_type: RelationshipType,
+    errors: &mut Vec<ValidationError>,
+) {
+    for ref_id in refs {
+        if let Some(target) = graph.get(ref_id)
+            && !RelationshipRules::is_valid_relationship(item.item_type, target.item_type, rel_type)
+        {
+            errors.push(ValidationError::InvalidRelationship {
+                from_id: item.id.clone(),
+                to_id: ref_id.clone(),
+                from_type: item.item_type,
+                to_type: target.item_type,
+                rel_type,
+                location: Some(item.source.clone()),
+            });
+        }
+    }
+}
+
 /// Validates relationships for a single item.
 fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
-    // Check upstream references (refines)
-    for ref_id in &item.upstream.refines {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::Refines,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::Refines,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
+    // Check upstream references
+    check_references(
+        item,
+        graph,
+        item.upstream.refines.iter(),
+        RelationshipType::Refines,
+        &mut errors,
+    );
+    check_references(
+        item,
+        graph,
+        item.upstream.derives_from.iter(),
+        RelationshipType::DerivesFrom,
+        &mut errors,
+    );
+    check_references(
+        item,
+        graph,
+        item.upstream.satisfies.iter(),
+        RelationshipType::Satisfies,
+        &mut errors,
+    );
 
-    // Check upstream references (derives_from)
-    for ref_id in &item.upstream.derives_from {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::DerivesFrom,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::DerivesFrom,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
+    // Check downstream references
+    check_references(
+        item,
+        graph,
+        item.downstream.is_refined_by.iter(),
+        RelationshipType::IsRefinedBy,
+        &mut errors,
+    );
+    check_references(
+        item,
+        graph,
+        item.downstream.derives.iter(),
+        RelationshipType::Derives,
+        &mut errors,
+    );
+    check_references(
+        item,
+        graph,
+        item.downstream.is_satisfied_by.iter(),
+        RelationshipType::IsSatisfiedBy,
+        &mut errors,
+    );
 
-    // Check upstream references (satisfies)
-    for ref_id in &item.upstream.satisfies {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::Satisfies,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::Satisfies,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
-
-    // Check downstream references (is_refined_by)
-    for ref_id in &item.downstream.is_refined_by {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::IsRefinedBy,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::IsRefinedBy,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
-
-    // Check downstream references (derives)
-    for ref_id in &item.downstream.derives {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::Derives,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::Derives,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
-
-    // Check downstream references (is_satisfied_by)
-    for ref_id in &item.downstream.is_satisfied_by {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::IsSatisfiedBy,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::IsSatisfiedBy,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
-
-    // Check peer dependencies (depends_on)
-    for ref_id in &item.attributes.depends_on {
-        if let Some(target) = graph.get(ref_id)
-            && !RelationshipRules::is_valid_relationship(
-                item.item_type,
-                target.item_type,
-                RelationshipType::DependsOn,
-            )
-        {
-            errors.push(ValidationError::InvalidRelationship {
-                from_id: item.id.clone(),
-                to_id: ref_id.clone(),
-                from_type: item.item_type,
-                to_type: target.item_type,
-                rel_type: RelationshipType::DependsOn,
-                location: Some(item.source.clone()),
-            });
-        }
-    }
+    // Check peer dependencies
+    check_references(
+        item,
+        graph,
+        item.attributes.depends_on().iter(),
+        RelationshipType::DependsOn,
+        &mut errors,
+    );
 
     errors
 }
@@ -170,49 +109,22 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<Valid
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{
-        DownstreamRefs, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+    use crate::model::{DownstreamRefs, ItemId, ItemType, UpstreamRefs};
+    use crate::test_utils::{
+        create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
     };
-    use std::path::PathBuf;
-
-    fn create_item(
-        id: &str,
-        item_type: ItemType,
-        upstream: Option<UpstreamRefs>,
-        downstream: Option<DownstreamRefs>,
-    ) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(up) = upstream {
-            builder = builder.upstream(up);
-        }
-        if let Some(down) = downstream {
-            builder = builder.downstream(down);
-        }
-        if item_type.requires_specification() {
-            builder = builder.specification("Test spec");
-        }
-
-        builder.build().unwrap()
-    }
 
     #[test]
     fn test_valid_relationship() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item("SOL-001", ItemType::Solution, None, None));
-        graph.add_item(create_item(
+        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
+        graph.add_item(create_test_item_with_upstream(
             "UC-001",
             ItemType::UseCase,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-001")],
                 ..Default::default()
-            }),
-            None,
+            },
         ));
 
         let errors = check_relationships(&graph);
@@ -225,16 +137,15 @@ mod tests {
     #[test]
     fn test_invalid_relationship() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item("SOL-001", ItemType::Solution, None, None));
+        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
         // Scenario trying to refine Solution directly (should be UseCase)
-        graph.add_item(create_item(
+        graph.add_item(create_test_item_with_upstream(
             "SCEN-001",
             ItemType::Scenario,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-001")],
                 ..Default::default()
-            }),
-            None,
+            },
         ));
 
         let errors = check_relationships(&graph);
@@ -258,16 +169,16 @@ mod tests {
     #[test]
     fn test_valid_downstream_relationship() {
         let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_item(
+        graph.add_item(create_test_item_with_refs(
             "SOL-001",
             ItemType::Solution,
-            None,
-            Some(DownstreamRefs {
+            UpstreamRefs::default(),
+            DownstreamRefs {
                 is_refined_by: vec![ItemId::new_unchecked("UC-001")],
                 ..Default::default()
-            }),
+            },
         ));
-        graph.add_item(create_item("UC-001", ItemType::UseCase, None, None));
+        graph.add_item(create_test_item("UC-001", ItemType::UseCase));
 
         let errors = check_relationships(&graph);
         assert!(errors.is_empty());

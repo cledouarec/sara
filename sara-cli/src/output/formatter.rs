@@ -1,4 +1,21 @@
 //! Output formatting with colors and emojis.
+//!
+//! This module provides consistent output formatting for the CLI, including:
+//!
+//! - Colored text output (errors in red, success in green, etc.)
+//! - Emoji prefixes for visual distinction
+//! - Graceful degradation when colors/emojis are disabled
+//!
+//! # Configuration
+//!
+//! [`OutputConfig`] controls output behavior:
+//! - `colors`: Enable/disable ANSI color codes
+//! - `emojis`: Enable/disable emoji prefixes (falls back to text like `[OK]`)
+//!
+//! # Usage
+//!
+//! Use the helper functions like [`print_success`], [`print_error`], and
+//! [`print_warning`] for consistent formatting across all commands.
 
 use colored::Colorize;
 use console::Emoji;
@@ -103,8 +120,20 @@ pub fn print_success(config: &OutputConfig, message: &str) {
     );
 }
 
-/// Prints an error message.
+/// Prints an error message to stdout.
+///
+/// Error details are printed to stdout, while the final status summary
+/// is printed to stderr using `print_error_summary`.
 pub fn print_error(config: &OutputConfig, message: &str) {
+    let msg = colorize(config, message, Color::Red, Style::None);
+    println!("{}", format_message(config, &EMOJI_ERROR, Color::Red, &msg));
+}
+
+/// Prints an error summary message to stderr.
+///
+/// Use this for final status summaries (e.g., "Validation failed with N errors").
+/// Individual error details should use `print_error` which prints to stdout.
+pub fn print_error_summary(config: &OutputConfig, message: &str) {
     let msg = colorize(config, message, Color::Red, Style::None);
     eprintln!("{}", format_message(config, &EMOJI_ERROR, Color::Red, &msg));
 }

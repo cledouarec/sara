@@ -95,45 +95,20 @@ pub fn validate_strict(graph: &KnowledgeGraph) -> ValidationReport {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{
-        ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation, UpstreamRefs,
-    };
-    use std::path::PathBuf;
-
-    fn create_item(
-        id: &str,
-        item_type: ItemType,
-        upstream: Option<UpstreamRefs>,
-    ) -> crate::model::Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(up) = upstream {
-            builder = builder.upstream(up);
-        }
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test spec");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::{ItemId, ItemType, RelationshipType, UpstreamRefs};
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_valid_graph() {
         let graph = GraphBuilder::new()
-            .add_item(create_item("SOL-001", ItemType::Solution, None))
-            .add_item(create_item(
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
                 "UC-001",
                 ItemType::UseCase,
-                Some(UpstreamRefs {
+                UpstreamRefs {
                     refines: vec![ItemId::new_unchecked("SOL-001")],
                     ..Default::default()
-                }),
+                },
             ))
             .build()
             .unwrap();
@@ -146,13 +121,13 @@ mod tests {
     #[test]
     fn test_broken_reference() {
         let graph = GraphBuilder::new()
-            .add_item(create_item(
+            .add_item(create_test_item_with_upstream(
                 "UC-001",
                 ItemType::UseCase,
-                Some(UpstreamRefs {
+                UpstreamRefs {
                     refines: vec![ItemId::new_unchecked("SOL-MISSING")],
                     ..Default::default()
-                }),
+                },
             ))
             .build()
             .unwrap();
@@ -165,7 +140,7 @@ mod tests {
     #[test]
     fn test_orphan_warning() {
         let graph = GraphBuilder::new()
-            .add_item(create_item("UC-001", ItemType::UseCase, None))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()
             .unwrap();
 
@@ -181,7 +156,7 @@ mod tests {
     #[test]
     fn test_orphan_error_strict() {
         let graph = GraphBuilder::new()
-            .add_item(create_item("UC-001", ItemType::UseCase, None))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()
             .unwrap();
 
@@ -196,21 +171,21 @@ mod tests {
         let mut graph = KnowledgeGraph::new(false);
 
         // Create a cycle
-        let scen1 = create_item(
+        let scen1 = create_test_item_with_upstream(
             "SCEN-001",
             ItemType::Scenario,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SCEN-002")],
                 ..Default::default()
-            }),
+            },
         );
-        let scen2 = create_item(
+        let scen2 = create_test_item_with_upstream(
             "SCEN-002",
             ItemType::Scenario,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SCEN-001")],
                 ..Default::default()
-            }),
+            },
         );
 
         graph.add_item(scen1);
@@ -236,14 +211,14 @@ mod tests {
         let mut graph = KnowledgeGraph::new(false);
 
         // Scenario trying to refine Solution directly (invalid)
-        graph.add_item(create_item("SOL-001", ItemType::Solution, None));
-        graph.add_item(create_item(
+        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
+        graph.add_item(create_test_item_with_upstream(
             "SCEN-001",
             ItemType::Scenario,
-            Some(UpstreamRefs {
+            UpstreamRefs {
                 refines: vec![ItemId::new_unchecked("SOL-001")],
                 ..Default::default()
-            }),
+            },
         ));
 
         let report = validate(&graph);

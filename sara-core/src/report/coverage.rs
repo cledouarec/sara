@@ -122,12 +122,7 @@ impl CoverageReport {
             return !graph.children(&item.id).is_empty();
         }
 
-        // Leaf items (detailed designs) are complete if they have upstream items
-        if item.item_type.is_leaf() {
-            return !item.upstream.is_empty();
-        }
-
-        // Middle items need both upstream and downstream
+        // All other items are complete if they have upstream items
         !item.upstream.is_empty()
     }
 
@@ -154,16 +149,9 @@ impl CoverageReport {
 
     /// Returns the expected parent type for an item type.
     fn expected_parent_type(item_type: ItemType) -> &'static str {
-        match item_type {
-            ItemType::Solution => "N/A (root)",
-            ItemType::UseCase => "Solution",
-            ItemType::Scenario => "Use Case",
-            ItemType::SystemRequirement => "Scenario",
-            ItemType::SystemArchitecture => "System Requirement",
-            ItemType::HardwareRequirement => "System Architecture",
-            ItemType::SoftwareRequirement => "System Architecture",
-            ItemType::HardwareDetailedDesign => "Hardware Requirement",
-            ItemType::SoftwareDetailedDesign => "Software Requirement",
+        match item_type.required_parent_type() {
+            Some(parent) => parent.display_name(),
+            None => "N/A (root)",
         }
     }
 }

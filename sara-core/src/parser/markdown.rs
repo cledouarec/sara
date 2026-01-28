@@ -6,8 +6,7 @@ use serde::Deserialize;
 
 use crate::error::ParseError;
 use crate::model::{
-    DownstreamRefs, Item, ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation,
-    UpstreamRefs,
+    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
 };
 use crate::parser::frontmatter::extract_frontmatter;
 
@@ -27,7 +26,7 @@ pub struct RawFrontmatter {
     /// Human-readable name (required).
     pub name: String,
 
-    /// Optional description.
+    /// Description (optional).
     #[serde(default)]
     pub description: Option<String>,
 
@@ -70,9 +69,25 @@ pub struct RawFrontmatter {
     #[serde(default)]
     pub platform: Option<String>,
 
-    /// ADR links (reserved for future use).
+    /// ADR links (for SystemArchitecture, HW/SW DetailedDesign).
     #[serde(default)]
     pub justified_by: Option<Vec<String>>,
+
+    /// ADR lifecycle status (required for ADR items).
+    #[serde(default)]
+    pub status: Option<AdrStatus>,
+
+    /// ADR deciders (required for ADR items).
+    #[serde(default)]
+    pub deciders: Vec<String>,
+
+    /// Design artifacts this ADR justifies (for ADR items).
+    #[serde(default)]
+    pub justifies: Vec<String>,
+
+    /// Older ADRs this decision supersedes (for ADR items).
+    #[serde(default)]
+    pub supersedes: Vec<String>,
 }
 
 impl RawFrontmatter {
@@ -86,6 +101,7 @@ impl RawFrontmatter {
                 .map(ItemId::new_unchecked)
                 .collect(),
             satisfies: self.satisfies.iter().map(ItemId::new_unchecked).collect(),
+            justifies: self.justifies.iter().map(ItemId::new_unchecked).collect(),
         })
     }
 
@@ -103,20 +119,12 @@ impl RawFrontmatter {
                 .iter()
                 .map(ItemId::new_unchecked)
                 .collect(),
-        })
-    }
-
-    /// Converts to ItemAttributes.
-    pub fn attributes(&self) -> ItemAttributes {
-        ItemAttributes {
-            specification: self.specification.clone(),
-            depends_on: self.depends_on.iter().map(ItemId::new_unchecked).collect(),
-            platform: self.platform.clone(),
             justified_by: self
                 .justified_by
                 .as_ref()
-                .map(|ids| ids.iter().map(ItemId::new_unchecked).collect()),
-        }
+                .map(|ids| ids.iter().map(ItemId::new_unchecked).collect())
+                .unwrap_or_default(),
+        })
     }
 }
 
@@ -158,11 +166,50 @@ pub fn parse_markdown_file(
         .name(&frontmatter.name)
         .source(source)
         .upstream(frontmatter.upstream_refs()?)
-        .downstream(frontmatter.downstream_refs()?)
-        .attributes(frontmatter.attributes());
+        .downstream(frontmatter.downstream_refs()?);
 
     if let Some(desc) = &frontmatter.description {
         builder = builder.description(desc);
+    }
+
+    // Set type-specific attributes based on item type
+    match frontmatter.item_type {
+        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {
+            // No type-specific attributes
+        }
+        ItemType::SystemRequirement
+        | ItemType::SoftwareRequirement
+        | ItemType::HardwareRequirement => {
+            if let Some(spec) = &frontmatter.specification {
+                builder = builder.specification(spec);
+            }
+            for id in &frontmatter.depends_on {
+                builder = builder.depends_on(ItemId::new_unchecked(id));
+            }
+        }
+        ItemType::SystemArchitecture => {
+            if let Some(platform) = &frontmatter.platform {
+                builder = builder.platform(platform);
+            }
+            // justified_by is now handled via downstream_refs()
+        }
+        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {
+            // justified_by is now handled via downstream_refs()
+        }
+        ItemType::ArchitectureDecisionRecord => {
+            if let Some(status) = frontmatter.status {
+                builder = builder.status(status);
+            }
+            builder = builder.deciders(frontmatter.deciders.clone());
+            // justifies is now handled via upstream_refs()
+            builder = builder.supersedes_all(
+                frontmatter
+                    .supersedes
+                    .iter()
+                    .map(ItemId::new_unchecked)
+                    .collect(),
+            );
+        }
     }
 
     builder.build().map_err(|e| ParseError::InvalidFrontmatter {
@@ -255,8 +302,8 @@ is_satisfied_by:
         assert_eq!(item.id.as_str(), "SYSREQ-001");
         assert_eq!(item.item_type, ItemType::SystemRequirement);
         assert_eq!(
-            item.attributes.specification,
-            Some("The system SHALL respond within 100ms.".to_string())
+            item.attributes.specification().map(String::as_str),
+            Some("The system SHALL respond within 100ms.")
         );
         assert_eq!(item.upstream.derives_from.len(), 1);
         assert_eq!(item.downstream.is_satisfied_by.len(), 1);
@@ -298,5 +345,131 @@ name: "Test"
         let result =
             parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
         assert!(result.is_err());
+    }
+
+    const ADR_MD: &str = r#"---
+id: "ADR-001"
+type: architecture_decision_record
+name: "Use Microservices Architecture"
+description: "Decision to adopt microservices"
+status: proposed
+deciders:
+  - "Alice Smith"
+  - "Bob Jones"
+justifies:
+  - "SYSARCH-001"
+  - "SWDD-001"
+supersedes: []
+superseded_by: null
+---
+# Architecture Decision: Use Microservices Architecture
+
+## Context and problem statement
+
+We need to choose an architecture pattern for our system.
+
+## Decision Outcome
+
+Chosen option: Microservices, because it provides better scalability.
+"#;
+
+    #[test]
+    fn test_parse_adr() {
+        let item = parse_markdown_file(
+            ADR_MD,
+            &PathBuf::from("ADR-001.md"),
+            &PathBuf::from("/repo"),
+        )
+        .unwrap();
+
+        assert_eq!(item.id.as_str(), "ADR-001");
+        assert_eq!(item.item_type, ItemType::ArchitectureDecisionRecord);
+        assert_eq!(item.name, "Use Microservices Architecture");
+        assert_eq!(
+            item.description,
+            Some("Decision to adopt microservices".to_string())
+        );
+
+        // Check ADR-specific attributes
+        assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
+        assert_eq!(item.attributes.deciders().len(), 2);
+        assert!(
+            item.attributes
+                .deciders()
+                .contains(&"Alice Smith".to_string())
+        );
+        assert!(
+            item.attributes
+                .deciders()
+                .contains(&"Bob Jones".to_string())
+        );
+        // justifies is now in upstream refs
+        assert_eq!(item.upstream.justifies.len(), 2);
+        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
+        assert_eq!(item.upstream.justifies[1].as_str(), "SWDD-001");
+        assert!(item.attributes.supersedes().is_empty());
+    }
+
+    #[test]
+    fn test_parse_adr_missing_deciders() {
+        let content = r#"---
+id: "ADR-002"
+type: architecture_decision_record
+name: "Test Decision"
+status: proposed
+---
+"#;
+        let result =
+            parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
+        // Should fail because deciders is required for ADRs
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_adr_missing_status() {
+        let content = r#"---
+id: "ADR-003"
+type: architecture_decision_record
+name: "Test Decision"
+deciders:
+  - "Alice"
+---
+"#;
+        let result =
+            parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
+        // Should fail because status is required for ADRs
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn test_parse_adr_with_supersession() {
+        let content = r#"---
+id: "ADR-005"
+type: architecture_decision_record
+name: "Updated Architecture Decision"
+status: accepted
+deciders:
+  - "Alice Smith"
+justifies:
+  - "SYSARCH-001"
+supersedes:
+  - "ADR-001"
+  - "ADR-002"
+---
+"#;
+        let item = parse_markdown_file(
+            content,
+            &PathBuf::from("ADR-005.md"),
+            &PathBuf::from("/repo"),
+        )
+        .unwrap();
+
+        // justifies is now in upstream refs
+        assert_eq!(item.upstream.justifies.len(), 1);
+        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
+        // supersedes is still in attributes
+        assert_eq!(item.attributes.supersedes().len(), 2);
+        assert_eq!(item.attributes.supersedes()[0].as_str(), "ADR-001");
+        assert_eq!(item.attributes.supersedes()[1].as_str(), "ADR-002");
     }
 }

@@ -15,7 +15,7 @@ use sara_core::validation::{
 };
 
 use super::CommandContext;
-use crate::output::{OutputConfig, print_error, print_success, print_warning};
+use crate::output::{OutputConfig, print_error, print_error_summary, print_success, print_warning};
 
 /// Output format for validate command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -104,7 +104,7 @@ pub fn run(args: &ValidateArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dy
 /// Prints the validation report in text format.
 fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
     // Build header
-    let mut output = format!(
+    let output = format!(
         "\nValidation Results\n\
          ==================\n\n\
          Items checked:         {}\n\
@@ -112,29 +112,23 @@ fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
         report.items_checked, report.relationships_checked
     );
 
-    // Add errors section
-    if report.error_count() > 0 {
-        output.push_str(&format!(
-            "\nErrors ({}):\n----------\n",
-            report.error_count()
-        ));
-        for error in report.errors() {
-            output.push_str(&format!("  {}\n", error));
-        }
-    }
-
-    // Add warnings section
-    if report.warning_count() > 0 {
-        output.push_str(&format!(
-            "\nWarnings ({}):\n-----------\n",
-            report.warning_count()
-        ));
-        for warning in report.warnings() {
-            output.push_str(&format!("  {}\n", warning));
-        }
-    }
-
     println!("{}", output);
+
+    // Print errors with color/emoji
+    if report.error_count() > 0 {
+        println!();
+        for error in report.errors() {
+            print_error(config, &error.to_string());
+        }
+    }
+
+    // Print warnings with color/emoji
+    if report.warning_count() > 0 {
+        println!();
+        for warning in report.warnings() {
+            print_warning(config, &warning.to_string());
+        }
+    }
 
     // Print summary with colors/emojis
     if report.is_valid() {
@@ -150,7 +144,7 @@ fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
             print_success(config, "Validation passed");
         }
     } else {
-        print_error(
+        print_error_summary(
             config,
             &format!(
                 "Validation failed with {} error(s) and {} warning(s)",

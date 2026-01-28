@@ -17,6 +17,8 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use sara_core::config::Config;
+use sara_core::graph::{GraphBuilder, KnowledgeGraph};
+use sara_core::repository::parse_repositories;
 
 use crate::Cli;
 use crate::output::OutputConfig;
@@ -38,6 +40,16 @@ pub struct CommandContext {
     pub repositories: Vec<PathBuf>,
 }
 
+impl CommandContext {
+    /// Builds the knowledge graph from the configured repositories.
+    ///
+    /// Parses all items from the repository paths and constructs a graph.
+    pub fn build_graph(&self) -> Result<KnowledgeGraph, Box<dyn Error>> {
+        let items = parse_repositories(&self.repositories)?;
+        Ok(GraphBuilder::new().add_items(items).build()?)
+    }
+}
+
 /// Available CLI commands.
 #[derive(Subcommand, Debug)]
 #[command(disable_help_subcommand = true)]
@@ -55,15 +67,19 @@ pub enum Commands {
     ///   sara edit SREQ-001 --name "New Name"  # Non-interactive mode
     Edit(EditArgs),
 
-    /// Initialize metadata in a Markdown file (interactive mode if --type not provided)
+    /// Initialize metadata in a Markdown file
     ///
-    /// When --type is omitted, enters interactive mode which guides you through
+    /// When no subcommand is provided, enters interactive mode which guides you through
     /// creating a new traceability item with prompts for type, name, ID, and
     /// upstream references. Interactive mode requires a TTY terminal.
     ///
+    /// Use a subcommand for non-interactive mode with type-specific options:
+    ///   sara init adr, solution, use-case, scenario, system-requirement, etc.
+    ///
     /// Examples:
-    ///   sara init                    # Interactive mode
-    ///   sara init doc.md -t use_case # Non-interactive mode
+    ///   sara init                                  # Interactive mode
+    ///   sara init adr doc.md --status proposed     # Create ADR
+    ///   sara init sysreq doc.md --specification "" # Create system requirement
     Init(InitArgs),
 
     /// Parse documents and build the knowledge graph

@@ -192,12 +192,12 @@ impl GraphDiff {
             });
         }
 
-        // Check specification change
-        if old.attributes.specification != new.attributes.specification {
+        // Check specification change (for requirement types)
+        if old.attributes.specification() != new.attributes.specification() {
             changes.push(FieldChange {
                 field: "specification".to_string(),
-                old_value: old.attributes.specification.clone().unwrap_or_default(),
-                new_value: new.attributes.specification.clone().unwrap_or_default(),
+                old_value: old.attributes.specification().cloned().unwrap_or_default(),
+                new_value: new.attributes.specification().cloned().unwrap_or_default(),
             });
         }
 
@@ -211,8 +211,8 @@ impl GraphDiff {
         }
 
         // Check upstream refs change
-        let old_upstream = Self::refs_to_string(&old.upstream.all_ids());
-        let new_upstream = Self::refs_to_string(&new.upstream.all_ids());
+        let old_upstream = Self::refs_to_string(old.upstream.all_ids());
+        let new_upstream = Self::refs_to_string(new.upstream.all_ids());
         if old_upstream != new_upstream {
             changes.push(FieldChange {
                 field: "upstream".to_string(),
@@ -222,8 +222,8 @@ impl GraphDiff {
         }
 
         // Check downstream refs change
-        let old_downstream = Self::refs_to_string(&old.downstream.all_ids());
-        let new_downstream = Self::refs_to_string(&new.downstream.all_ids());
+        let old_downstream = Self::refs_to_string(old.downstream.all_ids());
+        let new_downstream = Self::refs_to_string(new.downstream.all_ids());
         if old_downstream != new_downstream {
             changes.push(FieldChange {
                 field: "downstream".to_string(),
@@ -235,8 +235,8 @@ impl GraphDiff {
         changes
     }
 
-    fn refs_to_string(refs: &[&ItemId]) -> String {
-        let ids: Vec<_> = refs.iter().map(|id| id.as_str()).collect();
+    fn refs_to_string<'a>(refs: impl Iterator<Item = &'a ItemId>) -> String {
+        let ids: Vec<_> = refs.map(|id| id.as_str()).collect();
         ids.join(", ")
     }
 
