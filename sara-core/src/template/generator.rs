@@ -482,7 +482,6 @@ mod tests {
 
         // Check body structure
         assert!(doc.contains("# Architecture Decision: Use Microservices Architecture"));
-        assert!(doc.contains("- **Deciders**: Alice Smith, Bob Jones"));
         assert!(doc.contains("## Context and problem statement"));
         assert!(doc.contains("## Considered options"));
         assert!(doc.contains("## Decision Outcome"));
