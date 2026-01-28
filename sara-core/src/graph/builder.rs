@@ -135,7 +135,7 @@ pub fn resolve_cross_repository_refs(graph: &mut KnowledgeGraph) -> Vec<(ItemId,
         if !graph.contains(&ref_id) {
             // Find the item that references this missing ID
             for item in graph.items() {
-                if item.all_references().iter().any(|id| **id == ref_id) {
+                if item.all_references().any(|id| *id == ref_id) {
                     unresolved.push((item.id.clone(), ref_id.clone()));
                     break;
                 }
