@@ -1,4 +1,11 @@
-{% include "frontmatter.tera" %}
+---
+id: "{{ id }}"
+type: {{ type }}
+name: "{{ name }}"
+{%- if description %}
+description: "{{ description }}"
+{%- endif %}
+---
 
 # Solution: {{ name }}
 

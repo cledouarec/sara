@@ -157,7 +157,7 @@ fn export_graph_to_json(
                 item_type: item.item_type.to_string(),
                 name: item.name.clone(),
                 description: None,
-                specification: item.attributes.specification.clone(),
+                specification: item.attributes.specification().map(ToOwned::to_owned),
                 file: item.source.file_path.display().to_string(),
             })
             .collect(),

@@ -3,6 +3,5 @@
 mod generator;
 
 pub use generator::{
-    GeneratorOptions, extract_name_from_content, generate_document, generate_frontmatter,
-    generate_id, suggest_next_id,
+    GeneratorOptions, extract_name_from_content, generate_document, generate_id, suggest_next_id,
 };

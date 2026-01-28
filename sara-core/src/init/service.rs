@@ -6,8 +6,7 @@ use std::path::PathBuf;
 use crate::model::{FieldName, ItemType};
 use crate::parser::has_frontmatter;
 use crate::template::{
-    GeneratorOptions, extract_name_from_content, generate_document, generate_frontmatter,
-    generate_id,
+    GeneratorOptions, extract_name_from_content, generate_document, generate_id,
 };
 
 use super::InitOptions;
@@ -240,7 +239,8 @@ impl InitService {
         gen_opts: &GeneratorOptions,
     ) -> Result<bool, InitError> {
         let content = fs::read_to_string(&opts.file)?;
-        let frontmatter = generate_frontmatter(gen_opts);
+        let document = generate_document(gen_opts);
+        let frontmatter = extract_frontmatter(&document);
 
         let (new_content, replaced) = if has_frontmatter(&content) && opts.force {
             let body = remove_frontmatter(&content);
@@ -267,6 +267,19 @@ impl InitService {
 
         fs::write(&opts.file, document)?;
         Ok(())
+    }
+}
+
+/// Extracts the frontmatter (including delimiters) from a document.
+fn extract_frontmatter(content: &str) -> &str {
+    if !content.starts_with("---") {
+        return "";
+    }
+    let after_first = &content[3..];
+    if let Some(end_pos) = after_first.find("\n---") {
+        &content[..end_pos + 3 + 4] // "---" + content + "\n---"
+    } else {
+        ""
     }
 }
 
