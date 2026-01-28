@@ -56,14 +56,13 @@ mod parse_command {
     fn test_parse_detects_duplicates() {
         let fixtures = fixtures_path().join("duplicates");
 
-        // Duplicates are detected during parsing and reported to stderr
         sara()
             .arg("parse")
             .arg("-r")
             .arg(&fixtures)
             .assert()
             .failure()
-            .stderr(predicate::str::contains("Duplicate identifier"));
+            .stdout(predicate::str::contains("Duplicate identifier"));
     }
 }
 
@@ -521,7 +520,7 @@ mod interactive_mode {
             .arg("init")
             .assert()
             .failure()
-            .stderr(predicate::str::contains("terminal").or(predicate::str::contains("TTY")));
+            .stdout(predicate::str::contains("terminal").or(predicate::str::contains("TTY")));
     }
 
     #[test]
@@ -631,7 +630,7 @@ mod edit_command {
             .arg("New Name")
             .assert()
             .failure()
-            .stderr(predicate::str::contains("not found"));
+            .stdout(predicate::str::contains("not found"));
     }
 
     #[test]
@@ -712,7 +711,7 @@ mod edit_command {
             .arg("SYSREQ-EDIT-001")
             .assert()
             .failure()
-            .stderr(predicate::str::contains("terminal").or(predicate::str::contains("TTY")));
+            .stdout(predicate::str::contains("terminal").or(predicate::str::contains("TTY")));
     }
 
     #[test]
@@ -734,7 +733,7 @@ mod edit_command {
             .arg("Invalid specification for solution")
             .assert()
             .failure()
-            .stderr(predicate::str::contains("only valid for requirement"));
+            .stdout(predicate::str::contains("only valid for requirement"));
     }
 
     #[test]
