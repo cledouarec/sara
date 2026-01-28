@@ -16,3 +16,6 @@ pub mod report;
 pub mod repository;
 pub mod template;
 pub mod validation;
+
+#[cfg(test)]
+pub mod test_utils;
