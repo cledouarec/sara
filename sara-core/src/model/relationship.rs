@@ -37,7 +37,8 @@ pub enum RelationshipType {
 
 impl RelationshipType {
     /// Get the inverse relationship type.
-    pub fn inverse(&self) -> Self {
+    #[must_use]
+    pub const fn inverse(&self) -> Self {
         match self {
             Self::Refines => Self::IsRefinedBy,
             Self::IsRefinedBy => Self::Refines,
@@ -56,7 +57,8 @@ impl RelationshipType {
 
     /// Check if this is an upstream relationship (toward Solution).
     /// For ADRs, Justifies is considered upstream as it links ADR to design artifacts.
-    pub fn is_upstream(&self) -> bool {
+    #[must_use]
+    pub const fn is_upstream(&self) -> bool {
         matches!(
             self,
             Self::Refines | Self::DerivesFrom | Self::Satisfies | Self::Justifies
@@ -64,7 +66,8 @@ impl RelationshipType {
     }
 
     /// Check if this is a downstream relationship (toward Detailed Designs).
-    pub fn is_downstream(&self) -> bool {
+    #[must_use]
+    pub const fn is_downstream(&self) -> bool {
         matches!(
             self,
             Self::IsRefinedBy | Self::Derives | Self::IsSatisfiedBy | Self::IsJustifiedBy
@@ -72,7 +75,8 @@ impl RelationshipType {
     }
 
     /// Check if this is a peer relationship (between items of the same type).
-    pub fn is_peer(&self) -> bool {
+    #[must_use]
+    pub const fn is_peer(&self) -> bool {
         matches!(
             self,
             Self::DependsOn | Self::IsRequiredBy | Self::Supersedes | Self::IsSupersededBy
@@ -80,7 +84,8 @@ impl RelationshipType {
     }
 
     /// Returns the corresponding FieldName for this relationship type.
-    pub fn field_name(&self) -> FieldName {
+    #[must_use]
+    pub const fn field_name(&self) -> FieldName {
         match self {
             Self::Refines => FieldName::Refines,
             Self::IsRefinedBy => FieldName::IsRefinedBy,
@@ -117,7 +122,8 @@ pub struct Relationship {
 
 impl Relationship {
     /// Creates a new relationship.
-    pub fn new(from: ItemId, to: ItemId, relationship_type: RelationshipType) -> Self {
+    #[must_use]
+    pub const fn new(from: ItemId, to: ItemId, relationship_type: RelationshipType) -> Self {
         Self {
             from,
             to,
@@ -126,6 +132,7 @@ impl Relationship {
     }
 
     /// Returns the inverse relationship.
+    #[must_use]
     pub fn inverse(&self) -> Self {
         Self {
             from: self.to.clone(),
@@ -140,6 +147,7 @@ pub struct RelationshipRules;
 
 impl RelationshipRules {
     /// Returns the valid upstream relationship types for a given item type.
+    #[must_use]
     pub fn valid_upstream_for(item_type: ItemType) -> Option<(RelationshipType, Vec<ItemType>)> {
         match item_type {
             ItemType::Solution => None,
@@ -180,6 +188,7 @@ impl RelationshipRules {
     }
 
     /// Returns the valid downstream relationship types for a given item type.
+    #[must_use]
     pub fn valid_downstream_for(item_type: ItemType) -> Option<(RelationshipType, Vec<ItemType>)> {
         match item_type {
             ItemType::Solution => Some((RelationshipType::IsRefinedBy, vec![ItemType::UseCase])),
@@ -212,7 +221,8 @@ impl RelationshipRules {
     }
 
     /// Returns the valid peer dependency types for a given item type.
-    pub fn valid_peer_for(item_type: ItemType) -> Option<ItemType> {
+    #[must_use]
+    pub const fn valid_peer_for(item_type: ItemType) -> Option<ItemType> {
         match item_type {
             ItemType::SystemRequirement => Some(ItemType::SystemRequirement),
             ItemType::HardwareRequirement => Some(ItemType::HardwareRequirement),
@@ -223,6 +233,7 @@ impl RelationshipRules {
     }
 
     /// Returns the valid justification targets for ADRs.
+    #[must_use]
     pub fn valid_justification_targets() -> Vec<ItemType> {
         vec![
             ItemType::SystemArchitecture,
@@ -232,18 +243,21 @@ impl RelationshipRules {
     }
 
     /// Checks if a justification relationship is valid (ADR -> design artifact).
+    #[must_use]
     pub fn is_valid_justification(from_type: ItemType, to_type: ItemType) -> bool {
         from_type == ItemType::ArchitectureDecisionRecord
             && Self::valid_justification_targets().contains(&to_type)
     }
 
     /// Checks if a supersession relationship is valid (ADR -> ADR).
-    pub fn is_valid_supersession(from_type: ItemType, to_type: ItemType) -> bool {
-        from_type == ItemType::ArchitectureDecisionRecord
-            && to_type == ItemType::ArchitectureDecisionRecord
+    #[must_use]
+    pub const fn is_valid_supersession(from_type: ItemType, to_type: ItemType) -> bool {
+        matches!(from_type, ItemType::ArchitectureDecisionRecord)
+            && matches!(to_type, ItemType::ArchitectureDecisionRecord)
     }
 
     /// Checks if a relationship is valid between two item types.
+    #[must_use]
     pub fn is_valid_relationship(
         from_type: ItemType,
         to_type: ItemType,
