@@ -2,6 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::str::FromStr;
 
 /// ADR lifecycle status.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -55,5 +56,22 @@ impl AdrStatus {
 impl fmt::Display for AdrStatus {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display_name())
+    }
+}
+
+impl FromStr for AdrStatus {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        match s.to_lowercase().as_str() {
+            "proposed" => Ok(Self::Proposed),
+            "accepted" => Ok(Self::Accepted),
+            "deprecated" => Ok(Self::Deprecated),
+            "superseded" => Ok(Self::Superseded),
+            _ => Err(format!(
+                "Invalid ADR status '{}'. Expected one of: proposed, accepted, deprecated, superseded",
+                s
+            )),
+        }
     }
 }

@@ -6,7 +6,8 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
-use sara_core::init::{InitError, InitOptions, InitResult, InitService, TypeConfig};
+use sara_core::model::{AdrStatus, ItemType, TypeFields};
+use sara_core::service::{InitError, InitFileOptions, InitResult, create_item};
 
 use super::CommandContext;
 use super::interactive::{
@@ -289,10 +290,10 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let result = run_interactive_session(&mut session);
     match handle_interactive_result(result, &ctx.output) {
         Ok(Some(input)) => {
-            // Build TypeConfig from interactive input
-            let type_config = build_type_config_from_interactive(&input);
+            // Build TypeFields from interactive input
+            let fields = build_type_fields_from_interactive(&input);
 
-            let opts = InitOptions::new(input.file, type_config)
+            let opts = InitFileOptions::with_fields(input.file, input.item_type, fields)
                 .with_id(input.id)
                 .with_name(input.name)
                 .maybe_description(input.description)
@@ -307,89 +308,36 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     }
 }
 
-/// Builds a TypeConfig from interactive session input.
-fn build_type_config_from_interactive(input: &super::interactive::InteractiveInput) -> TypeConfig {
+/// Builds TypeFields from interactive session input.
+fn build_type_fields_from_interactive(input: &super::interactive::InteractiveInput) -> TypeFields {
     use super::interactive::TypeSpecificInput;
-    use sara_core::model::ItemType;
 
-    match (&input.item_type, &input.type_specific) {
-        (ItemType::Solution, _) => TypeConfig::Solution,
-        (ItemType::UseCase, _) => TypeConfig::UseCase {
-            refines: input.traceability.refines.clone(),
-        },
-        (ItemType::Scenario, _) => TypeConfig::Scenario {
-            refines: input.traceability.refines.clone(),
-        },
-        (ItemType::SystemRequirement, TypeSpecificInput::Requirement { specification }) => {
-            TypeConfig::SystemRequirement {
-                specification: specification.clone(),
-                derives_from: input.traceability.derives_from.clone(),
-                depends_on: input.traceability.depends_on.clone(),
+    let mut fields = TypeFields::new()
+        .with_refines(input.traceability.refines.clone())
+        .with_derives_from(input.traceability.derives_from.clone())
+        .with_satisfies(input.traceability.satisfies.clone())
+        .with_depends_on(input.traceability.depends_on.clone())
+        .with_justifies(input.traceability.justifies.clone());
+
+    // Add type-specific fields
+    match &input.type_specific {
+        TypeSpecificInput::Requirement { specification } => {
+            if let Some(spec) = specification {
+                fields = fields.with_specification(spec);
             }
         }
-        (ItemType::SystemArchitecture, TypeSpecificInput::SystemArchitecture { platform }) => {
-            TypeConfig::SystemArchitecture {
-                platform: platform.clone(),
-                satisfies: input.traceability.satisfies.clone(),
+        TypeSpecificInput::SystemArchitecture { platform } => {
+            if let Some(plat) = platform {
+                fields = fields.with_platform(plat);
             }
         }
-        (ItemType::SoftwareRequirement, TypeSpecificInput::Requirement { specification }) => {
-            TypeConfig::SoftwareRequirement {
-                specification: specification.clone(),
-                derives_from: input.traceability.derives_from.clone(),
-                depends_on: input.traceability.depends_on.clone(),
-            }
+        TypeSpecificInput::Adr { deciders } => {
+            fields = fields.with_deciders(deciders.clone());
         }
-        (ItemType::HardwareRequirement, TypeSpecificInput::Requirement { specification }) => {
-            TypeConfig::HardwareRequirement {
-                specification: specification.clone(),
-                derives_from: input.traceability.derives_from.clone(),
-                depends_on: input.traceability.depends_on.clone(),
-            }
-        }
-        (ItemType::SoftwareDetailedDesign, _) => TypeConfig::SoftwareDetailedDesign {
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        (ItemType::HardwareDetailedDesign, _) => TypeConfig::HardwareDetailedDesign {
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        (ItemType::ArchitectureDecisionRecord, TypeSpecificInput::Adr { deciders }) => {
-            TypeConfig::Adr {
-                status: None,
-                deciders: deciders.clone(),
-                justifies: input.traceability.justifies.clone(),
-                supersedes: Vec::new(),
-                superseded_by: None,
-            }
-        }
-        // Fallback cases - should not happen in practice
-        (ItemType::SystemRequirement, _) => TypeConfig::SystemRequirement {
-            specification: None,
-            derives_from: input.traceability.derives_from.clone(),
-            depends_on: input.traceability.depends_on.clone(),
-        },
-        (ItemType::SoftwareRequirement, _) => TypeConfig::SoftwareRequirement {
-            specification: None,
-            derives_from: input.traceability.derives_from.clone(),
-            depends_on: input.traceability.depends_on.clone(),
-        },
-        (ItemType::HardwareRequirement, _) => TypeConfig::HardwareRequirement {
-            specification: None,
-            derives_from: input.traceability.derives_from.clone(),
-            depends_on: input.traceability.depends_on.clone(),
-        },
-        (ItemType::SystemArchitecture, _) => TypeConfig::SystemArchitecture {
-            platform: None,
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        (ItemType::ArchitectureDecisionRecord, _) => TypeConfig::Adr {
-            status: None,
-            deciders: Vec::new(),
-            justifies: input.traceability.justifies.clone(),
-            supersedes: Vec::new(),
-            superseded_by: None,
-        },
+        TypeSpecificInput::None => {}
     }
+
+    fields
 }
 
 fn run_subcommand(
@@ -398,23 +346,30 @@ fn run_subcommand(
 ) -> Result<ExitCode, Box<dyn Error>> {
     let opts = match subcommand {
         InitSubcommand::Adr(args) => {
-            let type_config = TypeConfig::Adr {
-                status: args.status.clone(),
-                deciders: args.deciders.clone(),
-                justifies: args.justifies.clone(),
-                supersedes: args.supersedes.clone(),
-                superseded_by: None,
-            };
+            let mut fields = TypeFields::new()
+                .with_deciders(args.deciders.clone())
+                .with_justifies(args.justifies.clone())
+                .with_supersedes(args.supersedes.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            if let Some(ref status_str) = args.status
+                && let Ok(status) = status_str.parse::<AdrStatus>()
+            {
+                fields = fields.with_status(status);
+            }
+
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::ArchitectureDecisionRecord,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
 
         InitSubcommand::Solution(args) => {
-            InitOptions::new(args.common.file.clone(), TypeConfig::Solution)
+            InitFileOptions::new(args.common.file.clone(), ItemType::Solution)
                 .maybe_id(args.common.id.clone())
                 .maybe_name(args.common.name.clone())
                 .maybe_description(args.common.description.clone())
@@ -422,11 +377,9 @@ fn run_subcommand(
         }
 
         InitSubcommand::UseCase(args) => {
-            let type_config = TypeConfig::UseCase {
-                refines: args.refines.clone(),
-            };
+            let fields = TypeFields::new().with_refines(args.refines.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
+            InitFileOptions::with_fields(args.common.file.clone(), ItemType::UseCase, fields)
                 .maybe_id(args.common.id.clone())
                 .maybe_name(args.common.name.clone())
                 .maybe_description(args.common.description.clone())
@@ -434,11 +387,9 @@ fn run_subcommand(
         }
 
         InitSubcommand::Scenario(args) => {
-            let type_config = TypeConfig::Scenario {
-                refines: args.refines.clone(),
-            };
+            let fields = TypeFields::new().with_refines(args.refines.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
+            InitFileOptions::with_fields(args.common.file.clone(), ItemType::Scenario, fields)
                 .maybe_id(args.common.id.clone())
                 .maybe_name(args.common.name.clone())
                 .maybe_description(args.common.description.clone())
@@ -446,94 +397,122 @@ fn run_subcommand(
         }
 
         InitSubcommand::SystemRequirement(args) => {
-            let type_config = TypeConfig::SystemRequirement {
-                specification: args.specification.clone(),
-                derives_from: args.derives_from.clone(),
-                depends_on: args.depends_on.clone(),
-            };
+            let mut fields = TypeFields::new()
+                .with_derives_from(args.derives_from.clone())
+                .with_depends_on(args.depends_on.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            if let Some(ref spec) = args.specification {
+                fields = fields.with_specification(spec);
+            }
+
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::SystemRequirement,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
 
         InitSubcommand::SystemArchitecture(args) => {
-            let type_config = TypeConfig::SystemArchitecture {
-                platform: args.platform.clone(),
-                satisfies: args.satisfies.clone(),
-            };
+            let mut fields = TypeFields::new().with_satisfies(args.satisfies.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            if let Some(ref plat) = args.platform {
+                fields = fields.with_platform(plat);
+            }
+
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::SystemArchitecture,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
 
         InitSubcommand::SoftwareRequirement(args) => {
-            let type_config = TypeConfig::SoftwareRequirement {
-                specification: args.specification.clone(),
-                derives_from: args.derives_from.clone(),
-                depends_on: args.depends_on.clone(),
-            };
+            let mut fields = TypeFields::new()
+                .with_derives_from(args.derives_from.clone())
+                .with_depends_on(args.depends_on.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            if let Some(ref spec) = args.specification {
+                fields = fields.with_specification(spec);
+            }
+
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::SoftwareRequirement,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
 
         InitSubcommand::HardwareRequirement(args) => {
-            let type_config = TypeConfig::HardwareRequirement {
-                specification: args.specification.clone(),
-                derives_from: args.derives_from.clone(),
-                depends_on: args.depends_on.clone(),
-            };
+            let mut fields = TypeFields::new()
+                .with_derives_from(args.derives_from.clone())
+                .with_depends_on(args.depends_on.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            if let Some(ref spec) = args.specification {
+                fields = fields.with_specification(spec);
+            }
+
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::HardwareRequirement,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
 
         InitSubcommand::SoftwareDetailedDesign(args) => {
-            let type_config = TypeConfig::SoftwareDetailedDesign {
-                satisfies: args.satisfies.clone(),
-            };
+            let fields = TypeFields::new().with_satisfies(args.satisfies.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::SoftwareDetailedDesign,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
 
         InitSubcommand::HardwareDetailedDesign(args) => {
-            let type_config = TypeConfig::HardwareDetailedDesign {
-                satisfies: args.satisfies.clone(),
-            };
+            let fields = TypeFields::new().with_satisfies(args.satisfies.clone());
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            InitFileOptions::with_fields(
+                args.common.file.clone(),
+                ItemType::HardwareDetailedDesign,
+                fields,
+            )
+            .maybe_id(args.common.id.clone())
+            .maybe_name(args.common.name.clone())
+            .maybe_description(args.common.description.clone())
+            .with_force(args.common.force)
         }
     };
 
     run_with_options(opts, ctx)
 }
 
-fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+fn run_with_options(
+    opts: InitFileOptions,
+    ctx: &CommandContext,
+) -> Result<ExitCode, Box<dyn Error>> {
     let config = &ctx.output;
 
-    let service = InitService::new();
-
-    match service.init(&opts) {
+    match create_item(&opts) {
         Ok(result) => {
             print_result(config, &result);
             Ok(ExitCode::SUCCESS)
@@ -548,8 +527,8 @@ fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode,
             );
             Ok(ExitCode::from(EXIT_FRONTMATTER_EXISTS))
         }
-        Err(InitError::InvalidOption(msg)) => {
-            print_error(config, &msg);
+        Err(InitError::Validation(e)) => {
+            print_error(config, &format!("{}", e));
             Ok(ExitCode::from(EXIT_INVALID_OPTION))
         }
         Err(InitError::Io(e)) => {
