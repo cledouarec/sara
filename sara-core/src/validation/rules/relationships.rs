@@ -145,7 +145,7 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<Valid
     }
 
     // Check peer dependencies (depends_on)
-    for ref_id in &item.attributes.depends_on {
+    for ref_id in item.attributes.depends_on() {
         if let Some(target) = graph.get(ref_id)
             && !RelationshipRules::is_valid_relationship(
                 item.item_type,

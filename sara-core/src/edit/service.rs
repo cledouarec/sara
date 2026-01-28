@@ -63,8 +63,8 @@ impl ItemContext {
             item_type: item.item_type,
             name: item.name.clone(),
             description: item.description.clone(),
-            specification: item.attributes.specification.clone(),
-            platform: item.attributes.platform.clone(),
+            specification: item.attributes.specification().map(ToOwned::to_owned),
+            platform: item.attributes.platform().map(ToOwned::to_owned),
             traceability: TraceabilityLinks::from_upstream(&item.upstream),
             file_path: item.source.full_path(),
         }
@@ -147,6 +147,10 @@ impl EditService {
                     .depends_on
                     .clone()
                     .unwrap_or_else(|| current.traceability.depends_on.clone()),
+                justifies: opts
+                    .justifies
+                    .clone()
+                    .unwrap_or_else(|| current.traceability.justifies.clone()),
             },
         }
     }

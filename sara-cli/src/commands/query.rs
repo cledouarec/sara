@@ -159,6 +159,12 @@ fn build_traversal_options(args: &QueryArgs) -> TraversalOptions {
 fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) {
     let emoji = get_emoji(config, &EMOJI_ITEM);
     let id = colorize(config, item.id.as_str(), Color::Cyan, Style::Bold);
+    let item_type = colorize(
+        config,
+        item.item_type.display_name(),
+        Color::None,
+        Style::Dimmed,
+    );
     let desc = item
         .description
         .as_ref()
@@ -170,37 +176,32 @@ fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) 
    Type: {item_type}
    File: {file}{desc}",
         name = item.name,
-        item_type = item.item_type.display_name(),
         file = item.source.file_path.display(),
     );
 }
 
-fn print_direct_relationships(_config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
+fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
     // Print upstream (requires)
     let parents = graph.parents(&item.id);
     if !parents.is_empty() {
-        println!("\n   Requires:");
+        let label = colorize(config, "Requires:", Color::None, Style::Bold);
+        println!("\n   {label}");
         for (i, parent) in parents.iter().enumerate() {
             let branch = format_tree_branch(i == parents.len() - 1);
-            println!(
-                "     {branch} {id}: {name}",
-                id = parent.id.as_str(),
-                name = parent.name
-            );
+            let id = colorize(config, parent.id.as_str(), Color::Cyan, Style::None);
+            println!("     {branch} {id}: {name}", name = parent.name);
         }
     }
 
     // Print downstream (realized by)
     let children = graph.children(&item.id);
     if !children.is_empty() {
-        println!("\n   Realized by:");
+        let label = colorize(config, "Realized by:", Color::None, Style::Bold);
+        println!("\n   {label}");
         for (i, child) in children.iter().enumerate() {
             let branch = format_tree_branch(i == children.len() - 1);
-            println!(
-                "     {branch} {id}: {name}",
-                id = child.id.as_str(),
-                name = child.name
-            );
+            let id = colorize(config, child.id.as_str(), Color::Cyan, Style::None);
+            println!("     {branch} {id}: {name}", name = child.name);
         }
     }
 }
@@ -271,7 +272,7 @@ fn print_tree_node(
     let item_text = format!("{}: {} ({})", id, item.name, type_name);
 
     if is_root {
-        println!("{}", colorize(config, &item_text, Color::None, Style::Bold));
+        println!("{}", item_text);
     } else {
         println!("{}{}{}", prefix, branch, item_text);
     }

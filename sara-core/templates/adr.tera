@@ -1,0 +1,76 @@
+---
+id: "{{ id }}"
+type: {{ type }}
+name: "{{ name }}"
+{%- if description %}
+description: "{{ description }}"
+{%- endif %}
+status: {{ status | default(value="proposed") }}
+{%- if deciders %}
+deciders:
+{%- for decider in deciders %}
+  - "{{ decider }}"
+{%- endfor %}
+{%- endif %}
+{%- if justifies %}
+justifies:
+{%- for ref in justifies %}
+  - "{{ ref }}"
+{%- endfor %}
+{%- endif %}
+{%- if supersedes %}
+supersedes:
+{%- for ref in supersedes %}
+  - "{{ ref }}"
+{%- endfor %}
+{%- endif %}
+---
+
+# Architecture Decision: {{ name }}
+
+## Context and problem statement
+
+[Describe the context and problem statement. What is the issue that requires a decision?]
+
+## Key factors
+
+- [Key factor 1: constraints, requirements, or considerations]
+- [Key factor 2]
+- [Key factor 3]
+
+## Considered options
+
+- [Option 1: Brief description]
+- [Option 2: Brief description]
+- [Option 3: Brief description]
+
+## Decision Outcome
+
+Chosen option: "[Option X]", because [justification - why this option best addresses the key factors].
+
+### Positive Consequences
+
+- [Positive consequence 1]
+- [Positive consequence 2]
+
+### Negative Consequences
+
+- [Negative consequence 1 and how it will be mitigated]
+
+## Pros and Cons of the Options
+
+### [Option 1]
+
+- Good, because [argument a]
+- Good, because [argument b]
+- Bad, because [argument c]
+
+### [Option 2]
+
+- Good, because [argument a]
+- Bad, because [argument b]
+
+## Links
+
+- [Reference 1](url)
+- [Related ADR](ADR-nnn)

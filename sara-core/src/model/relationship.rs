@@ -25,6 +25,14 @@ pub enum RelationshipType {
     DependsOn,
     /// Inverse of DependsOn: Requirement is required by another.
     IsRequiredBy,
+    /// Justification: ADR justifies a design artifact (SYSARCH, SWDD, HWDD).
+    Justifies,
+    /// Inverse of Justifies: design artifact is justified by an ADR.
+    IsJustifiedBy,
+    /// Supersession: newer ADR supersedes older ADR.
+    Supersedes,
+    /// Inverse of Supersedes: older ADR is superseded by newer ADR.
+    IsSupersededBy,
 }
 
 impl RelationshipType {
@@ -39,25 +47,36 @@ impl RelationshipType {
             Self::IsSatisfiedBy => Self::Satisfies,
             Self::DependsOn => Self::IsRequiredBy,
             Self::IsRequiredBy => Self::DependsOn,
+            Self::Justifies => Self::IsJustifiedBy,
+            Self::IsJustifiedBy => Self::Justifies,
+            Self::Supersedes => Self::IsSupersededBy,
+            Self::IsSupersededBy => Self::Supersedes,
         }
     }
 
     /// Check if this is an upstream relationship (toward Solution).
+    /// For ADRs, Justifies is considered upstream as it links ADR to design artifacts.
     pub fn is_upstream(&self) -> bool {
-        matches!(self, Self::Refines | Self::DerivesFrom | Self::Satisfies)
+        matches!(
+            self,
+            Self::Refines | Self::DerivesFrom | Self::Satisfies | Self::Justifies
+        )
     }
 
     /// Check if this is a downstream relationship (toward Detailed Designs).
     pub fn is_downstream(&self) -> bool {
         matches!(
             self,
-            Self::IsRefinedBy | Self::Derives | Self::IsSatisfiedBy
+            Self::IsRefinedBy | Self::Derives | Self::IsSatisfiedBy | Self::IsJustifiedBy
         )
     }
 
     /// Check if this is a peer relationship (between items of the same type).
     pub fn is_peer(&self) -> bool {
-        matches!(self, Self::DependsOn | Self::IsRequiredBy)
+        matches!(
+            self,
+            Self::DependsOn | Self::IsRequiredBy | Self::Supersedes | Self::IsSupersededBy
+        )
     }
 
     /// Returns the corresponding FieldName for this relationship type.
@@ -71,6 +90,10 @@ impl RelationshipType {
             Self::IsSatisfiedBy => FieldName::IsSatisfiedBy,
             Self::DependsOn => FieldName::DependsOn,
             Self::IsRequiredBy => FieldName::IsRequiredBy,
+            Self::Justifies => FieldName::Justifies,
+            Self::IsJustifiedBy => FieldName::JustifiedBy,
+            Self::Supersedes => FieldName::Supersedes,
+            Self::IsSupersededBy => FieldName::SupersededBy,
         }
     }
 }
@@ -145,6 +168,14 @@ impl RelationshipRules {
                 RelationshipType::Satisfies,
                 vec![ItemType::SoftwareRequirement],
             )),
+            ItemType::ArchitectureDecisionRecord => Some((
+                RelationshipType::Justifies,
+                vec![
+                    ItemType::SystemArchitecture,
+                    ItemType::SoftwareDetailedDesign,
+                    ItemType::HardwareDetailedDesign,
+                ],
+            )),
         }
     }
 
@@ -172,8 +203,11 @@ impl RelationshipRules {
                 RelationshipType::IsSatisfiedBy,
                 vec![ItemType::SoftwareDetailedDesign],
             )),
-            ItemType::HardwareDetailedDesign => None,
-            ItemType::SoftwareDetailedDesign => None,
+            ItemType::HardwareDetailedDesign | ItemType::SoftwareDetailedDesign => Some((
+                RelationshipType::IsJustifiedBy,
+                vec![ItemType::ArchitectureDecisionRecord],
+            )),
+            ItemType::ArchitectureDecisionRecord => None,
         }
     }
 
@@ -183,8 +217,30 @@ impl RelationshipRules {
             ItemType::SystemRequirement => Some(ItemType::SystemRequirement),
             ItemType::HardwareRequirement => Some(ItemType::HardwareRequirement),
             ItemType::SoftwareRequirement => Some(ItemType::SoftwareRequirement),
+            ItemType::ArchitectureDecisionRecord => Some(ItemType::ArchitectureDecisionRecord),
             _ => None,
         }
+    }
+
+    /// Returns the valid justification targets for ADRs.
+    pub fn valid_justification_targets() -> Vec<ItemType> {
+        vec![
+            ItemType::SystemArchitecture,
+            ItemType::SoftwareDetailedDesign,
+            ItemType::HardwareDetailedDesign,
+        ]
+    }
+
+    /// Checks if a justification relationship is valid (ADR -> design artifact).
+    pub fn is_valid_justification(from_type: ItemType, to_type: ItemType) -> bool {
+        from_type == ItemType::ArchitectureDecisionRecord
+            && Self::valid_justification_targets().contains(&to_type)
+    }
+
+    /// Checks if a supersession relationship is valid (ADR -> ADR).
+    pub fn is_valid_supersession(from_type: ItemType, to_type: ItemType) -> bool {
+        from_type == ItemType::ArchitectureDecisionRecord
+            && to_type == ItemType::ArchitectureDecisionRecord
     }
 
     /// Checks if a relationship is valid between two item types.
@@ -194,15 +250,18 @@ impl RelationshipRules {
         rel_type: RelationshipType,
     ) -> bool {
         match rel_type {
+            // Upstream relationships
             RelationshipType::Refines
             | RelationshipType::DerivesFrom
-            | RelationshipType::Satisfies => {
+            | RelationshipType::Satisfies
+            | RelationshipType::Justifies => {
                 if let Some((expected_rel, valid_targets)) = Self::valid_upstream_for(from_type) {
                     expected_rel == rel_type && valid_targets.contains(&to_type)
                 } else {
                     false
                 }
             }
+            // Downstream relationships
             RelationshipType::IsRefinedBy
             | RelationshipType::Derives
             | RelationshipType::IsSatisfiedBy => {
@@ -212,8 +271,13 @@ impl RelationshipRules {
                     false
                 }
             }
-            RelationshipType::DependsOn => Self::valid_peer_for(from_type) == Some(to_type),
-            RelationshipType::IsRequiredBy => Self::valid_peer_for(from_type) == Some(to_type),
+            // IsJustifiedBy needs special handling since design artifacts have multiple downstream types
+            RelationshipType::IsJustifiedBy => Self::is_valid_justification(to_type, from_type),
+            // Peer relationships (including ADR supersession)
+            RelationshipType::DependsOn
+            | RelationshipType::IsRequiredBy
+            | RelationshipType::Supersedes
+            | RelationshipType::IsSupersededBy => Self::valid_peer_for(from_type) == Some(to_type),
         }
     }
 }
@@ -300,5 +364,65 @@ mod tests {
             ItemType::Solution,
             RelationshipType::DependsOn
         ));
+    }
+
+    #[test]
+    fn test_adr_justifies_relationship() {
+        // ADR can justify design artifacts
+        assert!(RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::SystemArchitecture,
+            RelationshipType::Justifies
+        ));
+        assert!(RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::SoftwareDetailedDesign,
+            RelationshipType::Justifies
+        ));
+        assert!(RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::HardwareDetailedDesign,
+            RelationshipType::Justifies
+        ));
+
+        // ADR cannot justify non-design artifacts
+        assert!(!RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::SystemRequirement,
+            RelationshipType::Justifies
+        ));
+    }
+
+    #[test]
+    fn test_adr_supersession_relationship() {
+        // ADR can supersede other ADRs (peer relationship)
+        assert!(RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::ArchitectureDecisionRecord,
+            RelationshipType::Supersedes
+        ));
+        assert!(RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::ArchitectureDecisionRecord,
+            RelationshipType::IsSupersededBy
+        ));
+
+        // ADR cannot supersede non-ADR items
+        assert!(!RelationshipRules::is_valid_relationship(
+            ItemType::ArchitectureDecisionRecord,
+            ItemType::SystemArchitecture,
+            RelationshipType::Supersedes
+        ));
+    }
+
+    #[test]
+    fn test_adr_relationship_direction() {
+        // Justifies is upstream
+        assert!(RelationshipType::Justifies.is_upstream());
+        // IsJustifiedBy is downstream
+        assert!(RelationshipType::IsJustifiedBy.is_downstream());
+        // Supersedes/IsSupersededBy are peer
+        assert!(RelationshipType::Supersedes.is_peer());
+        assert!(RelationshipType::IsSupersededBy.is_peer());
     }
 }

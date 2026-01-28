@@ -75,6 +75,12 @@ impl GraphBuilder {
         for target_id in &item.upstream.satisfies {
             graph.add_relationship(&item.id, target_id, RelationshipType::Satisfies);
         }
+        // ADR justifies design artifacts (standard upstream relationship)
+        for target_id in &item.upstream.justifies {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Justifies);
+            // Add inverse: target is justified by this ADR
+            graph.add_relationship(target_id, &item.id, RelationshipType::IsJustifiedBy);
+        }
 
         // Add downstream relationships (and their inverse for bidirectional graph queries)
         for target_id in &item.downstream.is_refined_by {
@@ -92,10 +98,23 @@ impl GraphBuilder {
             // Add inverse: target satisfies this item
             graph.add_relationship(target_id, &item.id, RelationshipType::Satisfies);
         }
+        // Design artifact is justified by ADRs (standard downstream relationship)
+        for adr_id in &item.downstream.justified_by {
+            graph.add_relationship(&item.id, adr_id, RelationshipType::IsJustifiedBy);
+            // Add inverse: ADR justifies this item
+            graph.add_relationship(adr_id, &item.id, RelationshipType::Justifies);
+        }
 
-        // Add peer dependencies
-        for target_id in &item.attributes.depends_on {
+        // Add peer dependencies (for requirement types)
+        for target_id in item.attributes.depends_on() {
             graph.add_relationship(&item.id, target_id, RelationshipType::DependsOn);
+        }
+
+        // ADR supersession (peer relationships between ADRs, stored in attributes)
+        for target_id in item.attributes.supersedes() {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Supersedes);
+            // Add inverse: target is superseded by this ADR
+            graph.add_relationship(target_id, &item.id, RelationshipType::IsSupersededBy);
         }
     }
 }
@@ -209,5 +228,64 @@ mod tests {
             .unwrap();
 
         assert!(graph.is_strict_mode());
+    }
+
+    fn create_test_adr(id: &str, justifies: Vec<&str>, supersedes: Vec<&str>) -> Item {
+        use crate::model::AdrStatus;
+
+        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
+        // justifies is now in UpstreamRefs
+        let upstream = UpstreamRefs {
+            justifies: justifies.into_iter().map(ItemId::new_unchecked).collect(),
+            ..Default::default()
+        };
+        ItemBuilder::new()
+            .id(ItemId::new_unchecked(id))
+            .item_type(ItemType::ArchitectureDecisionRecord)
+            .name(format!("Test {}", id))
+            .source(source)
+            .upstream(upstream)
+            .status(AdrStatus::Proposed)
+            .deciders(vec!["Alice".to_string()])
+            .supersedes_all(supersedes.into_iter().map(ItemId::new_unchecked).collect())
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_adr_justifies_relationship() {
+        // Create a system architecture item
+        let sysarch = create_test_item("SYSARCH-001", ItemType::SystemArchitecture);
+        // Create an ADR that justifies it
+        let adr = create_test_adr("ADR-001", vec!["SYSARCH-001"], vec![]);
+
+        let graph = GraphBuilder::new()
+            .add_item(sysarch)
+            .add_item(adr)
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.item_count(), 2);
+        // ADR-001 -> Justifies -> SYSARCH-001
+        // SYSARCH-001 -> IsJustifiedBy -> ADR-001
+        assert_eq!(graph.relationship_count(), 2);
+    }
+
+    #[test]
+    fn test_adr_supersession_relationship() {
+        // Create two ADRs where the newer one supersedes the older
+        let adr_old = create_test_adr("ADR-001", vec![], vec![]);
+        let adr_new = create_test_adr("ADR-002", vec![], vec!["ADR-001"]);
+
+        let graph = GraphBuilder::new()
+            .add_item(adr_old)
+            .add_item(adr_new)
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.item_count(), 2);
+        // ADR-002 -> Supersedes -> ADR-001
+        // ADR-001 -> IsSupersededBy -> ADR-002
+        assert_eq!(graph.relationship_count(), 2);
     }
 }
