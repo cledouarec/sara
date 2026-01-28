@@ -74,11 +74,17 @@ Your requirements are too important to be trapped in a proprietary system. And y
 
 ## Installation
 
+### From crates.io (Recommended)
+
+```bash
+cargo install sara-cli
+```
+
 ### From Source
 
 ```bash
 # Clone the repository
-git clone https://github.com/your-org/sara.git
+git clone https://github.com/cledouarec/sara.git
 cd sara
 
 # Build and install
