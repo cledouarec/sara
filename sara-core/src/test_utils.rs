@@ -26,11 +26,29 @@ use crate::model::{
 /// ```
 #[must_use]
 pub fn create_test_item(id: &str, item_type: ItemType) -> Item {
+    create_test_item_with_name(id, item_type, &format!("Test {id}"))
+}
+
+/// Creates a test item with a custom name.
+///
+/// Use this when you need to control the item name, such as testing
+/// name changes in diffs or edit operations.
+///
+/// # Examples
+///
+/// ```ignore
+/// use sara_core::test_utils::create_test_item_with_name;
+/// use sara_core::model::ItemType;
+///
+/// let solution = create_test_item_with_name("SOL-001", ItemType::Solution, "My Custom Name");
+/// ```
+#[must_use]
+pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
     let mut builder = ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
-        .name(format!("Test {id}"))
+        .name(name)
         .source(source);
 
     // Add required fields based on item type

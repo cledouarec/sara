@@ -149,43 +149,8 @@ pub fn resolve_cross_repository_refs(graph: &mut KnowledgeGraph) -> Vec<(ItemId,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemType, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
-
-    fn create_test_item_with_upstream(
-        id: &str,
-        item_type: ItemType,
-        upstream: UpstreamRefs,
-    ) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source)
-            .upstream(upstream);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::{ItemType, UpstreamRefs};
+    use crate::test_utils::{create_test_adr, create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_build_simple_graph() {
@@ -230,34 +195,12 @@ mod tests {
         assert!(graph.is_strict_mode());
     }
 
-    fn create_test_adr(id: &str, justifies: Vec<&str>, supersedes: Vec<&str>) -> Item {
-        use crate::model::AdrStatus;
-
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        // justifies is now in UpstreamRefs
-        let upstream = UpstreamRefs {
-            justifies: justifies.into_iter().map(ItemId::new_unchecked).collect(),
-            ..Default::default()
-        };
-        ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(ItemType::ArchitectureDecisionRecord)
-            .name(format!("Test {}", id))
-            .source(source)
-            .upstream(upstream)
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Alice".to_string()])
-            .supersedes_all(supersedes.into_iter().map(ItemId::new_unchecked).collect())
-            .build()
-            .unwrap()
-    }
-
     #[test]
     fn test_adr_justifies_relationship() {
         // Create a system architecture item
         let sysarch = create_test_item("SYSARCH-001", ItemType::SystemArchitecture);
         // Create an ADR that justifies it
-        let adr = create_test_adr("ADR-001", vec!["SYSARCH-001"], vec![]);
+        let adr = create_test_adr("ADR-001", &["SYSARCH-001"], &[]);
 
         let graph = GraphBuilder::new()
             .add_item(sysarch)
@@ -274,8 +217,8 @@ mod tests {
     #[test]
     fn test_adr_supersession_relationship() {
         // Create two ADRs where the newer one supersedes the older
-        let adr_old = create_test_adr("ADR-001", vec![], vec![]);
-        let adr_new = create_test_adr("ADR-002", vec![], vec!["ADR-001"]);
+        let adr_old = create_test_adr("ADR-001", &[], &[]);
+        let adr_new = create_test_adr("ADR-002", &[], &["ADR-001"]);
 
         let graph = GraphBuilder::new()
             .add_item(adr_old)

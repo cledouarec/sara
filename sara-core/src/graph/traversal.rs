@@ -311,43 +311,8 @@ impl TraversalResult {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemBuilder, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
-
-    fn create_test_item_with_upstream(
-        id: &str,
-        item_type: ItemType,
-        upstream: UpstreamRefs,
-    ) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source)
-            .upstream(upstream);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::UpstreamRefs;
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_upstream_traversal() {
