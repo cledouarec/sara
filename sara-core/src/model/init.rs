@@ -3,8 +3,6 @@
 //! Provides domain-level types for item creation that are independent
 //! of file I/O and format-specific concerns.
 
-#![allow(clippy::result_large_err)]
-
 use crate::error::ValidationError;
 
 use super::{ItemType, TypeFields};

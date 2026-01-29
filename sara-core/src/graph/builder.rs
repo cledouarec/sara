@@ -1,7 +1,5 @@
 //! Graph builder for constructing knowledge graphs.
 
-#![allow(clippy::result_large_err)]
-
 use std::path::PathBuf;
 
 use crate::error::SaraError;

@@ -1,7 +1,5 @@
 //! Type-specific fields container for item initialization and editing.
 
-#![allow(clippy::result_large_err)]
-
 use crate::error::ValidationError;
 
 use super::{AdrStatus, ItemType};

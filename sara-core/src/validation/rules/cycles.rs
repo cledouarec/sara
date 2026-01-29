@@ -83,13 +83,8 @@ pub fn check_cycles(graph: &KnowledgeGraph) -> Vec<ValidationError> {
                 .collect();
 
             let cycle_str = cycle_ids.join(" -> ");
-            let first_item = scc.first().and_then(|idx| inner.node_weight(*idx));
-            let location = first_item.map(|item| item.source.clone());
 
-            errors.push(ValidationError::CircularReference {
-                cycle: cycle_str,
-                location,
-            });
+            errors.push(ValidationError::CircularReference { cycle: cycle_str });
         } else if scc.len() > 2 {
             // This SCC contains a cycle with more than 2 nodes
             let cycle_ids: Vec<String> = scc
@@ -100,14 +95,7 @@ pub fn check_cycles(graph: &KnowledgeGraph) -> Vec<ValidationError> {
 
             let cycle_str = cycle_ids.join(" -> ");
 
-            // Get the first item's location for error reporting
-            let first_item = scc.first().and_then(|idx| inner.node_weight(*idx));
-            let location = first_item.map(|item| item.source.clone());
-
-            errors.push(ValidationError::CircularReference {
-                cycle: cycle_str,
-                location,
-            });
+            errors.push(ValidationError::CircularReference { cycle: cycle_str });
         } else if scc.len() == 1 {
             // Check for self-loop
             let idx = scc[0];
@@ -116,7 +104,6 @@ pub fn check_cycles(graph: &KnowledgeGraph) -> Vec<ValidationError> {
             {
                 errors.push(ValidationError::CircularReference {
                     cycle: format!("{} -> {}", item.id.as_str(), item.id.as_str()),
-                    location: Some(item.source.clone()),
                 });
             }
         }

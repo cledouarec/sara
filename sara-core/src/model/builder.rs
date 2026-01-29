@@ -1,7 +1,5 @@
 //! Builder for constructing Item instances.
 
-#![allow(clippy::result_large_err)]
-
 use crate::error::ValidationError;
 
 use super::{

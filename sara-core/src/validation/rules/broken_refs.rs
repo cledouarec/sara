@@ -18,7 +18,6 @@ pub fn check_broken_references(graph: &KnowledgeGraph) -> Vec<ValidationError> {
                 errors.push(ValidationError::BrokenReference {
                     from: item.id.clone(),
                     to: ref_id.clone(),
-                    location: Some(item.source.clone()),
                 });
             }
         }

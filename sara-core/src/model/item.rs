@@ -1,7 +1,5 @@
 //! Item types and structures for the knowledge graph.
 
-#![allow(clippy::result_large_err)]
-
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
