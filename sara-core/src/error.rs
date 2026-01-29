@@ -308,6 +308,9 @@ pub enum EditError {
     #[error("Invalid traceability link: {id} does not exist")]
     InvalidLink { id: String },
 
+    #[error("Validation error: {0}")]
+    Validation(String),
+
     #[error("Failed to read file: {0}")]
     IoError(String),
 

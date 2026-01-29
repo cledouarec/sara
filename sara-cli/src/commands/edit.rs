@@ -9,10 +9,13 @@ use std::process::ExitCode;
 use clap::Args;
 use inquire::{Confirm, InquireError};
 
-use sara_core::edit::{EditOptions, EditService, EditedValues, ItemContext};
 use sara_core::error::EditError;
 use sara_core::graph::KnowledgeGraph;
-use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};
+use sara_core::model::{EditSummary, FieldChange, ItemType};
+use sara_core::service::{
+    EditOptions, EditedValues, ItemContext, apply_changes, build_change_summary, edit_item,
+    get_item_for_edit,
+};
 
 use super::CommandContext;
 use super::interactive::{
@@ -59,25 +62,8 @@ pub struct EditArgs {
 
 /// Runs the edit command.
 pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
-    let service = EditService::new();
-
     // Build the knowledge graph
     let graph = ctx.build_graph()?;
-
-    // Look up the item (FR-054)
-    let item = match service.lookup_item(&graph, &args.item_id) {
-        Ok(item) => item,
-        Err(e) => {
-            print_error(&ctx.output, &format!("{}", e));
-            if let Some(suggestions) = e.format_suggestions() {
-                println!("{}", suggestions);
-            }
-            return Ok(ExitCode::from(1));
-        }
-    };
-
-    // Build item context
-    let item_ctx = service.get_item_context(item);
 
     // Build options from args
     let opts = EditOptions::new(&args.item_id)
@@ -91,11 +77,20 @@ pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Er
 
     // Check if interactive or non-interactive mode
     if opts.has_updates() {
-        // Non-interactive mode (FR-057, FR-058)
-        run_non_interactive_edit(&service, &opts, &item_ctx, &ctx.output)
+        run_non_interactive_edit(&graph, &opts, &ctx.output)
     } else {
-        // Interactive mode (FR-055, FR-056)
-        run_interactive_edit(&service, &graph, &item_ctx, &ctx.output)
+        // Interactive mode - get item context for prompts
+        let item_ctx = match get_item_for_edit(&graph, &args.item_id) {
+            Ok(ctx) => ctx,
+            Err(e) => {
+                print_error(&ctx.output, &format!("{}", e));
+                if let Some(suggestions) = e.format_suggestions() {
+                    println!("{}", suggestions);
+                }
+                return Ok(ExitCode::from(1));
+            }
+        };
+        run_interactive_edit(&graph, &item_ctx, &ctx.output)
     }
 }
 
@@ -109,7 +104,6 @@ fn require_tty_for_edit() -> Result<(), EditError> {
 
 /// Runs the interactive edit flow (FR-055, FR-056, FR-062, FR-063).
 fn run_interactive_edit(
-    service: &EditService,
     graph: &KnowledgeGraph,
     item: &ItemContext,
     config: &OutputConfig,
@@ -122,19 +116,18 @@ fn run_interactive_edit(
     display_edit_header(&item.id, item.item_type);
 
     match run_edit_prompts(graph, item) {
-        Ok(new_values) => process_edit_changes(service, item, &new_values, config),
+        Ok(new_values) => process_edit_changes(item, &new_values, config),
         Err(e) => handle_prompt_error(e, config),
     }
 }
 
 /// Processes edit changes: displays summary, confirms, and applies (FR-062, FR-063).
 fn process_edit_changes(
-    service: &EditService,
     item: &ItemContext,
     new_values: &EditedValues,
     config: &OutputConfig,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let changes = service.build_change_summary(item, new_values);
+    let changes = build_change_summary(item, new_values);
 
     display_change_summary(&changes);
 
@@ -143,19 +136,18 @@ fn process_edit_changes(
         return Ok(ExitCode::SUCCESS);
     }
 
-    confirm_and_apply_changes(service, item, new_values, changes, config)
+    confirm_and_apply_changes(item, new_values, changes, config)
 }
 
 /// Confirms with user and applies changes if confirmed.
 fn confirm_and_apply_changes(
-    service: &EditService,
     item: &ItemContext,
     new_values: &EditedValues,
     changes: Vec<FieldChange>,
     config: &OutputConfig,
 ) -> Result<ExitCode, Box<dyn Error>> {
     match prompt_edit_confirmation() {
-        Ok(true) => apply_and_report_changes(service, item, new_values, changes, config),
+        Ok(true) => apply_and_report_changes(item, new_values, changes, config),
         Ok(false) | Err(_) => {
             print_cancelled();
             Ok(ExitCode::from(130))
@@ -165,13 +157,12 @@ fn confirm_and_apply_changes(
 
 /// Applies changes and prints success message.
 fn apply_and_report_changes(
-    service: &EditService,
     item: &ItemContext,
     new_values: &EditedValues,
     changes: Vec<FieldChange>,
     config: &OutputConfig,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    service.apply_changes(&item.id, item.item_type, new_values, &item.file_path)?;
+    apply_changes(&item.id, item.item_type, new_values, &item.file_path)?;
 
     let changed_count = changes.iter().filter(|c| c.is_changed()).count();
     let summary = EditSummary {
@@ -278,54 +269,31 @@ fn prompt_edit_confirmation() -> Result<bool, PromptError> {
 
 /// Runs the non-interactive edit (FR-057, FR-058).
 fn run_non_interactive_edit(
-    service: &EditService,
+    graph: &KnowledgeGraph,
     opts: &EditOptions,
-    item: &ItemContext,
     config: &OutputConfig,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    // Validate type-specific fields (FR-058)
-    if let Err(e) = service.validate_options(opts, item.item_type) {
-        print_error(config, &format!("{}", e));
-        return Ok(ExitCode::from(1));
+    match edit_item(graph, opts) {
+        Ok(result) => {
+            let msg = if result.has_changes() {
+                format!(
+                    "Updated {} ({} field{} changed)",
+                    result.item_id,
+                    result.change_count(),
+                    if result.change_count() == 1 { "" } else { "s" }
+                )
+            } else {
+                format!("Updated {}", result.item_id)
+            };
+            print_success(config, &msg);
+            Ok(ExitCode::SUCCESS)
+        }
+        Err(e) => {
+            print_error(config, &format!("{}", e));
+            if let Some(suggestions) = e.format_suggestions() {
+                println!("{}", suggestions);
+            }
+            Ok(ExitCode::from(1))
+        }
     }
-
-    // Merge updates with current values
-    let new_values = EditedValues::new(opts.name.clone().unwrap_or_else(|| item.name.clone()))
-        .with_description(
-            opts.description
-                .clone()
-                .or_else(|| item.description.clone()),
-        )
-        .with_specification(
-            opts.specification
-                .clone()
-                .or_else(|| item.specification.clone()),
-        )
-        .with_platform(opts.platform.clone().or_else(|| item.platform.clone()))
-        .with_traceability(TraceabilityLinks {
-            refines: opts
-                .refines
-                .clone()
-                .unwrap_or_else(|| item.traceability.refines.clone()),
-            derives_from: opts
-                .derives_from
-                .clone()
-                .unwrap_or_else(|| item.traceability.derives_from.clone()),
-            satisfies: opts
-                .satisfies
-                .clone()
-                .unwrap_or_else(|| item.traceability.satisfies.clone()),
-            depends_on: opts
-                .depends_on
-                .clone()
-                .unwrap_or_else(|| item.traceability.depends_on.clone()),
-            justifies: opts
-                .justifies
-                .clone()
-                .unwrap_or_else(|| item.traceability.justifies.clone()),
-        });
-
-    service.apply_changes(&item.id, item.item_type, &new_values, &item.file_path)?;
-    print_success(config, &format!("Updated {}", item.id));
-    Ok(ExitCode::SUCCESS)
 }

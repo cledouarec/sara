@@ -3,8 +3,6 @@
 //! This module provides file I/O operations for item initialization,
 //! using domain types from `model/` and generators from `generator/`.
 
-#![allow(clippy::result_large_err)]
-
 use std::fs;
 use std::path::PathBuf;
 
@@ -23,11 +21,17 @@ pub enum InitError {
 
     /// Validation error from domain layer.
     #[error("{0}")]
-    Validation(#[from] crate::error::ValidationError),
+    Validation(Box<crate::error::ValidationError>),
 
     /// IO error.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
+}
+
+impl From<crate::error::ValidationError> for InitError {
+    fn from(err: crate::error::ValidationError) -> Self {
+        InitError::Validation(Box::new(err))
+    }
 }
 
 /// Result of a successful initialization.
@@ -130,6 +134,7 @@ impl InitFileOptions {
     }
 
     /// Returns the item type.
+    #[must_use]
     pub fn item_type(&self) -> ItemType {
         self.init_options.item_type
     }
@@ -180,11 +185,6 @@ pub fn create_item(opts: &InitFileOptions) -> Result<InitResult, InitError> {
         replaced_frontmatter,
         needs_specification,
     })
-}
-
-/// Updates an existing item (alias for create_item with appropriate options).
-pub fn update_item(opts: &InitFileOptions) -> Result<InitResult, InitError> {
-    create_item(opts)
 }
 
 /// Returns the file stem as a string, or the fallback if unavailable.

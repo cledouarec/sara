@@ -11,13 +11,10 @@
 //! - `query/` - Query operations
 //! - `parser/` - Input adapters (YAML, Markdown parsing)
 //! - `generator/` - Output adapters (YAML, Markdown generation)
-//! - `service/` - File I/O operations
-//! - `edit/` - Edit command service
+//! - `service/` - File I/O services (init, edit, diff)
 //! - `report/` - Report generation
 
 pub mod config;
-pub mod diff;
-pub mod edit;
 pub mod error;
 pub mod generator;
 pub mod graph;

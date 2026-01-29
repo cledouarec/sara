@@ -8,7 +8,7 @@ use crate::graph::KnowledgeGraph;
 use crate::model::{Item, ItemId};
 
 /// A diff between two knowledge graphs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct GraphDiff {
     /// Items added (present in new, not in old).
     pub added_items: Vec<ItemDiff>,

@@ -4,6 +4,18 @@
 //! with file I/O operations. These functions bridge the gap between the pure
 //! domain layer (model/) and the CLI/application layer.
 
+mod diff;
+mod edit;
 mod init;
 
-pub use init::{InitError, InitFileOptions, InitResult, create_item, update_item};
+// Diff service exports
+pub use diff::{DiffError, DiffOptions, DiffResult, diff, diff_graphs};
+
+// Edit service exports
+pub use edit::{
+    EditOptions, EditResult, EditedValues, ItemContext, apply_changes, build_change_summary,
+    edit_item, get_item_for_edit,
+};
+
+// Init service exports
+pub use init::{InitError, InitFileOptions, InitResult, create_item};
