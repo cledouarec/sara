@@ -217,7 +217,6 @@ mod tests {
         report.add_error(ValidationError::BrokenReference {
             from: ItemId::new_unchecked("A"),
             to: ItemId::new_unchecked("B"),
-            location: None,
         });
 
         assert!(!report.is_valid());
@@ -231,7 +230,6 @@ mod tests {
         report.add_warning(ValidationError::OrphanItem {
             id: ItemId::new_unchecked("A"),
             item_type: crate::model::ItemType::UseCase,
-            location: None,
         });
 
         assert!(report.is_valid());
@@ -247,7 +245,6 @@ mod tests {
             .error(ValidationError::BrokenReference {
                 from: ItemId::new_unchecked("A"),
                 to: ItemId::new_unchecked("B"),
-                location: None,
             })
             .build();
 

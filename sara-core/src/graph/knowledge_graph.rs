@@ -193,23 +193,7 @@ impl Default for KnowledgeGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, SourceLocation};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::test_utils::create_test_item;
 
     #[test]
     fn test_add_and_get_item() {

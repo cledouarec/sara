@@ -10,11 +10,11 @@ use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use thiserror::Error;
 
+use sara_core::generator::suggest_next_id;
 use sara_core::graph::{GraphBuilder, KnowledgeGraph};
 use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
 use sara_core::query::{MissingParentError, check_parent_exists};
 use sara_core::repository::parse_repositories;
-use sara_core::template::suggest_next_id;
 
 use crate::output::{OutputConfig, print_error};
 

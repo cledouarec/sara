@@ -15,7 +15,7 @@
 use std::path::PathBuf;
 use thiserror::Error;
 
-use crate::model::{ItemId, ItemType, RelationshipType, SourceLocation};
+use crate::model::{ItemId, ItemType, RelationshipType};
 
 /// Type-safe error codes for validation errors.
 ///
@@ -44,6 +44,8 @@ pub enum ValidationErrorCode {
     UnrecognizedField,
     /// Both sides of a relationship declare it.
     RedundantRelationship,
+    /// Field is not valid for this item type.
+    InvalidFieldForType,
 }
 
 impl ValidationErrorCode {
@@ -61,6 +63,7 @@ impl ValidationErrorCode {
             Self::InvalidMetadata => "invalid_metadata",
             Self::UnrecognizedField => "unrecognized_field",
             Self::RedundantRelationship => "redundant_relationship",
+            Self::InvalidFieldForType => "invalid_field_for_type",
         }
     }
 }
@@ -103,30 +106,16 @@ pub enum ValidationError {
     MissingField { field: String, file: String },
 
     #[error("Broken reference: {from} references non-existent item {to}")]
-    BrokenReference {
-        from: ItemId,
-        to: ItemId,
-        location: Option<SourceLocation>,
-    },
+    BrokenReference { from: ItemId, to: ItemId },
 
     #[error("Orphan item: {id} has no upstream parent")]
-    OrphanItem {
-        id: ItemId,
-        item_type: ItemType,
-        location: Option<SourceLocation>,
-    },
+    OrphanItem { id: ItemId, item_type: ItemType },
 
     #[error("Duplicate identifier: {id} defined in multiple files")]
-    DuplicateIdentifier {
-        id: ItemId,
-        locations: Vec<SourceLocation>,
-    },
+    DuplicateIdentifier { id: ItemId },
 
     #[error("Circular reference detected: {cycle}")]
-    CircularReference {
-        cycle: String,
-        location: Option<SourceLocation>,
-    },
+    CircularReference { cycle: String },
 
     #[error("Invalid relationship: {from_type} cannot {rel_type} {to_type}")]
     InvalidRelationship {
@@ -135,18 +124,13 @@ pub enum ValidationError {
         from_type: ItemType,
         to_type: ItemType,
         rel_type: RelationshipType,
-        location: Option<SourceLocation>,
     },
 
     #[error("Invalid metadata in {file}: {reason}")]
     InvalidMetadata { file: String, reason: String },
 
     #[error("Unrecognized field '{field}' in {file}")]
-    UnrecognizedField {
-        field: String,
-        file: String,
-        location: Option<SourceLocation>,
-    },
+    UnrecognizedField { field: String, file: String },
 
     #[error(
         "Redundant relationship: {from_id} and {to_id} both declare the relationship (only one is needed)"
@@ -156,27 +140,13 @@ pub enum ValidationError {
         to_id: ItemId,
         from_rel: RelationshipType,
         to_rel: RelationshipType,
-        from_location: Option<SourceLocation>,
-        to_location: Option<SourceLocation>,
     },
+
+    #[error("Field '{field}' is not valid for item type '{item_type}'")]
+    InvalidFieldForType { field: String, item_type: String },
 }
 
 impl ValidationError {
-    /// Returns the source location if available.
-    #[must_use]
-    pub fn location(&self) -> Option<&SourceLocation> {
-        match self {
-            Self::BrokenReference { location, .. } => location.as_ref(),
-            Self::OrphanItem { location, .. } => location.as_ref(),
-            Self::DuplicateIdentifier { locations, .. } => locations.first(),
-            Self::CircularReference { location, .. } => location.as_ref(),
-            Self::InvalidRelationship { location, .. } => location.as_ref(),
-            Self::UnrecognizedField { location, .. } => location.as_ref(),
-            Self::RedundantRelationship { from_location, .. } => from_location.as_ref(),
-            _ => None,
-        }
-    }
-
     /// Returns true if this is an error (blocks validation).
     #[must_use]
     pub const fn is_error(&self) -> bool {
@@ -200,6 +170,7 @@ impl ValidationError {
             Self::InvalidMetadata { .. } => ValidationErrorCode::InvalidMetadata,
             Self::UnrecognizedField { .. } => ValidationErrorCode::UnrecognizedField,
             Self::RedundantRelationship { .. } => ValidationErrorCode::RedundantRelationship,
+            Self::InvalidFieldForType { .. } => ValidationErrorCode::InvalidFieldForType,
         }
     }
 }
@@ -300,6 +271,9 @@ pub enum EditError {
 
     #[error("Invalid traceability link: {id} does not exist")]
     InvalidLink { id: String },
+
+    #[error("Validation error: {0}")]
+    Validation(String),
 
     #[error("Failed to read file: {0}")]
     IoError(String),

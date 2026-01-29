@@ -1,10 +1,10 @@
 //! Duplicate identifier detection validation rule.
 
-use std::collections::HashMap;
+use std::collections::HashSet;
 
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId, SourceLocation};
+use crate::model::{Item, ItemId};
 
 /// Detects duplicate identifiers in the knowledge graph.
 ///
@@ -23,18 +23,18 @@ pub fn check_duplicates(_graph: &KnowledgeGraph) -> Vec<ValidationError> {
 ///
 /// This is the primary duplicate detection function, used during parsing.
 pub fn check_duplicate_items(items: &[Item]) -> Vec<ValidationError> {
-    let mut seen: HashMap<&ItemId, Vec<&SourceLocation>> = HashMap::new();
+    let mut seen: HashSet<&ItemId> = HashSet::new();
+    let mut duplicates: HashSet<ItemId> = HashSet::new();
 
     for item in items {
-        seen.entry(&item.id).or_default().push(&item.source);
+        if !seen.insert(&item.id) {
+            duplicates.insert(item.id.clone());
+        }
     }
 
-    seen.into_iter()
-        .filter(|(_, locations)| locations.len() > 1)
-        .map(|(id, locations)| ValidationError::DuplicateIdentifier {
-            id: id.clone(),
-            locations: locations.into_iter().cloned().collect(),
-        })
+    duplicates
+        .into_iter()
+        .map(|id| ValidationError::DuplicateIdentifier { id })
         .collect()
 }
 
@@ -70,9 +70,8 @@ mod tests {
         let errors = check_duplicate_items(&items);
         assert_eq!(errors.len(), 1);
 
-        if let ValidationError::DuplicateIdentifier { id, locations } = &errors[0] {
+        if let ValidationError::DuplicateIdentifier { id } = &errors[0] {
             assert_eq!(id.as_str(), "SOL-001");
-            assert_eq!(locations.len(), 2);
         } else {
             panic!("Expected DuplicateIdentifier error");
         }

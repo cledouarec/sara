@@ -5,7 +5,7 @@ use std::path::Path;
 
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldName, SourceLocation};
+use crate::model::FieldName;
 
 /// Validates metadata completeness for all items.
 ///
@@ -76,10 +76,6 @@ pub fn check_custom_fields(
                 warnings.push(ValidationError::UnrecognizedField {
                     field: field_name.to_string(),
                     file: file_path.display().to_string(),
-                    location: Some(SourceLocation::new(
-                        file_path.parent().unwrap_or(Path::new(".")),
-                        file_path,
-                    )),
                 });
             }
         }
