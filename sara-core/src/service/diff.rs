@@ -5,7 +5,7 @@
 
 use std::path::PathBuf;
 
-use crate::graph::{GraphBuilder, GraphDiff, KnowledgeGraph};
+use crate::graph::{GraphBuilder, GraphDiff};
 use crate::repository::{GitReader, GitRef};
 
 // ============================================================================
@@ -121,24 +121,6 @@ pub fn diff(opts: &DiffOptions) -> Result<DiffResult, DiffError> {
 
     // Fall back to current working directory comparison
     diff_working_directory(opts)
-}
-
-/// Computes the diff between two existing graphs.
-///
-/// Use this function when you already have the graphs loaded.
-pub fn diff_graphs(
-    old_graph: &KnowledgeGraph,
-    new_graph: &KnowledgeGraph,
-    ref1: impl Into<String>,
-    ref2: impl Into<String>,
-) -> DiffResult {
-    let diff = GraphDiff::compute(old_graph, new_graph);
-    DiffResult {
-        diff,
-        ref1: ref1.into(),
-        ref2: ref2.into(),
-        is_full_comparison: true,
-    }
 }
 
 // ============================================================================

@@ -88,16 +88,6 @@ impl<'a> QueryEngine<'a> {
     }
 }
 
-/// Gets direct parents of an item.
-pub fn get_parents<'a>(graph: &'a KnowledgeGraph, id: &ItemId) -> Vec<&'a Item> {
-    graph.parents(id)
-}
-
-/// Gets direct children of an item.
-pub fn get_children<'a>(graph: &'a KnowledgeGraph, id: &ItemId) -> Vec<&'a Item> {
-    graph.children(id)
-}
-
 /// Finds item IDs similar to the given query string using Levenshtein distance (FR-061).
 ///
 /// Returns up to `max_suggestions` similar item IDs, sorted by distance.

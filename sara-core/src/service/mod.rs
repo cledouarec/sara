@@ -9,7 +9,7 @@ mod edit;
 mod init;
 
 // Diff service exports
-pub use diff::{DiffError, DiffOptions, DiffResult, diff, diff_graphs};
+pub use diff::{DiffError, DiffOptions, DiffResult, diff};
 
 // Edit service exports
 pub use edit::{
