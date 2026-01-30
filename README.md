@@ -116,14 +116,13 @@ sara --version
 
 | Command | Description |
 |---------|-------------|
+| `sara check` | Parse documents and validate graph integrity |
 | `sara diff <REF1> <REF2>` | Compare graphs between Git references |
 | `sara edit <ID>` | Edit existing document metadata by item ID |
 | `sara init <FILE>` | Initialize metadata in a Markdown file |
-| `sara parse` | Parse documents and build the knowledge graph |
 | `sara query <ID>` | Query items and traceability chains |
 | `sara report coverage` | Generate coverage report |
 | `sara report matrix` | Generate traceability matrix |
-| `sara validate` | Validate graph integrity (broken refs, cycles, duplicates) |
 
 ## Document Types
 
@@ -433,11 +432,17 @@ SARA validates your relationships to ensure graph integrity:
 - **Duplicate identifiers**: Same ID used in multiple files
 
 ```bash
-# Validate all relationships
-sara validate
+# Parse and validate all relationships
+sara check
 
-# Strict mode: treat non-critical issues as errors
-sara validate --strict
+# Strict mode: treat orphan items and other non-critical issues as errors
+sara check --strict
+
+# Output as JSON
+sara check --format json
+
+# Write output to file
+sara check -o results.json --format json
 ```
 
 ## Configuration

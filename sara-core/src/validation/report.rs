@@ -1,10 +1,11 @@
 //! Validation report structure.
 
-use std::time::Duration;
+use std::collections::HashMap;
 
 use serde::Serialize;
 
 use crate::error::ValidationError;
+use crate::model::ItemType;
 
 use super::rule::Severity;
 
@@ -44,9 +45,8 @@ pub struct ValidationReport {
     pub items_checked: usize,
     /// Number of relationships checked.
     pub relationships_checked: usize,
-    /// Time taken to perform validation.
-    #[serde(skip)]
-    pub duration: Duration,
+    /// Count of items by their type.
+    pub items_by_type: HashMap<ItemType, usize>,
 }
 
 impl ValidationReport {
@@ -56,7 +56,7 @@ impl ValidationReport {
             issues: Vec::new(),
             items_checked: 0,
             relationships_checked: 0,
-            duration: Duration::ZERO,
+            items_by_type: HashMap::new(),
         }
     }
 
@@ -102,14 +102,17 @@ impl ValidationReport {
     /// Merges another report into this one.
     ///
     /// Issues from the other report are prepended to this report's issues.
-    /// Counters and duration are summed.
+    /// Counters are summed. Items by type are combined (preferring non-empty).
     pub fn merge(&mut self, other: ValidationReport) {
         let mut merged_issues = other.issues;
         merged_issues.append(&mut self.issues);
         self.issues = merged_issues;
         self.items_checked += other.items_checked;
         self.relationships_checked += other.relationships_checked;
-        self.duration += other.duration;
+        // Prefer the non-empty items_by_type map
+        if self.items_by_type.is_empty() && !other.items_by_type.is_empty() {
+            self.items_by_type = other.items_by_type;
+        }
     }
 }
 
@@ -143,12 +146,13 @@ impl ValidationReportBuilder {
         self
     }
 
-    /// Sets the duration.
-    pub fn duration(mut self, duration: Duration) -> Self {
-        self.report.duration = duration;
+    /// Sets the items by type counts.
+    pub fn items_by_type(mut self, counts: HashMap<ItemType, usize>) -> Self {
+        self.report.items_by_type = counts;
         self
     }
 
+    /// Adds errors to the report.
     pub fn errors(mut self, errors: impl IntoIterator<Item = ValidationError>) -> Self {
         for error in errors {
             self.report.issues.push(ValidationIssue::error(error));
