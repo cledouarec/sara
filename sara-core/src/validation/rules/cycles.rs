@@ -1,132 +1,78 @@
 //! Circular reference detection validation rule.
 
 use petgraph::algo::tarjan_scc;
+use petgraph::visit::EdgeFiltered;
 
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::ItemId;
+use crate::validation::rule::ValidationRule;
 
-/// Checks if two nodes form only an inverse relationship pair (not a true cycle).
-///
-/// Inverse pairs are bidirectional edges like:
-/// - A --Satisfies--> B and B --IsSatisfiedBy--> A
-/// - A --Refines--> B and B --IsRefinedBy--> A
-/// - A --DerivesFrom--> B and B --Derives--> A
-///
-/// These represent the same logical relationship from two perspectives and
-/// should not be considered cycles.
-fn is_inverse_pair_only(
-    graph: &KnowledgeGraph,
-    idx_a: petgraph::graph::NodeIndex,
-    idx_b: petgraph::graph::NodeIndex,
-) -> bool {
-    let inner = graph.inner();
-
-    // Get edges from A to B and from B to A
-    let edges_a_to_b: Vec<_> = inner
-        .edges_connecting(idx_a, idx_b)
-        .map(|e| *e.weight())
-        .collect();
-    let edges_b_to_a: Vec<_> = inner
-        .edges_connecting(idx_b, idx_a)
-        .map(|e| *e.weight())
-        .collect();
-
-    // If there are no edges in either direction, not an inverse pair
-    if edges_a_to_b.is_empty() || edges_b_to_a.is_empty() {
-        return false;
-    }
-
-    // Check if all edges form inverse pairs
-    for rel_a_to_b in &edges_a_to_b {
-        let inverse = rel_a_to_b.inverse();
-        if !edges_b_to_a.contains(&inverse) {
-            // Found an edge that doesn't have its inverse - this is a real cycle component
-            return false;
-        }
-    }
-
-    for rel_b_to_a in &edges_b_to_a {
-        let inverse = rel_b_to_a.inverse();
-        if !edges_a_to_b.contains(&inverse) {
-            return false;
-        }
-    }
-
-    true
-}
-
-/// Detects circular references in the knowledge graph.
+/// Circular reference detection rule.
 ///
 /// Uses Tarjan's strongly connected components algorithm to find cycles.
-/// Any SCC with more than one node indicates a cycle, except for inverse
-/// relationship pairs which represent bidirectional traceability.
-pub fn check_cycles(graph: &KnowledgeGraph) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
-    let inner = graph.inner();
+/// Only considers primary relationships (not inverse edges) when detecting
+/// cycles, since inverse edges are just for graph traversal and don't
+/// represent logical cycles.
+pub struct CyclesRule;
 
-    // Find strongly connected components
-    let sccs = tarjan_scc(inner);
+impl ValidationRule for CyclesRule {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+        let inner = graph.inner();
 
-    for scc in sccs {
-        if scc.len() == 2 {
-            // Special case: check if this is just an inverse relationship pair
-            if is_inverse_pair_only(graph, scc[0], scc[1]) {
-                continue; // Skip this - it's not a real cycle
-            }
+        // Filter the graph to only include primary relationships for cycle detection.
+        // Inverse relationships (IsRefinedBy, Derives, IsSatisfiedBy, etc.) are excluded
+        // because they're just for traversal and would cause false positives.
+        let filtered = EdgeFiltered::from_fn(inner, |edge| edge.weight().is_primary());
 
-            // It's a real cycle between two nodes
-            let cycle_ids: Vec<String> = scc
-                .iter()
-                .filter_map(|idx| inner.node_weight(*idx))
-                .map(|item| item.id.as_str().to_string())
-                .collect();
+        // Find strongly connected components on the filtered graph
+        let sccs = tarjan_scc(&filtered);
 
-            let cycle_str = cycle_ids.join(" -> ");
-            let first_item = scc.first().and_then(|idx| inner.node_weight(*idx));
-            let location = first_item.map(|item| item.source.clone());
+        for scc in sccs {
+            if scc.len() >= 2 {
+                // SCC with 2+ nodes indicates a cycle
+                let cycle_ids: Vec<String> = scc
+                    .iter()
+                    .filter_map(|idx| inner.node_weight(*idx))
+                    .map(|item| item.id.as_str().to_string())
+                    .collect();
 
-            errors.push(ValidationError::CircularReference {
-                cycle: cycle_str,
-                location,
-            });
-        } else if scc.len() > 2 {
-            // This SCC contains a cycle with more than 2 nodes
-            let cycle_ids: Vec<String> = scc
-                .iter()
-                .filter_map(|idx| inner.node_weight(*idx))
-                .map(|item| item.id.as_str().to_string())
-                .collect();
+                let cycle_str = cycle_ids.join(" -> ");
+                let first_item = scc.first().and_then(|idx| inner.node_weight(*idx));
+                let location = first_item.map(|item| item.source.clone());
 
-            let cycle_str = cycle_ids.join(" -> ");
-
-            // Get the first item's location for error reporting
-            let first_item = scc.first().and_then(|idx| inner.node_weight(*idx));
-            let location = first_item.map(|item| item.source.clone());
-
-            errors.push(ValidationError::CircularReference {
-                cycle: cycle_str,
-                location,
-            });
-        } else if scc.len() == 1 {
-            // Check for self-loop
-            let idx = scc[0];
-            if inner.find_edge(idx, idx).is_some()
-                && let Some(item) = inner.node_weight(idx)
-            {
                 errors.push(ValidationError::CircularReference {
-                    cycle: format!("{} -> {}", item.id.as_str(), item.id.as_str()),
-                    location: Some(item.source.clone()),
+                    cycle: cycle_str,
+                    location,
                 });
+            } else if scc.len() == 1 {
+                // Check for self-loop (only with primary relationships)
+                let idx = scc[0];
+                let has_self_loop = inner
+                    .edges_connecting(idx, idx)
+                    .any(|e| e.weight().is_primary());
+
+                if has_self_loop && let Some(item) = inner.node_weight(idx) {
+                    errors.push(ValidationError::CircularReference {
+                        cycle: format!("{} -> {}", item.id.as_str(), item.id.as_str()),
+                        location: Some(item.source.clone()),
+                    });
+                }
             }
         }
-    }
 
-    errors
+        errors
+    }
 }
 
 /// Checks if adding an edge would create a cycle.
-pub fn would_create_cycle(graph: &KnowledgeGraph, from: &ItemId, to: &ItemId) -> bool {
+#[cfg(test)]
+fn would_create_cycle(
+    graph: &KnowledgeGraph,
+    from: &crate::model::ItemId,
+    to: &crate::model::ItemId,
+) -> bool {
     // If to can reach from, adding from->to would create a cycle
     // This is a simple reachability check
     let inner = graph.inner();
@@ -149,7 +95,7 @@ pub fn would_create_cycle(graph: &KnowledgeGraph, from: &ItemId, to: &ItemId) ->
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemType, RelationshipType, UpstreamRefs};
+    use crate::model::{ItemId, ItemType, RelationshipType, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
@@ -167,7 +113,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let errors = check_cycles(&graph);
+        let rule = CyclesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(errors.is_empty());
     }
 
@@ -208,7 +155,8 @@ mod tests {
             RelationshipType::Refines,
         );
 
-        let errors = check_cycles(&graph);
+        let rule = CyclesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(!errors.is_empty(), "Cycle should be detected");
     }
 

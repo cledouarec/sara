@@ -1,34 +1,35 @@
 //! Orphan item detection validation rule.
 
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
+use crate::validation::rule::{Severity, ValidationRule};
 
-/// Detects orphan items in the knowledge graph.
+/// Orphan item detection rule.
 ///
-/// An orphan is an item that has no upstream parent, except for Solution items
-/// which are allowed to be root items.
+/// Detects orphan items in the knowledge graph. An orphan is an item that
+/// has no upstream parent, except for Solution items which are allowed to
+/// be root items.
 ///
-/// # Arguments
-/// * `graph` - The knowledge graph to check.
-/// * `strict_mode` - If true, orphans are reported as errors; otherwise as warnings.
-///
-/// # Returns
-/// A list of validation errors/warnings for orphan items.
-pub fn check_orphans(graph: &KnowledgeGraph, _strict_mode: bool) -> Vec<ValidationError> {
-    graph
-        .orphans()
-        .into_iter()
-        .map(|item| ValidationError::OrphanItem {
-            id: item.id.clone(),
-            item_type: item.item_type,
-            location: Some(item.source.clone()),
-        })
-        .collect()
-}
+/// Default severity is Warning, but in strict mode all warnings become errors.
+pub struct OrphansRule;
 
-/// Returns whether an orphan error should be treated as an error or warning.
-pub fn is_orphan_error(strict_mode: bool) -> bool {
-    strict_mode
+impl ValidationRule for OrphansRule {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        graph
+            .orphans()
+            .into_iter()
+            .map(|item| ValidationError::OrphanItem {
+                id: item.id.clone(),
+                item_type: item.item_type,
+                location: Some(item.source.clone()),
+            })
+            .collect()
+    }
+
+    fn severity(&self) -> Severity {
+        Severity::Warning
+    }
 }
 
 #[cfg(test)]
@@ -42,7 +43,8 @@ mod tests {
         let mut graph = KnowledgeGraph::new(false);
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
 
-        let errors = check_orphans(&graph, false);
+        let rule = OrphansRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(
             errors.is_empty(),
             "Solutions should not be reported as orphans"
@@ -54,7 +56,8 @@ mod tests {
         let mut graph = KnowledgeGraph::new(false);
         graph.add_item(create_test_item("UC-001", ItemType::UseCase));
 
-        let errors = check_orphans(&graph, false);
+        let rule = OrphansRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1);
 
         if let ValidationError::OrphanItem { id, item_type, .. } = &errors[0] {
@@ -78,7 +81,8 @@ mod tests {
             },
         ));
 
-        let errors = check_orphans(&graph, false);
+        let rule = OrphansRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(errors.is_empty());
     }
 }

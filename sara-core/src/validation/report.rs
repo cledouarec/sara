@@ -6,15 +6,7 @@ use serde::Serialize;
 
 use crate::error::ValidationError;
 
-/// Severity level for validation issues.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "lowercase")]
-pub enum Severity {
-    /// Validation error that blocks acceptance.
-    Error,
-    /// Warning that doesn't block but should be addressed.
-    Warning,
-}
+use super::rule::Severity;
 
 /// A validation issue with its severity.
 #[derive(Debug, Clone, Serialize)]
@@ -107,28 +99,17 @@ impl ValidationReport {
             .collect()
     }
 
-    /// Adds an error to the report.
-    pub fn add_error(&mut self, error: ValidationError) {
-        self.issues.push(ValidationIssue::error(error));
-    }
-
-    /// Adds a warning to the report.
-    pub fn add_warning(&mut self, error: ValidationError) {
-        self.issues.push(ValidationIssue::warning(error));
-    }
-
-    /// Adds multiple errors to the report.
-    pub fn add_errors(&mut self, errors: impl IntoIterator<Item = ValidationError>) {
-        for error in errors {
-            self.add_error(error);
-        }
-    }
-
-    /// Adds multiple warnings to the report.
-    pub fn add_warnings(&mut self, errors: impl IntoIterator<Item = ValidationError>) {
-        for error in errors {
-            self.add_warning(error);
-        }
+    /// Merges another report into this one.
+    ///
+    /// Issues from the other report are prepended to this report's issues.
+    /// Counters and duration are summed.
+    pub fn merge(&mut self, other: ValidationReport) {
+        let mut merged_issues = other.issues;
+        merged_issues.append(&mut self.issues);
+        self.issues = merged_issues;
+        self.items_checked += other.items_checked;
+        self.relationships_checked += other.relationships_checked;
+        self.duration += other.duration;
     }
 }
 
@@ -168,27 +149,18 @@ impl ValidationReportBuilder {
         self
     }
 
-    /// Adds an error.
-    pub fn error(mut self, error: ValidationError) -> Self {
-        self.report.add_error(error);
-        self
-    }
-
-    /// Adds a warning.
-    pub fn warning(mut self, error: ValidationError) -> Self {
-        self.report.add_warning(error);
-        self
-    }
-
-    /// Adds multiple errors.
     pub fn errors(mut self, errors: impl IntoIterator<Item = ValidationError>) -> Self {
-        self.report.add_errors(errors);
+        for error in errors {
+            self.report.issues.push(ValidationIssue::error(error));
+        }
         self
     }
 
     /// Adds multiple warnings.
-    pub fn warnings(mut self, errors: impl IntoIterator<Item = ValidationError>) -> Self {
-        self.report.add_warnings(errors);
+    pub fn warnings(mut self, warnings: impl IntoIterator<Item = ValidationError>) -> Self {
+        for warning in warnings {
+            self.report.issues.push(ValidationIssue::warning(warning));
+        }
         self
     }
 
@@ -212,31 +184,47 @@ mod tests {
     }
 
     #[test]
-    fn test_report_with_error() {
-        let mut report = ValidationReport::new();
-        report.add_error(ValidationError::BrokenReference {
-            from: ItemId::new_unchecked("A"),
-            to: ItemId::new_unchecked("B"),
-            location: None,
-        });
+    fn test_report_with_errors() {
+        let report = ValidationReportBuilder::new()
+            .errors([
+                ValidationError::BrokenReference {
+                    from: ItemId::new_unchecked("A"),
+                    to: ItemId::new_unchecked("B"),
+                    location: None,
+                },
+                ValidationError::BrokenReference {
+                    from: ItemId::new_unchecked("C"),
+                    to: ItemId::new_unchecked("D"),
+                    location: None,
+                },
+            ])
+            .build();
 
         assert!(!report.is_valid());
-        assert_eq!(report.error_count(), 1);
+        assert_eq!(report.error_count(), 2);
         assert_eq!(report.warning_count(), 0);
     }
 
     #[test]
-    fn test_report_with_warning() {
-        let mut report = ValidationReport::new();
-        report.add_warning(ValidationError::OrphanItem {
-            id: ItemId::new_unchecked("A"),
-            item_type: crate::model::ItemType::UseCase,
-            location: None,
-        });
+    fn test_report_with_warnings() {
+        let report = ValidationReportBuilder::new()
+            .warnings([
+                ValidationError::BrokenReference {
+                    from: ItemId::new_unchecked("A"),
+                    to: ItemId::new_unchecked("B"),
+                    location: None,
+                },
+                ValidationError::BrokenReference {
+                    from: ItemId::new_unchecked("C"),
+                    to: ItemId::new_unchecked("D"),
+                    location: None,
+                },
+            ])
+            .build();
 
         assert!(report.is_valid());
         assert_eq!(report.error_count(), 0);
-        assert_eq!(report.warning_count(), 1);
+        assert_eq!(report.warning_count(), 2);
     }
 
     #[test]
@@ -244,11 +232,11 @@ mod tests {
         let report = ValidationReportBuilder::new()
             .items_checked(10)
             .relationships_checked(15)
-            .error(ValidationError::BrokenReference {
+            .errors([ValidationError::BrokenReference {
                 from: ItemId::new_unchecked("A"),
                 to: ItemId::new_unchecked("B"),
                 location: None,
-            })
+            }])
             .build();
 
         assert_eq!(report.items_checked, 10);

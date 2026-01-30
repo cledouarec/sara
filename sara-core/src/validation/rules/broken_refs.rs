@@ -1,45 +1,40 @@
 //! Broken reference detection validation rule.
 
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::ItemId;
+use crate::validation::rule::ValidationRule;
 
-/// Detects broken references in the knowledge graph.
+/// Broken reference detection rule.
 ///
-/// A broken reference occurs when an item references another item
-/// that does not exist in the graph.
-pub fn check_broken_references(graph: &KnowledgeGraph) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
+/// Detects broken references in the knowledge graph. A broken reference
+/// occurs when an item references another item that does not exist in the graph.
+pub struct BrokenReferencesRule;
 
-    for item in graph.items() {
-        // Check all references from this item
-        for ref_id in item.all_references() {
-            if !graph.contains(ref_id) {
-                errors.push(ValidationError::BrokenReference {
-                    from: item.id.clone(),
-                    to: ref_id.clone(),
-                    location: Some(item.source.clone()),
-                });
+impl ValidationRule for BrokenReferencesRule {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        for item in graph.items() {
+            for ref_id in item.all_references() {
+                if !graph.contains(ref_id) {
+                    errors.push(ValidationError::BrokenReference {
+                        from: item.id.clone(),
+                        to: ref_id.clone(),
+                        location: Some(item.source.clone()),
+                    });
+                }
             }
         }
+
+        errors
     }
-
-    errors
-}
-
-/// Finds items that reference a given ID.
-pub fn find_referencing_items(graph: &KnowledgeGraph, target_id: &ItemId) -> Vec<ItemId> {
-    graph
-        .items()
-        .filter(|item| item.all_references().any(|id| id == target_id))
-        .map(|item| item.id.clone())
-        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemType, UpstreamRefs};
+    use crate::model::{ItemId, ItemType, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
@@ -55,7 +50,8 @@ mod tests {
             },
         ));
 
-        let errors = check_broken_references(&graph);
+        let rule = BrokenReferencesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(errors.is_empty());
     }
 
@@ -71,7 +67,8 @@ mod tests {
             },
         ));
 
-        let errors = check_broken_references(&graph);
+        let rule = BrokenReferencesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1);
 
         if let ValidationError::BrokenReference { from, to, .. } = &errors[0] {

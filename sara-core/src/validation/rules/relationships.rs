@@ -1,23 +1,30 @@
 //! Relationship type validation rule.
 
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
 use crate::model::{Item, ItemId, RelationshipRules, RelationshipType};
+use crate::validation::rule::ValidationRule;
 
-/// Validates that all relationships conform to the allowed type rules.
+/// Relationship type validation rule.
 ///
+/// Validates that all relationships conform to the allowed type rules.
 /// For example:
 /// - UseCase can only refine Solution
 /// - Scenario can only refine UseCase
 /// - SystemRequirement can only derive_from Scenario
-pub fn check_relationships(graph: &KnowledgeGraph) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
+pub struct RelationshipsRule;
 
-    for item in graph.items() {
-        errors.extend(validate_item_relationships(graph, item));
+impl ValidationRule for RelationshipsRule {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+
+        for item in graph.items() {
+            errors.extend(validate_item_relationships(graph, item));
+        }
+
+        errors
     }
-
-    errors
 }
 
 /// Checks references of a specific relationship type and collects validation errors.
@@ -127,7 +134,8 @@ mod tests {
             },
         ));
 
-        let errors = check_relationships(&graph);
+        let rule = RelationshipsRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(
             errors.is_empty(),
             "Valid relationship should not produce errors"
@@ -148,7 +156,8 @@ mod tests {
             },
         ));
 
-        let errors = check_relationships(&graph);
+        let rule = RelationshipsRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1, "Invalid relationship should produce error");
 
         if let ValidationError::InvalidRelationship {
@@ -180,7 +189,8 @@ mod tests {
         ));
         graph.add_item(create_test_item("UC-001", ItemType::UseCase));
 
-        let errors = check_relationships(&graph);
+        let rule = RelationshipsRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(errors.is_empty());
     }
 }

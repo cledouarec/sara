@@ -58,7 +58,7 @@ mod tests {
 paths = ["./docs", "../other-repo"]
 
 [validation]
-strict_orphans = true
+strict_mode = true
 
 [output]
 colors = true
@@ -70,7 +70,7 @@ paths = ["./templates/*.md"]
 
         let config = parse_config(toml, Path::new("test.toml")).unwrap();
         assert_eq!(config.repositories.paths.len(), 2);
-        assert!(config.validation.strict_orphans);
+        assert!(config.validation.strict_mode);
         assert!(config.output.colors);
         assert!(!config.output.emojis);
         assert_eq!(config.templates.paths.len(), 1);
@@ -85,7 +85,7 @@ paths = ["./docs"]
 
         let config = parse_config(toml, Path::new("test.toml")).unwrap();
         assert_eq!(config.repositories.paths, vec![PathBuf::from("./docs")]);
-        assert!(!config.validation.strict_orphans);
+        assert!(!config.validation.strict_mode);
         assert!(config.output.colors);
         assert!(config.output.emojis);
     }

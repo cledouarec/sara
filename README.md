@@ -436,7 +436,7 @@ SARA validates your relationships to ensure graph integrity:
 # Validate all relationships
 sara validate
 
-# Strict mode: treat orphans as errors
+# Strict mode: treat non-critical issues as errors
 sara validate --strict
 ```
 
@@ -452,7 +452,7 @@ paths = [
 ]
 
 [validation]
-strict_orphans = false  # Treat orphans as errors when true
+strict_mode = false  # Enable strict validation (non-critical issues become errors)
 
 [output]
 colors = true

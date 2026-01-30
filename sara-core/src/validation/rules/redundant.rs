@@ -2,9 +2,78 @@
 
 use std::collections::HashSet;
 
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
 use crate::model::{Item, ItemId, RelationshipType};
+use crate::validation::rule::{Severity, ValidationRule};
+
+/// Redundant relationship detection rule (warning).
+///
+/// Detects redundant relationships where both items declare the same link.
+/// For example, if SARCH-001 has `satisfies: [SYSREQ-00001]` and SYSREQ-00001
+/// has `is_satisfied_by: [SARCH-001]`, this is redundant - only one declaration
+/// is needed since the inverse is automatically inferred.
+pub struct RedundantRelationshipsRule;
+
+impl ValidationRule for RedundantRelationshipsRule {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        let mut errors = Vec::new();
+        let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
+
+        for item in graph.items() {
+            // Check downstream declarations against upstream declarations in target items
+
+            // is_refined_by <-> refines
+            check_redundant_pair(
+                item,
+                graph,
+                &item.downstream.is_refined_by,
+                |target| target.upstream.refines.contains(&item.id),
+                &RelationshipPair {
+                    from_rel: RelationshipType::IsRefinedBy,
+                    to_rel: RelationshipType::Refines,
+                },
+                &mut seen_pairs,
+                &mut errors,
+            );
+
+            // derives <-> derives_from
+            check_redundant_pair(
+                item,
+                graph,
+                &item.downstream.derives,
+                |target| target.upstream.derives_from.contains(&item.id),
+                &RelationshipPair {
+                    from_rel: RelationshipType::Derives,
+                    to_rel: RelationshipType::DerivesFrom,
+                },
+                &mut seen_pairs,
+                &mut errors,
+            );
+
+            // is_satisfied_by <-> satisfies
+            check_redundant_pair(
+                item,
+                graph,
+                &item.downstream.is_satisfied_by,
+                |target| target.upstream.satisfies.contains(&item.id),
+                &RelationshipPair {
+                    from_rel: RelationshipType::IsSatisfiedBy,
+                    to_rel: RelationshipType::Satisfies,
+                },
+                &mut seen_pairs,
+                &mut errors,
+            );
+        }
+
+        errors
+    }
+
+    fn severity(&self) -> Severity {
+        Severity::Warning
+    }
+}
 
 /// Relationship pair configuration for redundancy checking.
 struct RelationshipPair {
@@ -20,7 +89,7 @@ fn check_redundant_pair<F>(
     has_inverse: F,
     pair: &RelationshipPair,
     seen_pairs: &mut HashSet<(String, String)>,
-    warnings: &mut Vec<ValidationError>,
+    errors: &mut Vec<ValidationError>,
 ) where
     F: Fn(&Item) -> bool,
 {
@@ -30,7 +99,7 @@ fn check_redundant_pair<F>(
         {
             let pair_key = make_pair_key(&item.id, target_id);
             if seen_pairs.insert(pair_key) {
-                warnings.push(ValidationError::RedundantRelationship {
+                errors.push(ValidationError::RedundantRelationship {
                     from_id: item.id.clone(),
                     to_id: target_id.clone(),
                     from_rel: pair.from_rel,
@@ -41,64 +110,6 @@ fn check_redundant_pair<F>(
             }
         }
     }
-}
-
-/// Detects redundant relationships where both items declare the same link.
-///
-/// For example, if SARCH-001 has `satisfies: [SYSREQ-00001]` and SYSREQ-00001
-/// has `is_satisfied_by: [SARCH-001]`, this is redundant - only one declaration
-/// is needed since the inverse is automatically inferred.
-pub fn check_redundant_relationships(graph: &KnowledgeGraph) -> Vec<ValidationError> {
-    let mut warnings = Vec::new();
-    let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
-
-    for item in graph.items() {
-        // Check downstream declarations against upstream declarations in target items
-
-        // is_refined_by <-> refines
-        check_redundant_pair(
-            item,
-            graph,
-            &item.downstream.is_refined_by,
-            |target| target.upstream.refines.contains(&item.id),
-            &RelationshipPair {
-                from_rel: RelationshipType::IsRefinedBy,
-                to_rel: RelationshipType::Refines,
-            },
-            &mut seen_pairs,
-            &mut warnings,
-        );
-
-        // derives <-> derives_from
-        check_redundant_pair(
-            item,
-            graph,
-            &item.downstream.derives,
-            |target| target.upstream.derives_from.contains(&item.id),
-            &RelationshipPair {
-                from_rel: RelationshipType::Derives,
-                to_rel: RelationshipType::DerivesFrom,
-            },
-            &mut seen_pairs,
-            &mut warnings,
-        );
-
-        // is_satisfied_by <-> satisfies
-        check_redundant_pair(
-            item,
-            graph,
-            &item.downstream.is_satisfied_by,
-            |target| target.upstream.satisfies.contains(&item.id),
-            &RelationshipPair {
-                from_rel: RelationshipType::IsSatisfiedBy,
-                to_rel: RelationshipType::Satisfies,
-            },
-            &mut seen_pairs,
-            &mut warnings,
-        );
-    }
-
-    warnings
 }
 
 /// Creates a canonical pair key for deduplication (smaller ID first).
@@ -140,7 +151,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let warnings = check_redundant_relationships(&graph);
+        let rule = RedundantRelationshipsRule;
+        let warnings = rule.validate(&graph, &ValidationConfig::default());
         assert!(warnings.is_empty());
     }
 
@@ -171,7 +183,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let warnings = check_redundant_relationships(&graph);
+        let rule = RedundantRelationshipsRule;
+        let warnings = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
             &warnings[0],
