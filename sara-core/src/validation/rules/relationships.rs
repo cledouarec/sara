@@ -45,7 +45,6 @@ fn check_references<'a>(
                 from_type: item.item_type,
                 to_type: target.item_type,
                 rel_type,
-                location: Some(item.source.clone()),
             });
         }
     }

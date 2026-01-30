@@ -4,7 +4,7 @@ use std::collections::HashMap;
 
 use crate::config::ValidationConfig;
 use crate::error::ValidationError;
-use crate::model::{Item, SourceLocation};
+use crate::model::Item;
 use crate::validation::rule::ValidationRule;
 
 /// Duplicate identifier detection rule.
@@ -17,23 +17,19 @@ pub struct DuplicatesRule;
 
 impl ValidationRule for DuplicatesRule {
     fn pre_validate(&self, items: &[Item], _config: &ValidationConfig) -> Vec<ValidationError> {
-        // Group items by ID to find duplicates
-        let mut id_locations: HashMap<&str, Vec<SourceLocation>> = HashMap::new();
+        // Count occurrences of each ID
+        let mut id_counts: HashMap<&str, usize> = HashMap::new();
 
         for item in items {
-            id_locations
-                .entry(item.id.as_str())
-                .or_default()
-                .push(item.source.clone());
+            *id_counts.entry(item.id.as_str()).or_default() += 1;
         }
 
-        // Report duplicates (IDs with more than one location)
-        id_locations
+        // Report duplicates (IDs with more than one occurrence)
+        id_counts
             .into_iter()
-            .filter(|(_, locations)| locations.len() > 1)
-            .map(|(id, locations)| ValidationError::DuplicateIdentifier {
+            .filter(|(_, count)| *count > 1)
+            .map(|(id, _)| ValidationError::DuplicateIdentifier {
                 id: crate::model::ItemId::new_unchecked(id),
-                locations,
             })
             .collect()
     }
@@ -68,9 +64,8 @@ mod tests {
         let errors = rule.pre_validate(&items, &ValidationConfig::default());
         assert_eq!(errors.len(), 1);
 
-        if let ValidationError::DuplicateIdentifier { id, locations } = &errors[0] {
+        if let ValidationError::DuplicateIdentifier { id } = &errors[0] {
             assert_eq!(id.as_str(), "SOL-001");
-            assert_eq!(locations.len(), 2);
         } else {
             panic!("Expected DuplicateIdentifier error");
         }
@@ -87,12 +82,6 @@ mod tests {
         let rule = DuplicatesRule;
         let errors = rule.pre_validate(&items, &ValidationConfig::default());
         assert_eq!(errors.len(), 1, "Should be one error for one duplicate ID");
-
-        if let ValidationError::DuplicateIdentifier { locations, .. } = &errors[0] {
-            assert_eq!(locations.len(), 3, "Should have all three locations");
-        } else {
-            panic!("Expected DuplicateIdentifier error");
-        }
     }
 
     #[test]
