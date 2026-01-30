@@ -15,24 +15,15 @@ pub struct KnowledgeGraph {
 
     /// Index for O(1) lookup by ItemId.
     index: HashMap<ItemId, NodeIndex>,
-
-    /// Validation mode (strict orphan checking).
-    strict_mode: bool,
 }
 
 impl KnowledgeGraph {
     /// Creates a new empty knowledge graph.
-    pub fn new(strict_mode: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
             index: HashMap::new(),
-            strict_mode,
         }
-    }
-
-    /// Returns whether strict mode is enabled.
-    pub fn is_strict_mode(&self) -> bool {
-        self.strict_mode
     }
 
     /// Returns the number of items in the graph.
@@ -186,7 +177,7 @@ impl KnowledgeGraph {
 
 impl Default for KnowledgeGraph {
     fn default() -> Self {
-        Self::new(false)
+        Self::new()
     }
 }
 
@@ -197,7 +188,7 @@ mod tests {
 
     #[test]
     fn test_add_and_get_item() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         let item = create_test_item("SOL-001", ItemType::Solution);
         graph.add_item(item);
 
@@ -208,7 +199,7 @@ mod tests {
 
     #[test]
     fn test_items_by_type() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
         graph.add_item(create_test_item("UC-001", ItemType::UseCase));
         graph.add_item(create_test_item("UC-002", ItemType::UseCase));
@@ -222,7 +213,7 @@ mod tests {
 
     #[test]
     fn test_item_count() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         assert_eq!(graph.item_count(), 0);
 
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));

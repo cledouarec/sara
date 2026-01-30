@@ -12,7 +12,6 @@ use crate::model::{Item, ItemId, RelationshipType};
 #[derive(Debug, Default)]
 pub struct GraphBuilder {
     items: Vec<Item>,
-    strict_mode: bool,
     repositories: Vec<PathBuf>,
 }
 
@@ -20,12 +19,6 @@ impl GraphBuilder {
     /// Creates a new graph builder.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Sets strict orphan checking mode.
-    pub fn with_strict_mode(mut self, strict: bool) -> Self {
-        self.strict_mode = strict;
-        self
     }
 
     /// Adds a repository path.
@@ -48,7 +41,7 @@ impl GraphBuilder {
 
     /// Builds the knowledge graph.
     pub fn build(self) -> Result<KnowledgeGraph, SaraError> {
-        let mut graph = KnowledgeGraph::new(self.strict_mode);
+        let mut graph = KnowledgeGraph::new();
 
         // First pass: add all items
         for item in &self.items {
@@ -182,17 +175,6 @@ mod tests {
 
         assert_eq!(graph.item_count(), 2);
         assert_eq!(graph.relationship_count(), 1);
-    }
-
-    #[test]
-    fn test_strict_mode() {
-        let graph = GraphBuilder::new()
-            .with_strict_mode(true)
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .build()
-            .unwrap();
-
-        assert!(graph.is_strict_mode());
     }
 
     #[test]

@@ -1,13 +1,12 @@
 //! CLI command implementations.
 
+mod check;
 mod diff;
 mod edit;
 mod init;
 mod interactive;
-mod parse;
 mod query;
 mod report;
-mod validate;
 
 use std::env;
 use std::error::Error;
@@ -23,13 +22,12 @@ use sara_core::repository::parse_repositories;
 use crate::Cli;
 use crate::output::OutputConfig;
 
+use self::check::CheckArgs;
 use self::diff::DiffArgs;
 use self::edit::EditArgs;
 use self::init::InitArgs;
-use self::parse::ParseArgs;
 use self::query::QueryArgs;
 use self::report::ReportArgs;
-use self::validate::ValidateArgs;
 
 /// Shared context for command execution.
 #[derive(Debug, Clone)]
@@ -54,6 +52,9 @@ impl CommandContext {
 #[derive(Subcommand, Debug)]
 #[command(disable_help_subcommand = true)]
 pub enum Commands {
+    /// Parse documents, build knowledge graph, and validate integrity
+    Check(CheckArgs),
+
     /// Compare graphs between Git references
     Diff(DiffArgs),
 
@@ -82,17 +83,11 @@ pub enum Commands {
     ///   sara init sysreq doc.md --specification "" # Create system requirement
     Init(InitArgs),
 
-    /// Parse documents and build the knowledge graph
-    Parse(ParseArgs),
-
     /// Query items and traceability chains
     Query(QueryArgs),
 
     /// Generate coverage and traceability reports
     Report(ReportArgs),
-
-    /// Validate graph integrity
-    Validate(ValidateArgs),
 }
 
 /// Returns repositories: CLI args take precedence, then config file, then current directory.
@@ -121,12 +116,11 @@ pub fn run(cli: &Cli, file_config: Option<&Config>) -> Result<ExitCode, Box<dyn 
     };
 
     match &cli.command {
+        Commands::Check(args) => check::run(args, &ctx),
         Commands::Diff(args) => diff::run(args, ctx.repositories.clone(), &ctx),
         Commands::Edit(args) => edit::run(args, &ctx),
         Commands::Init(args) => init::run(args, &ctx),
-        Commands::Parse(args) => parse::run(args, &ctx),
         Commands::Query(args) => query::run(args, &ctx),
         Commands::Report(args) => report::run(args, &ctx),
-        Commands::Validate(args) => validate::run(args, &ctx),
     }
 }
