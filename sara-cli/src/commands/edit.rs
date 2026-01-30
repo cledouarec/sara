@@ -11,7 +11,7 @@ use inquire::{Confirm, InquireError};
 
 use sara_core::edit::{EditOptions, EditService, EditedValues, ItemContext};
 use sara_core::error::EditError;
-use sara_core::graph::KnowledgeGraph;
+use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};
 
 use super::CommandContext;
@@ -62,7 +62,8 @@ pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Er
     let service = EditService::new();
 
     // Build the knowledge graph
-    let graph = ctx.build_graph()?;
+    let items = ctx.parse_items(None)?;
+    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
 
     // Look up the item (FR-054)
     let item = match service.lookup_item(&graph, &args.item_id) {

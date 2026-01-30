@@ -1,6 +1,6 @@
 //! Diff service implementation.
 
-use crate::graph::{GraphBuilder, GraphDiff};
+use crate::graph::{GraphDiff, KnowledgeGraphBuilder};
 use crate::repository::{GitReader, GitRef, parse_directory};
 
 use super::DiffOptions;
@@ -107,12 +107,12 @@ impl DiffService {
             })?;
 
         // Build graphs from each reference
-        let graph1 = GraphBuilder::new()
+        let graph1 = KnowledgeGraphBuilder::new()
             .add_items(items1)
             .build()
             .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
 
-        let graph2 = GraphBuilder::new()
+        let graph2 = KnowledgeGraphBuilder::new()
             .add_items(items2)
             .build()
             .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
@@ -132,12 +132,12 @@ impl DiffService {
     fn diff_working_directory(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
         let items = self.parse_repositories(&opts.repositories)?;
 
-        let graph1 = GraphBuilder::new()
+        let graph1 = KnowledgeGraphBuilder::new()
             .add_items(items.clone())
             .build()
             .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
 
-        let graph2 = GraphBuilder::new()
+        let graph2 = KnowledgeGraphBuilder::new()
             .add_items(items)
             .build()
             .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;

@@ -138,17 +138,16 @@ pub fn pre_validate(items: &[Item], strict: bool) -> ValidationReport {
 mod tests {
     use super::*;
     use crate::error::ValidationError;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{
-        ItemAttributes, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
-        UpstreamRefs,
+        ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
     };
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
     use std::path::PathBuf;
 
     #[test]
     fn test_valid_graph() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .add_item(create_test_item_with_upstream(
                 "UC-001",
@@ -168,7 +167,7 @@ mod tests {
 
     #[test]
     fn test_broken_reference() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_upstream(
                 "UC-001",
                 ItemType::UseCase,
@@ -187,7 +186,7 @@ mod tests {
 
     #[test]
     fn test_orphan_warning() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()
             .unwrap();
@@ -203,7 +202,7 @@ mod tests {
 
     #[test]
     fn test_orphan_error_strict() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()
             .unwrap();
@@ -216,8 +215,6 @@ mod tests {
 
     #[test]
     fn test_cycle_detection() {
-        let mut graph = KnowledgeGraph::new();
-
         // Create a cycle
         let scen1 = create_test_item_with_upstream(
             "SCEN-001",
@@ -236,19 +233,11 @@ mod tests {
             },
         );
 
-        graph.add_item(scen1);
-        graph.add_item(scen2);
-
-        graph.add_relationship(
-            &ItemId::new_unchecked("SCEN-001"),
-            &ItemId::new_unchecked("SCEN-002"),
-            RelationshipType::Refines,
-        );
-        graph.add_relationship(
-            &ItemId::new_unchecked("SCEN-002"),
-            &ItemId::new_unchecked("SCEN-001"),
-            RelationshipType::Refines,
-        );
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(scen1)
+            .add_item(scen2)
+            .build()
+            .unwrap();
 
         let report = validate(&graph, false);
         assert!(!report.is_valid(), "Cycle should be detected");
@@ -256,18 +245,19 @@ mod tests {
 
     #[test]
     fn test_invalid_relationship() {
-        let mut graph = KnowledgeGraph::new();
-
         // Scenario trying to refine Solution directly (invalid)
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item_with_upstream(
-            "SCEN-001",
-            ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
+                "SCEN-001",
+                ItemType::Scenario,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-001")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
         let report = validate(&graph, false);
         assert!(

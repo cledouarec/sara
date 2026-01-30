@@ -28,7 +28,7 @@ use std::path::Path;
 use sara_core::{
     config::load_config,
     repository::parse_directory,
-    graph::GraphBuilder,
+    graph::KnowledgeGraphBuilder,
     validation::Validator,
     traverse_upstream,
     ItemId, TraversalOptions,
@@ -42,7 +42,7 @@ fn main() -> sara_core::Result<()> {
     let items = parse_directory(Path::new("./docs"))?;
 
     // Build the knowledge graph
-    let graph = GraphBuilder::new()
+    let graph = KnowledgeGraphBuilder::new()
         .add_items(items)
         .build()?;
 

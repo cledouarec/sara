@@ -35,13 +35,16 @@ impl ValidationRule for OrphansRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemId, ItemType, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_solution_not_orphan() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .build()
+            .unwrap();
 
         let rule = OrphansRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -53,8 +56,10 @@ mod tests {
 
     #[test]
     fn test_use_case_orphan_detected() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item("UC-001", ItemType::UseCase));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .build()
+            .unwrap();
 
         let rule = OrphansRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -70,16 +75,18 @@ mod tests {
 
     #[test]
     fn test_linked_item_not_orphan() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item_with_upstream(
-            "UC-001",
-            ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
+                "UC-001",
+                ItemType::UseCase,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-001")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
         let rule = OrphansRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());

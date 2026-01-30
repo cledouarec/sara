@@ -90,6 +90,7 @@ fn contains_rfc2119_keyword(text: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation};
     use std::path::PathBuf;
 
@@ -123,13 +124,12 @@ mod tests {
 
     #[test]
     fn test_valid_metadata_with_rfc2119_keyword() {
-        let mut graph = KnowledgeGraph::new();
         let item = create_item_with_spec(
             "SYSREQ-001",
             ItemType::SystemRequirement,
             "The system SHALL respond within 100ms",
         );
-        graph.add_item(item);
+        let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
 
         let rule = MetadataRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -138,9 +138,8 @@ mod tests {
 
     #[test]
     fn test_empty_specification_fails() {
-        let mut graph = KnowledgeGraph::new();
         let item = create_item_with_spec("SYSREQ-001", ItemType::SystemRequirement, "");
-        graph.add_item(item);
+        let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
 
         let rule = MetadataRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -153,13 +152,12 @@ mod tests {
 
     #[test]
     fn test_specification_without_rfc2119_keyword_fails() {
-        let mut graph = KnowledgeGraph::new();
         let item = create_item_with_spec(
             "SYSREQ-001",
             ItemType::SystemRequirement,
             "The system responds within 100ms",
         );
-        graph.add_item(item);
+        let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
 
         let rule = MetadataRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
