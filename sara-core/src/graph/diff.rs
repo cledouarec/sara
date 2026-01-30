@@ -8,7 +8,7 @@ use crate::graph::KnowledgeGraph;
 use crate::model::{Item, ItemId};
 
 /// A diff between two knowledge graphs.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 pub struct GraphDiff {
     /// Items added (present in new, not in old).
     pub added_items: Vec<ItemDiff>,
@@ -89,25 +89,21 @@ impl GraphDiff {
         let mut removed_items = Vec::new();
         let mut modified_items = Vec::new();
 
-        // Collect item IDs from both graphs
         let old_ids: HashSet<_> = old_graph.item_ids().cloned().collect();
         let new_ids: HashSet<_> = new_graph.item_ids().cloned().collect();
 
-        // Find added items (in new but not in old)
         for id in new_ids.difference(&old_ids) {
             if let Some(item) = new_graph.get(id) {
                 added_items.push(ItemDiff::from(item));
             }
         }
 
-        // Find removed items (in old but not in new)
         for id in old_ids.difference(&new_ids) {
             if let Some(item) = old_graph.get(id) {
                 removed_items.push(ItemDiff::from(item));
             }
         }
 
-        // Find modified items (in both, check for changes)
         for id in old_ids.intersection(&new_ids) {
             if let (Some(old_item), Some(new_item)) = (old_graph.get(id), new_graph.get(id)) {
                 let changes = Self::compute_item_changes(old_item, new_item);
@@ -122,7 +118,6 @@ impl GraphDiff {
             }
         }
 
-        // Compute relationship diffs
         let old_rels: HashSet<_> = old_graph
             .relationships()
             .into_iter()
@@ -174,7 +169,6 @@ impl GraphDiff {
     fn compute_item_changes(old: &Item, new: &Item) -> Vec<FieldChange> {
         let mut changes = Vec::new();
 
-        // Check name change
         if old.name != new.name {
             changes.push(FieldChange {
                 field: "name".to_string(),
@@ -183,7 +177,6 @@ impl GraphDiff {
             });
         }
 
-        // Check description change
         if old.description != new.description {
             changes.push(FieldChange {
                 field: "description".to_string(),
@@ -192,7 +185,6 @@ impl GraphDiff {
             });
         }
 
-        // Check specification change (for requirement types)
         if old.attributes.specification() != new.attributes.specification() {
             changes.push(FieldChange {
                 field: "specification".to_string(),
@@ -201,7 +193,6 @@ impl GraphDiff {
             });
         }
 
-        // Check file path change
         if old.source.file_path != new.source.file_path {
             changes.push(FieldChange {
                 field: "file_path".to_string(),
@@ -210,9 +201,8 @@ impl GraphDiff {
             });
         }
 
-        // Check upstream refs change
-        let old_upstream = Self::refs_to_string(old.upstream.all_ids());
-        let new_upstream = Self::refs_to_string(new.upstream.all_ids());
+        let old_upstream = Self::refs_to_string(old.all_upstream_ids());
+        let new_upstream = Self::refs_to_string(new.all_upstream_ids());
         if old_upstream != new_upstream {
             changes.push(FieldChange {
                 field: "upstream".to_string(),
@@ -221,9 +211,8 @@ impl GraphDiff {
             });
         }
 
-        // Check downstream refs change
-        let old_downstream = Self::refs_to_string(old.downstream.all_ids());
-        let new_downstream = Self::refs_to_string(new.downstream.all_ids());
+        let old_downstream = Self::refs_to_string(old.all_downstream_ids());
+        let new_downstream = Self::refs_to_string(new.all_downstream_ids());
         if old_downstream != new_downstream {
             changes.push(FieldChange {
                 field: "downstream".to_string(),

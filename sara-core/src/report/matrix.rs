@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldName, ItemType};
+use crate::model::ItemType;
 
 /// A row in the traceability matrix.
 #[derive(Debug, Clone, Serialize)]
@@ -84,24 +84,16 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        Self::add_targets(
-            &item.upstream.refines,
-            FieldName::Refines.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.upstream.derives_from,
-            FieldName::DerivesFrom.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.upstream.satisfies,
-            FieldName::Satisfies.as_str(),
-            graph,
-            targets,
-        );
+        for rel in item.upstream_relationships() {
+            if let Some(target) = graph.get(&rel.to) {
+                targets.push(MatrixTarget {
+                    id: rel.to.as_str().to_string(),
+                    name: target.name.clone(),
+                    target_type: target.item_type.display_name().to_string(),
+                    relationship: rel.relationship_type.field_name().as_str().to_string(),
+                });
+            }
+        }
     }
 
     /// Collects downstream relationship targets.
@@ -110,40 +102,13 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        Self::add_targets(
-            &item.downstream.is_refined_by,
-            FieldName::IsRefinedBy.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.downstream.derives,
-            FieldName::Derives.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.downstream.is_satisfied_by,
-            FieldName::IsSatisfiedBy.as_str(),
-            graph,
-            targets,
-        );
-    }
-
-    /// Adds targets for a list of reference IDs.
-    fn add_targets(
-        ref_ids: &[crate::model::ItemId],
-        relationship: &str,
-        graph: &KnowledgeGraph,
-        targets: &mut Vec<MatrixTarget>,
-    ) {
-        for ref_id in ref_ids {
-            if let Some(target) = graph.get(ref_id) {
+        for rel in item.downstream_relationships() {
+            if let Some(target) = graph.get(&rel.to) {
                 targets.push(MatrixTarget {
-                    id: ref_id.as_str().to_string(),
+                    id: rel.to.as_str().to_string(),
                     name: target.name.clone(),
                     target_type: target.item_type.display_name().to_string(),
-                    relationship: relationship.to_string(),
+                    relationship: rel.relationship_type.field_name().as_str().to_string(),
                 });
             }
         }
@@ -188,12 +153,10 @@ impl TraceabilityMatrix {
     pub fn to_csv(&self) -> String {
         let mut csv = String::new();
 
-        // Header
         csv.push_str(
             "Source ID,Source Name,Source Type,Target ID,Target Name,Target Type,Relationship\n",
         );
 
-        // Rows
         for row in &self.rows {
             if row.targets.is_empty() {
                 csv.push_str(&format!(
@@ -235,19 +198,16 @@ impl TraceabilityMatrix {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemId, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_matrix_generation() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()

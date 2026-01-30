@@ -6,7 +6,11 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
-use sara_core::init::{InitError, InitOptions, InitResult, InitService, TypeConfig};
+use sara_core::model::{
+    AdrStatus, ItemAttributes, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
+    SourceLocation,
+};
+use sara_core::service::{InitError, InitFileOptions, InitResult, create_item};
 
 use super::CommandContext;
 use super::interactive::{
@@ -251,6 +255,19 @@ const EXIT_FRONTMATTER_EXISTS: u8 = 2;
 const EXIT_INVALID_OPTION: u8 = 3;
 
 // =============================================================================
+// Helper functions
+// =============================================================================
+
+/// Gets the repository root for a file path.
+fn get_repository_root(ctx: &CommandContext, file: &std::path::Path) -> PathBuf {
+    // Use the first repository, or the file's parent directory if absolute
+    ctx.repositories
+        .first()
+        .cloned()
+        .unwrap_or_else(|| file.parent().map(PathBuf::from).unwrap_or_default())
+}
+
+// =============================================================================
 // Command execution
 // =============================================================================
 
@@ -289,16 +306,32 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let result = run_interactive_session(&mut session);
     match handle_interactive_result(result, &ctx.output) {
         Ok(Some(input)) => {
-            // Build TypeConfig from interactive input
-            let type_config = build_type_config_from_interactive(&input);
+            // Build relationships and attributes from interactive input
+            let (relationships, attributes) = build_from_interactive(&input);
 
-            let opts = InitOptions::new(input.file, type_config)
-                .with_id(input.id)
-                .with_name(input.name)
+            // Try to build graph for ID suggestion (optional)
+            let repo_root = get_repository_root(ctx, &input.file);
+
+            let item = ItemBuilder::new()
+                .item_type(input.item_type)
+                .id(ItemId::new_unchecked(&input.id))
+                .name(&input.name)
                 .maybe_description(input.description)
-                .with_force(false);
+                .source(SourceLocation::new(repo_root, input.file))
+                .relationships(relationships)
+                .attributes(attributes)
+                .build();
 
-            run_with_options(opts, ctx)
+            match item {
+                Ok(item) => {
+                    let opts = InitFileOptions::new(item);
+                    run_with_options(opts, ctx)
+                }
+                Err(e) => {
+                    print_error(&ctx.output, &format!("{}", e));
+                    Ok(ExitCode::from(EXIT_INVALID_OPTION))
+                }
+            }
         }
         Ok(None) => Ok(ExitCode::from(130)),
         Err(PromptError::NonInteractiveTerminal) => Ok(ExitCode::from(1)),
@@ -307,233 +340,311 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     }
 }
 
-/// Builds a TypeConfig from interactive session input.
-fn build_type_config_from_interactive(input: &super::interactive::InteractiveInput) -> TypeConfig {
+/// Builds relationships and ItemAttributes from interactive session input.
+fn build_from_interactive(
+    input: &super::interactive::InteractiveInput,
+) -> (Vec<Relationship>, ItemAttributes) {
     use super::interactive::TypeSpecificInput;
-    use sara_core::model::ItemType;
 
-    match (&input.item_type, &input.type_specific) {
-        (ItemType::Solution, _) => TypeConfig::Solution,
-        (ItemType::UseCase, _) => TypeConfig::UseCase {
-            refines: input.traceability.refines.clone(),
-        },
-        (ItemType::Scenario, _) => TypeConfig::Scenario {
-            refines: input.traceability.refines.clone(),
-        },
-        (ItemType::SystemRequirement, TypeSpecificInput::Requirement { specification }) => {
-            TypeConfig::SystemRequirement {
-                specification: specification.clone(),
-                derives_from: input.traceability.derives_from.clone(),
-                depends_on: input.traceability.depends_on.clone(),
-            }
-        }
-        (ItemType::SystemArchitecture, TypeSpecificInput::SystemArchitecture { platform }) => {
-            TypeConfig::SystemArchitecture {
-                platform: platform.clone(),
-                satisfies: input.traceability.satisfies.clone(),
-            }
-        }
-        (ItemType::SoftwareRequirement, TypeSpecificInput::Requirement { specification }) => {
-            TypeConfig::SoftwareRequirement {
-                specification: specification.clone(),
-                derives_from: input.traceability.derives_from.clone(),
-                depends_on: input.traceability.depends_on.clone(),
-            }
-        }
-        (ItemType::HardwareRequirement, TypeSpecificInput::Requirement { specification }) => {
-            TypeConfig::HardwareRequirement {
-                specification: specification.clone(),
-                derives_from: input.traceability.derives_from.clone(),
-                depends_on: input.traceability.depends_on.clone(),
-            }
-        }
-        (ItemType::SoftwareDetailedDesign, _) => TypeConfig::SoftwareDetailedDesign {
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        (ItemType::HardwareDetailedDesign, _) => TypeConfig::HardwareDetailedDesign {
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        (ItemType::ArchitectureDecisionRecord, TypeSpecificInput::Adr { deciders }) => {
-            TypeConfig::Adr {
-                status: None,
-                deciders: deciders.clone(),
-                justifies: input.traceability.justifies.clone(),
-                supersedes: Vec::new(),
-                superseded_by: None,
-            }
-        }
-        // Fallback cases - should not happen in practice
-        (ItemType::SystemRequirement, _) => TypeConfig::SystemRequirement {
-            specification: None,
-            derives_from: input.traceability.derives_from.clone(),
-            depends_on: input.traceability.depends_on.clone(),
-        },
-        (ItemType::SoftwareRequirement, _) => TypeConfig::SoftwareRequirement {
-            specification: None,
-            derives_from: input.traceability.derives_from.clone(),
-            depends_on: input.traceability.depends_on.clone(),
-        },
-        (ItemType::HardwareRequirement, _) => TypeConfig::HardwareRequirement {
-            specification: None,
-            derives_from: input.traceability.derives_from.clone(),
-            depends_on: input.traceability.depends_on.clone(),
-        },
-        (ItemType::SystemArchitecture, _) => TypeConfig::SystemArchitecture {
-            platform: None,
-            satisfies: input.traceability.satisfies.clone(),
-        },
-        (ItemType::ArchitectureDecisionRecord, _) => TypeConfig::Adr {
-            status: None,
-            deciders: Vec::new(),
-            justifies: input.traceability.justifies.clone(),
-            supersedes: Vec::new(),
-            superseded_by: None,
-        },
+    let mut relationships = Vec::new();
+
+    // Refines relationships
+    for id in &input.traceability.refines {
+        relationships.push(Relationship::new(
+            ItemId::new_unchecked(id),
+            RelationshipType::Refines,
+        ));
     }
+
+    // DerivesFrom relationships
+    for id in &input.traceability.derives_from {
+        relationships.push(Relationship::new(
+            ItemId::new_unchecked(id),
+            RelationshipType::DerivesFrom,
+        ));
+    }
+
+    // Satisfies relationships
+    for id in &input.traceability.satisfies {
+        relationships.push(Relationship::new(
+            ItemId::new_unchecked(id),
+            RelationshipType::Satisfies,
+        ));
+    }
+
+    // Justifies relationships
+    for id in &input.traceability.justifies {
+        relationships.push(Relationship::new(
+            ItemId::new_unchecked(id),
+            RelationshipType::Justifies,
+        ));
+    }
+
+    let attributes = match &input.type_specific {
+        TypeSpecificInput::Requirement { specification } => match input.item_type {
+            ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
+                specification: specification.clone().unwrap_or_default(),
+                depends_on: input
+                    .traceability
+                    .depends_on
+                    .iter()
+                    .map(ItemId::new_unchecked)
+                    .collect(),
+            },
+            ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
+                specification: specification.clone().unwrap_or_default(),
+                depends_on: input
+                    .traceability
+                    .depends_on
+                    .iter()
+                    .map(ItemId::new_unchecked)
+                    .collect(),
+            },
+            ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
+                specification: specification.clone().unwrap_or_default(),
+                depends_on: input
+                    .traceability
+                    .depends_on
+                    .iter()
+                    .map(ItemId::new_unchecked)
+                    .collect(),
+            },
+            _ => ItemAttributes::for_type(input.item_type),
+        },
+        TypeSpecificInput::SystemArchitecture { platform } => ItemAttributes::SystemArchitecture {
+            platform: platform.clone(),
+        },
+        TypeSpecificInput::Adr { deciders } => ItemAttributes::Adr {
+            status: AdrStatus::Proposed,
+            deciders: deciders.clone(),
+            supersedes: Vec::new(),
+        },
+        TypeSpecificInput::None => ItemAttributes::for_type(input.item_type),
+    };
+
+    (relationships, attributes)
 }
 
 fn run_subcommand(
     subcommand: &InitSubcommand,
     ctx: &CommandContext,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let opts = match subcommand {
+    // Try to build graph for ID suggestion (optional)
+    let graph = ctx.build_graph().ok();
+
+    // Extract common fields and type-specific data, then build Item
+    let (item_type, common, relationships, attributes) = match subcommand {
         InitSubcommand::Adr(args) => {
-            let type_config = TypeConfig::Adr {
-                status: args.status.clone(),
+            let status = args
+                .status
+                .as_ref()
+                .and_then(|s| s.parse::<AdrStatus>().ok())
+                .unwrap_or(AdrStatus::Proposed);
+
+            let relationships: Vec<Relationship> = args
+                .justifies
+                .iter()
+                .map(|id| Relationship::new(ItemId::new_unchecked(id), RelationshipType::Justifies))
+                .collect();
+
+            let attributes = ItemAttributes::Adr {
+                status,
                 deciders: args.deciders.clone(),
-                justifies: args.justifies.clone(),
-                supersedes: args.supersedes.clone(),
-                superseded_by: None,
+                supersedes: args.supersedes.iter().map(ItemId::new_unchecked).collect(),
             };
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::ArchitectureDecisionRecord,
+                &args.common,
+                relationships,
+                attributes,
+            )
         }
 
-        InitSubcommand::Solution(args) => {
-            InitOptions::new(args.common.file.clone(), TypeConfig::Solution)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
-        }
+        InitSubcommand::Solution(args) => (
+            ItemType::Solution,
+            &args.common,
+            Vec::new(),
+            ItemAttributes::Solution,
+        ),
 
         InitSubcommand::UseCase(args) => {
-            let type_config = TypeConfig::UseCase {
-                refines: args.refines.clone(),
-            };
+            let relationships: Vec<Relationship> = args
+                .refines
+                .iter()
+                .map(|id| Relationship::new(ItemId::new_unchecked(id), RelationshipType::Refines))
+                .collect();
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::UseCase,
+                &args.common,
+                relationships,
+                ItemAttributes::UseCase,
+            )
         }
 
         InitSubcommand::Scenario(args) => {
-            let type_config = TypeConfig::Scenario {
-                refines: args.refines.clone(),
-            };
+            let relationships: Vec<Relationship> = args
+                .refines
+                .iter()
+                .map(|id| Relationship::new(ItemId::new_unchecked(id), RelationshipType::Refines))
+                .collect();
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::Scenario,
+                &args.common,
+                relationships,
+                ItemAttributes::Scenario,
+            )
         }
 
         InitSubcommand::SystemRequirement(args) => {
-            let type_config = TypeConfig::SystemRequirement {
-                specification: args.specification.clone(),
-                derives_from: args.derives_from.clone(),
-                depends_on: args.depends_on.clone(),
+            let relationships: Vec<Relationship> = args
+                .derives_from
+                .iter()
+                .map(|id| {
+                    Relationship::new(ItemId::new_unchecked(id), RelationshipType::DerivesFrom)
+                })
+                .collect();
+
+            let attributes = ItemAttributes::SystemRequirement {
+                specification: args.specification.clone().unwrap_or_default(),
+                depends_on: args.depends_on.iter().map(ItemId::new_unchecked).collect(),
             };
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::SystemRequirement,
+                &args.common,
+                relationships,
+                attributes,
+            )
         }
 
         InitSubcommand::SystemArchitecture(args) => {
-            let type_config = TypeConfig::SystemArchitecture {
+            let relationships: Vec<Relationship> = args
+                .satisfies
+                .iter()
+                .map(|id| Relationship::new(ItemId::new_unchecked(id), RelationshipType::Satisfies))
+                .collect();
+
+            let attributes = ItemAttributes::SystemArchitecture {
                 platform: args.platform.clone(),
-                satisfies: args.satisfies.clone(),
             };
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::SystemArchitecture,
+                &args.common,
+                relationships,
+                attributes,
+            )
         }
 
         InitSubcommand::SoftwareRequirement(args) => {
-            let type_config = TypeConfig::SoftwareRequirement {
-                specification: args.specification.clone(),
-                derives_from: args.derives_from.clone(),
-                depends_on: args.depends_on.clone(),
+            let relationships: Vec<Relationship> = args
+                .derives_from
+                .iter()
+                .map(|id| {
+                    Relationship::new(ItemId::new_unchecked(id), RelationshipType::DerivesFrom)
+                })
+                .collect();
+
+            let attributes = ItemAttributes::SoftwareRequirement {
+                specification: args.specification.clone().unwrap_or_default(),
+                depends_on: args.depends_on.iter().map(ItemId::new_unchecked).collect(),
             };
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::SoftwareRequirement,
+                &args.common,
+                relationships,
+                attributes,
+            )
         }
 
         InitSubcommand::HardwareRequirement(args) => {
-            let type_config = TypeConfig::HardwareRequirement {
-                specification: args.specification.clone(),
-                derives_from: args.derives_from.clone(),
-                depends_on: args.depends_on.clone(),
+            let relationships: Vec<Relationship> = args
+                .derives_from
+                .iter()
+                .map(|id| {
+                    Relationship::new(ItemId::new_unchecked(id), RelationshipType::DerivesFrom)
+                })
+                .collect();
+
+            let attributes = ItemAttributes::HardwareRequirement {
+                specification: args.specification.clone().unwrap_or_default(),
+                depends_on: args.depends_on.iter().map(ItemId::new_unchecked).collect(),
             };
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::HardwareRequirement,
+                &args.common,
+                relationships,
+                attributes,
+            )
         }
 
         InitSubcommand::SoftwareDetailedDesign(args) => {
-            let type_config = TypeConfig::SoftwareDetailedDesign {
-                satisfies: args.satisfies.clone(),
-            };
+            let relationships: Vec<Relationship> = args
+                .satisfies
+                .iter()
+                .map(|id| Relationship::new(ItemId::new_unchecked(id), RelationshipType::Satisfies))
+                .collect();
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::SoftwareDetailedDesign,
+                &args.common,
+                relationships,
+                ItemAttributes::SoftwareDetailedDesign,
+            )
         }
 
         InitSubcommand::HardwareDetailedDesign(args) => {
-            let type_config = TypeConfig::HardwareDetailedDesign {
-                satisfies: args.satisfies.clone(),
-            };
+            let relationships: Vec<Relationship> = args
+                .satisfies
+                .iter()
+                .map(|id| Relationship::new(ItemId::new_unchecked(id), RelationshipType::Satisfies))
+                .collect();
 
-            InitOptions::new(args.common.file.clone(), type_config)
-                .maybe_id(args.common.id.clone())
-                .maybe_name(args.common.name.clone())
-                .maybe_description(args.common.description.clone())
-                .with_force(args.common.force)
+            (
+                ItemType::HardwareDetailedDesign,
+                &args.common,
+                relationships,
+                ItemAttributes::HardwareDetailedDesign,
+            )
         }
     };
 
-    run_with_options(opts, ctx)
+    let repo_root = get_repository_root(ctx, &common.file);
+
+    let item = ItemBuilder::new()
+        .item_type(item_type)
+        .maybe_id(common.id.clone())
+        .maybe_name(common.name.clone())
+        .maybe_description(common.description.clone())
+        .source(SourceLocation::new(repo_root, common.file.clone()))
+        .relationships(relationships)
+        .attributes(attributes)
+        .build_for_init(graph.as_ref());
+
+    match item {
+        Ok(item) => {
+            let opts = InitFileOptions::new(item).with_force(common.force);
+            run_with_options(opts, ctx)
+        }
+        Err(e) => {
+            print_error(&ctx.output, &format!("{}", e));
+            Ok(ExitCode::from(EXIT_INVALID_OPTION))
+        }
+    }
 }
 
-fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+fn run_with_options(
+    opts: InitFileOptions,
+    ctx: &CommandContext,
+) -> Result<ExitCode, Box<dyn Error>> {
     let config = &ctx.output;
 
-    let service = InitService::new();
-
-    match service.init(&opts) {
+    match create_item(&opts) {
         Ok(result) => {
             print_result(config, &result);
             Ok(ExitCode::SUCCESS)
@@ -547,10 +658,6 @@ fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode,
                 ),
             );
             Ok(ExitCode::from(EXIT_FRONTMATTER_EXISTS))
-        }
-        Err(InitError::InvalidOption(msg)) => {
-            print_error(config, &msg);
-            Ok(ExitCode::from(EXIT_INVALID_OPTION))
         }
         Err(InitError::Io(e)) => {
             print_error(config, &format!("IO error: {}", e));

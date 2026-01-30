@@ -53,7 +53,9 @@ mod parse_command {
     }
 
     #[test]
-    fn test_parse_detects_duplicates() {
+    fn test_parse_with_duplicates_succeeds() {
+        // Parse succeeds with duplicates - they are deduplicated during graph construction.
+        // Use the validate command to detect duplicate identifiers.
         let fixtures = fixtures_path().join("duplicates");
 
         sara()
@@ -61,8 +63,8 @@ mod parse_command {
             .arg("-r")
             .arg(&fixtures)
             .assert()
-            .failure()
-            .stdout(predicate::str::contains("Duplicate identifier"));
+            .success()
+            .stdout(predicate::str::contains("Parse completed successfully"));
     }
 }
 
@@ -97,17 +99,17 @@ mod validate_command {
     }
 
     #[test]
-    fn test_validate_detects_duplicates() {
+    fn test_validate_with_duplicates_deduplicates() {
         let fixtures = fixtures_path().join("duplicates");
 
-        // Error details go to stdout, status summary to stderr
+        // Duplicates are deduplicated during graph construction
         sara()
             .arg("validate")
             .arg("-r")
             .arg(&fixtures)
             .assert()
-            .failure()
-            .stdout(predicate::str::contains("Duplicate identifier"));
+            .success()
+            .stdout(predicate::str::contains("Validation passed"));
     }
 
     #[test]

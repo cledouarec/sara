@@ -123,14 +123,14 @@ impl CoverageReport {
         }
 
         // All other items are complete if they have upstream items
-        !item.upstream.is_empty()
+        !item.has_no_upstream()
     }
 
     /// Creates an IncompleteItem from an item.
     fn create_incomplete_item(item: &crate::model::Item, graph: &KnowledgeGraph) -> IncompleteItem {
         let reason = if item.item_type.is_root() && graph.children(&item.id).is_empty() {
             "No downstream items defined".to_string()
-        } else if item.upstream.is_empty() {
+        } else if item.has_no_upstream() {
             format!(
                 "Missing parent {}",
                 Self::expected_parent_type(item.item_type)
@@ -160,19 +160,16 @@ impl CoverageReport {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemId, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_coverage_report_complete() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()

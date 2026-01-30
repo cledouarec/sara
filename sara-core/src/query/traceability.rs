@@ -41,7 +41,6 @@ impl<'a> QueryEngine<'a> {
             return LookupResult::Found(item);
         }
 
-        // Item not found, find similar IDs
         let suggestions = self.find_similar_ids(id, 5);
         LookupResult::NotFound { suggestions }
     }
@@ -88,16 +87,6 @@ impl<'a> QueryEngine<'a> {
     }
 }
 
-/// Gets direct parents of an item.
-pub fn get_parents<'a>(graph: &'a KnowledgeGraph, id: &ItemId) -> Vec<&'a Item> {
-    graph.parents(id)
-}
-
-/// Gets direct children of an item.
-pub fn get_children<'a>(graph: &'a KnowledgeGraph, id: &ItemId) -> Vec<&'a Item> {
-    graph.children(id)
-}
-
 /// Finds item IDs similar to the given query string using Levenshtein distance (FR-061).
 ///
 /// Returns up to `max_suggestions` similar item IDs, sorted by distance.
@@ -133,10 +122,8 @@ fn find_similar_ids_scored<'a>(
         })
         .collect();
 
-    // Sort by distance (ascending)
     scored.sort_by_key(|(_, distance)| *distance);
 
-    // Take top suggestions with reasonable distance
     scored
         .into_iter()
         .filter(|(_, distance)| {
@@ -221,8 +208,8 @@ pub fn check_parent_exists(
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::UpstreamRefs;
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::RelationshipType;
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_lookup_found() {
@@ -271,13 +258,10 @@ mod tests {
     #[test]
     fn test_trace_upstream() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()
@@ -298,13 +282,10 @@ mod tests {
     #[test]
     fn test_trace_downstream() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()

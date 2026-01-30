@@ -12,10 +12,10 @@ use serde::Serialize;
 use sara_core::graph::{GraphBuilder, GraphStats, KnowledgeGraph};
 use sara_core::model::Item;
 use sara_core::repository::{GitReader, GitRef, parse_repositories};
-use sara_core::validation::{rules::check_duplicate_items, validate};
+use sara_core::validation::validate;
 
 use super::CommandContext;
-use crate::output::{OutputConfig, print_error, print_success, print_warning};
+use crate::output::{OutputConfig, print_success, print_warning};
 
 /// Arguments for the parse command.
 #[derive(Args, Debug)]
@@ -76,11 +76,7 @@ pub fn run(args: &ParseArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
         return Ok(ExitCode::SUCCESS);
     }
 
-    if let Some(exit_code) = check_for_duplicates(&items, output_config) {
-        return Ok(exit_code);
-    }
-
-    let graph = build_graph(items.clone())?;
+    let graph = build_graph(items)?;
     let output = ParseOutput {
         stats: GraphStats::from_graph(&graph),
         parse_time_ms: start.elapsed().as_millis(),
@@ -108,19 +104,6 @@ fn scan_repositories(repos: &[PathBuf], args: &ParseArgs) -> Result<Vec<Item>, B
     } else {
         Ok(parse_repositories(repos)?)
     }
-}
-
-/// Checks for duplicate items and returns an exit code if duplicates are found.
-fn check_for_duplicates(items: &[Item], output_config: &OutputConfig) -> Option<ExitCode> {
-    let duplicate_errors = check_duplicate_items(items);
-    if duplicate_errors.is_empty() {
-        return None;
-    }
-
-    for error in &duplicate_errors {
-        print_error(output_config, &format!("{}", error));
-    }
-    Some(ExitCode::from(1))
 }
 
 /// Builds the knowledge graph.

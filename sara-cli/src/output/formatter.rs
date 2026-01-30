@@ -81,7 +81,6 @@ pub fn colorize(config: &OutputConfig, text: &str, color: Color, style: Style) -
         return text.to_string();
     }
 
-    // Apply color first
     let colored_text = match color {
         Color::Red => text.red(),
         Color::Green => text.green(),
@@ -90,7 +89,6 @@ pub fn colorize(config: &OutputConfig, text: &str, color: Color, style: Style) -
         Color::None => text.normal(),
     };
 
-    // Apply style
     match style {
         Style::Bold => colored_text.bold().to_string(),
         Style::Dimmed => colored_text.dimmed().to_string(),

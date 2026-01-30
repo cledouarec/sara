@@ -37,14 +37,12 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
         });
     }
 
-    // Check for opening delimiter
     if lines[0].trim() != "---" {
         return Err(ParseError::MissingFrontmatter {
             file: file.to_path_buf(),
         });
     }
 
-    // Find closing delimiter
     let mut end_idx = None;
     for (i, line) in lines.iter().enumerate().skip(1) {
         if line.trim() == "---" {
@@ -58,11 +56,9 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
         reason: "Missing closing `---` delimiter".to_string(),
     })?;
 
-    // Extract YAML content (lines between delimiters)
     let yaml_lines: Vec<&str> = lines[1..end_idx].to_vec();
     let yaml = yaml_lines.join("\n");
 
-    // Extract body (everything after closing delimiter)
     let body_lines: Vec<&str> = if end_idx + 1 < lines.len() {
         lines[end_idx + 1..].to_vec()
     } else {
@@ -90,14 +86,11 @@ pub fn extract_body(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() || lines[0].trim() != "---" {
-        // No frontmatter, return original content
         return content.to_string();
     }
 
-    // Find closing delimiter
     for (i, line) in lines.iter().enumerate().skip(1) {
         if line.trim() == "---" {
-            // Return everything after the closing delimiter
             if i + 1 < lines.len() {
                 return lines[i + 1..].join("\n");
             } else {
@@ -106,7 +99,6 @@ pub fn extract_body(content: &str) -> String {
         }
     }
 
-    // No closing delimiter found, return original
     content.to_string()
 }
 
@@ -116,8 +108,6 @@ pub fn extract_body(content: &str) -> String {
 /// Returns the updated content with new frontmatter and preserved body.
 pub fn update_frontmatter(content: &str, new_yaml: &str) -> String {
     let body = extract_body(content);
-
-    // Ensure trailing newline in YAML
     let yaml_trimmed = new_yaml.trim_end();
 
     if body.is_empty() {

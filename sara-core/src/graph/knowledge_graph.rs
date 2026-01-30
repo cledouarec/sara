@@ -101,6 +101,28 @@ impl KnowledgeGraph {
             .collect()
     }
 
+    /// Suggests the next ID based on existing items in the graph.
+    ///
+    /// Finds the highest existing ID for the given type and returns the next sequential ID.
+    /// For example, if SOL-001 and SOL-003 exist, returns "SOL-004".
+    #[must_use]
+    pub fn suggest_next_id(&self, item_type: ItemType) -> String {
+        let prefix = item_type.prefix();
+        let max_num = self
+            .items()
+            .filter(|item| item.item_type == item_type)
+            .filter_map(|item| {
+                item.id
+                    .as_str()
+                    .strip_prefix(prefix)
+                    .and_then(|suffix| suffix.trim_start_matches('-').parse::<u32>().ok())
+            })
+            .max()
+            .unwrap_or(0);
+
+        format!("{}-{:03}", prefix, max_num + 1)
+    }
+
     /// Returns the count of items by type.
     pub fn count_by_type(&self) -> HashMap<ItemType, usize> {
         let mut counts = HashMap::new();
@@ -146,7 +168,7 @@ impl KnowledgeGraph {
                     return false;
                 }
                 // Check if item has any upstream references
-                item.upstream.is_empty()
+                item.has_no_upstream()
             })
             .collect()
     }

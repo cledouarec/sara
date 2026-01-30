@@ -6,7 +6,8 @@
 use std::path::PathBuf;
 
 use crate::model::{
-    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+    AdrStatus, Item, ItemAttributes, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
+    SourceLocation,
 };
 
 /// Creates a test item with the given ID and type.
@@ -45,71 +46,49 @@ pub fn create_test_item(id: &str, item_type: ItemType) -> Item {
 #[must_use]
 pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let mut builder = ItemBuilder::new()
+    ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
         .name(name)
-        .source(source);
-
-    // Add required fields based on item type
-    if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
+        .source(source)
+        .attributes(default_attributes_for_type(item_type))
         .build()
         .expect("Test item should build successfully")
 }
 
-/// Creates a test item with upstream references.
+/// Creates a test item with the specified relationships.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// use sara_core::test_utils::create_test_item_with_upstream;
-/// use sara_core::model::{ItemType, UpstreamRefs, ItemId};
+/// use sara_core::test_utils::create_test_item_with_relationships;
+/// use sara_core::model::{ItemType, ItemId, RelationshipType};
 ///
-/// let use_case = create_test_item_with_upstream(
+/// let use_case = create_test_item_with_relationships(
 ///     "UC-001",
 ///     ItemType::UseCase,
-///     UpstreamRefs {
-///         refines: vec![ItemId::new_unchecked("SOL-001")],
-///         ..Default::default()
-///     },
+///     vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
 /// );
 /// ```
 #[must_use]
-pub fn create_test_item_with_upstream(
+pub fn create_test_item_with_relationships(
     id: &str,
     item_type: ItemType,
-    upstream: UpstreamRefs,
+    relationships: Vec<(ItemId, RelationshipType)>,
 ) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let mut builder = ItemBuilder::new()
+    let rels: Vec<Relationship> = relationships
+        .into_iter()
+        .map(|(target, rel_type)| Relationship::new(target, rel_type))
+        .collect();
+
+    ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
         .name(format!("Test {id}"))
         .source(source)
-        .upstream(upstream);
-
-    // Add required fields based on item type
-    if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
+        .relationships(rels)
+        .attributes(default_attributes_for_type(item_type))
         .build()
         .expect("Test item should build successfully")
 }
@@ -127,28 +106,25 @@ pub fn create_test_item_with_upstream(
 #[must_use]
 pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let upstream = UpstreamRefs {
-        justifies: justifies
-            .iter()
-            .map(|s| ItemId::new_unchecked(*s))
-            .collect(),
-        ..Default::default()
-    };
+    let relationships: Vec<Relationship> = justifies
+        .iter()
+        .map(|s| Relationship::new(ItemId::new_unchecked(*s), RelationshipType::Justifies))
+        .collect();
 
     ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(ItemType::ArchitectureDecisionRecord)
         .name(format!("Test {id}"))
         .source(source)
-        .upstream(upstream)
-        .status(AdrStatus::Proposed)
-        .deciders(vec!["Test Decider".to_string()])
-        .supersedes_all(
-            supersedes
+        .relationships(relationships)
+        .attributes(ItemAttributes::Adr {
+            status: AdrStatus::Proposed,
+            deciders: vec!["Test Decider".to_string()],
+            supersedes: supersedes
                 .iter()
                 .map(|s| ItemId::new_unchecked(*s))
                 .collect(),
-        )
+        })
         .build()
         .expect("Test ADR should build successfully")
 }
@@ -159,57 +135,12 @@ pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Ite
 #[must_use]
 pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), PathBuf::from(file_path));
-    let mut builder = ItemBuilder::new()
-        .id(ItemId::new_unchecked(id))
-        .item_type(item_type)
-        .name(format!("Test {id}"))
-        .source(source);
-
-    if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
-        .build()
-        .expect("Test item should build successfully")
-}
-
-/// Creates a test item with both upstream and downstream references.
-///
-/// Useful for testing relationship validation.
-#[must_use]
-pub fn create_test_item_with_refs(
-    id: &str,
-    item_type: ItemType,
-    upstream: UpstreamRefs,
-    downstream: DownstreamRefs,
-) -> Item {
-    let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let mut builder = ItemBuilder::new()
+    ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
         .name(format!("Test {id}"))
         .source(source)
-        .upstream(upstream)
-        .downstream(downstream);
-
-    if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
+        .attributes(default_attributes_for_type(item_type))
         .build()
         .expect("Test item should build successfully")
 }
@@ -221,23 +152,46 @@ pub fn create_test_item_with_refs(
 pub fn create_simple_hierarchy() -> Vec<Item> {
     vec![
         create_test_item("SOL-001", ItemType::Solution),
-        create_test_item_with_upstream(
+        create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         ),
-        create_test_item_with_upstream(
+        create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("UC-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("UC-001"), RelationshipType::Refines)],
         ),
     ]
+}
+
+/// Creates default attributes for a given item type with test values.
+fn default_attributes_for_type(item_type: ItemType) -> ItemAttributes {
+    match item_type {
+        ItemType::Solution => ItemAttributes::Solution,
+        ItemType::UseCase => ItemAttributes::UseCase,
+        ItemType::Scenario => ItemAttributes::Scenario,
+        ItemType::SoftwareDetailedDesign => ItemAttributes::SoftwareDetailedDesign,
+        ItemType::HardwareDetailedDesign => ItemAttributes::HardwareDetailedDesign,
+        ItemType::SystemArchitecture => ItemAttributes::SystemArchitecture { platform: None },
+        ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
+            specification: "Test specification".to_string(),
+            depends_on: Vec::new(),
+        },
+        ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
+            specification: "Test specification".to_string(),
+            depends_on: Vec::new(),
+        },
+        ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
+            specification: "Test specification".to_string(),
+            depends_on: Vec::new(),
+        },
+        ItemType::ArchitectureDecisionRecord => ItemAttributes::Adr {
+            status: AdrStatus::Proposed,
+            deciders: vec!["Test Decider".to_string()],
+            supersedes: Vec::new(),
+        },
+    }
 }
 
 #[cfg(test)]
@@ -263,7 +217,10 @@ mod tests {
         let item = create_test_adr("ADR-001", &["SYSARCH-001"], &["ADR-000"]);
         assert_eq!(item.id.as_str(), "ADR-001");
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
-        assert_eq!(item.upstream.justifies.len(), 1);
+        let justifies: Vec<_> = item
+            .relationship_ids(RelationshipType::Justifies)
+            .collect();
+        assert_eq!(justifies.len(), 1);
         assert_eq!(item.attributes.supersedes().len(), 1);
     }
 

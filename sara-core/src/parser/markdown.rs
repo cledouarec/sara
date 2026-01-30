@@ -6,7 +6,8 @@ use serde::Deserialize;
 
 use crate::error::ParseError;
 use crate::model::{
-    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+    AdrStatus, Item, ItemAttributes, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
+    SourceLocation,
 };
 use crate::parser::frontmatter::extract_frontmatter;
 
@@ -91,40 +92,65 @@ pub struct RawFrontmatter {
 }
 
 impl RawFrontmatter {
-    /// Converts string IDs to ItemIds for upstream refs.
-    pub fn upstream_refs(&self) -> Result<UpstreamRefs, ParseError> {
-        Ok(UpstreamRefs {
-            refines: self.refines.iter().map(ItemId::new_unchecked).collect(),
-            derives_from: self
-                .derives_from
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            satisfies: self.satisfies.iter().map(ItemId::new_unchecked).collect(),
-            justifies: self.justifies.iter().map(ItemId::new_unchecked).collect(),
-        })
-    }
+    /// Converts all relationship fields to a Vec of Relationships.
+    pub fn to_relationships(&self) -> Vec<Relationship> {
+        let mut rels = Vec::new();
 
-    /// Converts string IDs to ItemIds for downstream refs.
-    pub fn downstream_refs(&self) -> Result<DownstreamRefs, ParseError> {
-        Ok(DownstreamRefs {
-            is_refined_by: self
-                .is_refined_by
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            derives: self.derives.iter().map(ItemId::new_unchecked).collect(),
-            is_satisfied_by: self
-                .is_satisfied_by
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            justified_by: self
-                .justified_by
-                .as_ref()
-                .map(|ids| ids.iter().map(ItemId::new_unchecked).collect())
-                .unwrap_or_default(),
-        })
+        // Upstream relationships
+        for id in &self.refines {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Refines,
+            ));
+        }
+        for id in &self.derives_from {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::DerivesFrom,
+            ));
+        }
+        for id in &self.satisfies {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Satisfies,
+            ));
+        }
+        for id in &self.justifies {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Justifies,
+            ));
+        }
+
+        // Downstream relationships
+        for id in &self.is_refined_by {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::IsRefinedBy,
+            ));
+        }
+        for id in &self.derives {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Derives,
+            ));
+        }
+        for id in &self.is_satisfied_by {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::IsSatisfiedBy,
+            ));
+        }
+        if let Some(justified_by) = &self.justified_by {
+            for id in justified_by {
+                rels.push(Relationship::new(
+                    ItemId::new_unchecked(id),
+                    RelationshipType::IsJustifiedBy,
+                ));
+            }
+        }
+
+        rels
     }
 }
 
@@ -165,57 +191,67 @@ pub fn parse_markdown_file(
         .item_type(frontmatter.item_type)
         .name(&frontmatter.name)
         .source(source)
-        .upstream(frontmatter.upstream_refs()?)
-        .downstream(frontmatter.downstream_refs()?);
+        .relationships(frontmatter.to_relationships());
 
     if let Some(desc) = &frontmatter.description {
         builder = builder.description(desc);
     }
 
-    // Set type-specific attributes based on item type
-    match frontmatter.item_type {
-        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {
-            // No type-specific attributes
-        }
-        ItemType::SystemRequirement
-        | ItemType::SoftwareRequirement
-        | ItemType::HardwareRequirement => {
-            if let Some(spec) = &frontmatter.specification {
-                builder = builder.specification(spec);
-            }
-            for id in &frontmatter.depends_on {
-                builder = builder.depends_on(ItemId::new_unchecked(id));
-            }
-        }
-        ItemType::SystemArchitecture => {
-            if let Some(platform) = &frontmatter.platform {
-                builder = builder.platform(platform);
-            }
-            // justified_by is now handled via downstream_refs()
-        }
-        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {
-            // justified_by is now handled via downstream_refs()
-        }
-        ItemType::ArchitectureDecisionRecord => {
-            if let Some(status) = frontmatter.status {
-                builder = builder.status(status);
-            }
-            builder = builder.deciders(frontmatter.deciders.clone());
-            // justifies is now handled via upstream_refs()
-            builder = builder.supersedes_all(
-                frontmatter
-                    .supersedes
-                    .iter()
-                    .map(ItemId::new_unchecked)
-                    .collect(),
-            );
-        }
-    }
+    // Build type-specific attributes
+    let attributes = build_attributes(&frontmatter);
+    builder = builder.attributes(attributes);
 
     builder.build().map_err(|e| ParseError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
         reason: e.to_string(),
     })
+}
+
+/// Builds ItemAttributes from frontmatter based on item type.
+fn build_attributes(frontmatter: &RawFrontmatter) -> ItemAttributes {
+    match frontmatter.item_type {
+        ItemType::Solution => ItemAttributes::Solution,
+        ItemType::UseCase => ItemAttributes::UseCase,
+        ItemType::Scenario => ItemAttributes::Scenario,
+        ItemType::SoftwareDetailedDesign => ItemAttributes::SoftwareDetailedDesign,
+        ItemType::HardwareDetailedDesign => ItemAttributes::HardwareDetailedDesign,
+        ItemType::SystemArchitecture => ItemAttributes::SystemArchitecture {
+            platform: frontmatter.platform.clone(),
+        },
+        ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
+            specification: frontmatter.specification.clone().unwrap_or_default(),
+            depends_on: frontmatter
+                .depends_on
+                .iter()
+                .map(ItemId::new_unchecked)
+                .collect(),
+        },
+        ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
+            specification: frontmatter.specification.clone().unwrap_or_default(),
+            depends_on: frontmatter
+                .depends_on
+                .iter()
+                .map(ItemId::new_unchecked)
+                .collect(),
+        },
+        ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
+            specification: frontmatter.specification.clone().unwrap_or_default(),
+            depends_on: frontmatter
+                .depends_on
+                .iter()
+                .map(ItemId::new_unchecked)
+                .collect(),
+        },
+        ItemType::ArchitectureDecisionRecord => ItemAttributes::Adr {
+            status: frontmatter.status.unwrap_or(AdrStatus::Proposed),
+            deciders: frontmatter.deciders.clone(),
+            supersedes: frontmatter
+                .supersedes
+                .iter()
+                .map(ItemId::new_unchecked)
+                .collect(),
+        },
+    }
 }
 
 /// Represents a parsed document with its item and body content.
@@ -286,8 +322,11 @@ is_satisfied_by:
         assert_eq!(item.item_type, ItemType::Solution);
         assert_eq!(item.name, "Test Solution");
         assert_eq!(item.description, Some("A test solution".to_string()));
-        assert_eq!(item.downstream.is_refined_by.len(), 1);
-        assert_eq!(item.downstream.is_refined_by[0].as_str(), "UC-001");
+        let is_refined_by: Vec<_> = item
+            .relationship_ids(RelationshipType::IsRefinedBy)
+            .collect();
+        assert_eq!(is_refined_by.len(), 1);
+        assert_eq!(is_refined_by[0].as_str(), "UC-001");
     }
 
     #[test]
@@ -305,8 +344,14 @@ is_satisfied_by:
             item.attributes.specification().map(String::as_str),
             Some("The system SHALL respond within 100ms.")
         );
-        assert_eq!(item.upstream.derives_from.len(), 1);
-        assert_eq!(item.downstream.is_satisfied_by.len(), 1);
+        let derives_from: Vec<_> = item
+            .relationship_ids(RelationshipType::DerivesFrom)
+            .collect();
+        let is_satisfied_by: Vec<_> = item
+            .relationship_ids(RelationshipType::IsSatisfiedBy)
+            .collect();
+        assert_eq!(derives_from.len(), 1);
+        assert_eq!(is_satisfied_by.len(), 1);
     }
 
     #[test]
@@ -403,10 +448,11 @@ Chosen option: Microservices, because it provides better scalability.
                 .deciders()
                 .contains(&"Bob Jones".to_string())
         );
-        // justifies is now in upstream refs
-        assert_eq!(item.upstream.justifies.len(), 2);
-        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
-        assert_eq!(item.upstream.justifies[1].as_str(), "SWDD-001");
+        // justifies is in relationships
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        assert_eq!(justifies.len(), 2);
+        assert_eq!(justifies[0].as_str(), "SYSARCH-001");
+        assert_eq!(justifies[1].as_str(), "SWDD-001");
         assert!(item.attributes.supersedes().is_empty());
     }
 
@@ -426,7 +472,7 @@ status: proposed
     }
 
     #[test]
-    fn test_parse_adr_missing_status() {
+    fn test_parse_adr_missing_status_defaults_to_proposed() {
         let content = r#"---
 id: "ADR-003"
 type: architecture_decision_record
@@ -435,10 +481,10 @@ deciders:
   - "Alice"
 ---
 "#;
-        let result =
-            parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
-        // Should fail because status is required for ADRs
-        assert!(result.is_err());
+        let item = parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"))
+            .unwrap();
+        // Missing status defaults to Proposed
+        assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
     }
 
     #[test]
@@ -464,9 +510,10 @@ supersedes:
         )
         .unwrap();
 
-        // justifies is now in upstream refs
-        assert_eq!(item.upstream.justifies.len(), 1);
-        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
+        // justifies is in relationships
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        assert_eq!(justifies.len(), 1);
+        assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         // supersedes is still in attributes
         assert_eq!(item.attributes.supersedes().len(), 2);
         assert_eq!(item.attributes.supersedes()[0].as_str(), "ADR-001");

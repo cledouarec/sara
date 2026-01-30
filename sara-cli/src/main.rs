@@ -77,10 +77,7 @@ impl Cli {
         &self,
         file_config: Option<&sara_core::config::Config>,
     ) -> output::OutputConfig {
-        // Check environment variables
         let env_no_color = std::env::var("NO_COLOR").is_ok();
-
-        // Start with config file values, or defaults if no config
         let (config_colors, config_emojis) = file_config
             .map(|c| (c.output.colors, c.output.emojis))
             .unwrap_or((true, true));
@@ -114,11 +111,8 @@ impl Cli {
 
 fn main() -> ExitCode {
     let cli = Cli::parse();
-
-    // Initialize logging
     logging::init(cli.verbosity());
 
-    // Load config file (optional - use defaults if not found or error)
     let config_path = cli.config_path();
     let file_config = if config_path.exists() {
         match load_config(&config_path) {
@@ -136,7 +130,6 @@ fn main() -> ExitCode {
         None
     };
 
-    // Run the command
     let result = commands::run(&cli, file_config.as_ref());
 
     match result {

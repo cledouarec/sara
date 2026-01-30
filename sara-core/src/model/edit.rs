@@ -127,52 +127,19 @@ impl TraceabilityLinks {
             && self.justifies.is_empty()
     }
 
-    /// Creates from an Item's upstream references.
-    pub fn from_upstream(upstream: &super::UpstreamRefs) -> Self {
-        Self {
-            refines: upstream
-                .refines
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            derives_from: upstream
-                .derives_from
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            satisfies: upstream
-                .satisfies
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            depends_on: Vec::new(),
-            justifies: upstream
-                .justifies
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-        }
-    }
-
-    /// Creates from an Item's upstream references and peer dependencies.
+    /// Creates from an Item's relationships and peer dependencies.
     pub fn from_item(item: &super::Item) -> Self {
         Self {
             refines: item
-                .upstream
-                .refines
-                .iter()
+                .relationship_ids(super::RelationshipType::Refines)
                 .map(|id| id.as_str().to_string())
                 .collect(),
             derives_from: item
-                .upstream
-                .derives_from
-                .iter()
+                .relationship_ids(super::RelationshipType::DerivesFrom)
                 .map(|id| id.as_str().to_string())
                 .collect(),
             satisfies: item
-                .upstream
-                .satisfies
-                .iter()
+                .relationship_ids(super::RelationshipType::Satisfies)
                 .map(|id| id.as_str().to_string())
                 .collect(),
             depends_on: item
@@ -182,9 +149,7 @@ impl TraceabilityLinks {
                 .map(|id| id.as_str().to_string())
                 .collect(),
             justifies: item
-                .upstream
-                .justifies
-                .iter()
+                .relationship_ids(super::RelationshipType::Justifies)
                 .map(|id| id.as_str().to_string())
                 .collect(),
         }

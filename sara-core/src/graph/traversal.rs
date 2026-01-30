@@ -112,12 +112,10 @@ fn traverse_graph(
     let mut result_items: Vec<TraversalNode> = Vec::new();
     let mut max_depth = 0;
 
-    // Start with the origin node
     queue.push_back((start_idx, 0, None, None));
     visited.insert(start_idx);
 
     while let Some((node_idx, depth, relationship, display_parent)) = queue.pop_front() {
-        // Check depth limit
         if let Some(max) = options.max_depth
             && depth > max
         {
@@ -147,7 +145,6 @@ fn traverse_graph(
                 max_depth = max_depth.max(depth);
             }
 
-            // Get edges based on direction
             let edges = match direction {
                 TraversalDirection::Upstream => {
                     // Follow outgoing edges with upstream relationship types
@@ -180,7 +177,6 @@ fn traverse_graph(
                 }
             };
 
-            // Check depth limit for exploring children
             let next_depth = depth + 1;
             if options.max_depth.is_none_or(|max| next_depth <= max) {
                 for (target_idx, rel_type) in edges {
@@ -311,28 +307,22 @@ impl TraversalResult {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::UpstreamRefs;
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::RelationshipType;
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_upstream_traversal() {
         // Build a simple hierarchy: SOL-001 <- UC-001 <- SCEN-001
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
-        let scen = create_test_item_with_upstream(
+        let scen = create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("UC-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("UC-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()
@@ -357,13 +347,10 @@ mod tests {
     #[test]
     fn test_downstream_traversal() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()
@@ -386,21 +373,15 @@ mod tests {
     #[test]
     fn test_depth_limited_traversal() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
-        let scen = create_test_item_with_upstream(
+        let scen = create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("UC-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("UC-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()
@@ -426,13 +407,10 @@ mod tests {
     #[test]
     fn test_type_filtered_traversal() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()

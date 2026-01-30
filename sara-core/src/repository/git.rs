@@ -1,7 +1,5 @@
 //! Git repository integration using git2.
 
-#![allow(clippy::result_large_err)]
-
 use std::path::{Path, PathBuf};
 
 use git2::{Commit, ObjectType, Repository};
@@ -208,7 +206,6 @@ impl GitReader {
                 }
             };
 
-            // Skip files without frontmatter
             if !crate::parser::has_frontmatter(&content) {
                 continue;
             }

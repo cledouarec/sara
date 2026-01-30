@@ -6,8 +6,8 @@ use std::process::ExitCode;
 
 use clap::Args;
 
-use sara_core::diff::{DiffOptions, DiffResult, DiffService};
 use sara_core::graph::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
+use sara_core::service::{DiffOptions, DiffResult, diff};
 
 use super::CommandContext;
 use crate::output::{
@@ -49,9 +49,8 @@ pub fn run(
     let opts = DiffOptions::new(&args.ref1, &args.ref2)
         .with_repositories(repositories)
         .with_stat(args.stat);
-    let service = DiffService::new();
 
-    match service.diff(&opts) {
+    match diff(&opts) {
         Ok(result) => {
             if !result.is_full_comparison {
                 print_warning(

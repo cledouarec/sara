@@ -1,7 +1,5 @@
 //! File scanner for discovering Markdown files.
 
-#![allow(clippy::result_large_err)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -77,28 +75,23 @@ enum ParseResult {
 pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, SaraError> {
     let files = scan_directory(repository_path)?;
 
-    // Parse files in parallel
     let results: Vec<ParseResult> = files
         .par_iter()
         .map(|file_path| {
-            // Read file content
             let content = match fs::read_to_string(file_path) {
                 Ok(c) => c,
                 Err(e) => return ParseResult::ReadError(e),
             };
 
-            // Skip files without frontmatter
             if !crate::parser::has_frontmatter(&content) {
                 return ParseResult::Skipped;
             }
 
-            // Calculate relative path from repository root
             let relative_path = file_path
                 .strip_prefix(repository_path)
                 .unwrap_or(file_path)
                 .to_path_buf();
 
-            // Parse the markdown file
             match parse_markdown_file(&content, &relative_path, repository_path) {
                 Ok(item) => ParseResult::Item(Box::new(item)),
                 Err(e) => ParseResult::ParseError(e),
@@ -106,7 +99,6 @@ pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, Sar
         })
         .collect();
 
-    // Collect items and errors
     let mut items = Vec::new();
     let mut parse_errors = Vec::new();
 
@@ -151,13 +143,11 @@ pub fn parse_repositories(paths: &[PathBuf]) -> Result<Vec<Item>, SaraError> {
         })
         .collect();
 
-    // Parse all repositories in parallel at the file level
     let results: Vec<Result<Vec<Item>, SaraError>> = valid_paths
         .par_iter()
         .map(|path| parse_directory(path))
         .collect();
 
-    // Combine results
     let mut all_items = Vec::new();
     for result in results {
         match result {

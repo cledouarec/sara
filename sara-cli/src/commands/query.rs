@@ -171,7 +171,6 @@ fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) 
 }
 
 fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
-    // Print upstream (requires)
     let parents = graph.parents(&item.id);
     if !parents.is_empty() {
         let label = colorize(config, "Requires:", Color::None, Style::Bold);
@@ -183,7 +182,6 @@ fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &Knowle
         }
     }
 
-    // Print downstream (realized by)
     let children = graph.children(&item.id);
     if !children.is_empty() {
         let label = colorize(config, "Realized by:", Color::None, Style::Bold);
@@ -243,7 +241,6 @@ fn print_tree_node(
         None => return,
     };
 
-    // Format the line
     let branch = if is_root {
         ""
     } else if is_last {
@@ -267,7 +264,6 @@ fn print_tree_node(
         println!("{}{}{}", prefix, branch, item_text);
     }
 
-    // Print children
     if let Some(children) = children_map.get(&Some(&node.item_id)) {
         let new_prefix = if is_root {
             String::new()

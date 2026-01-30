@@ -1,7 +1,5 @@
 //! Graph builder for constructing knowledge graphs.
 
-#![allow(clippy::result_large_err)]
-
 use std::path::PathBuf;
 
 use crate::error::SaraError;
@@ -64,56 +62,25 @@ impl GraphBuilder {
     }
 
     /// Adds relationships for an item based on its references.
+    ///
+    /// All relationships are bidirectional: adding one direction automatically
+    /// creates the inverse edge. This ensures the graph can be traversed in
+    /// both directions regardless of which side declared the relationship.
     fn add_relationships_for_item(&self, graph: &mut KnowledgeGraph, item: &Item) {
-        // Add upstream relationships
-        for target_id in &item.upstream.refines {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Refines);
-        }
-        for target_id in &item.upstream.derives_from {
-            graph.add_relationship(&item.id, target_id, RelationshipType::DerivesFrom);
-        }
-        for target_id in &item.upstream.satisfies {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Satisfies);
-        }
-        // ADR justifies design artifacts (standard upstream relationship)
-        for target_id in &item.upstream.justifies {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Justifies);
-            // Add inverse: target is justified by this ADR
-            graph.add_relationship(target_id, &item.id, RelationshipType::IsJustifiedBy);
+        // All relationships from the item's relationships field
+        for rel in &item.relationships {
+            graph.add_relationship(&item.id, &rel.to, rel.relationship_type);
+            // Add inverse for bidirectional traversal
+            graph.add_relationship(&rel.to, &item.id, rel.relationship_type.inverse());
         }
 
-        // Add downstream relationships (and their inverse for bidirectional graph queries)
-        for target_id in &item.downstream.is_refined_by {
-            graph.add_relationship(&item.id, target_id, RelationshipType::IsRefinedBy);
-            // Add inverse: target refines this item
-            graph.add_relationship(target_id, &item.id, RelationshipType::Refines);
-        }
-        for target_id in &item.downstream.derives {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Derives);
-            // Add inverse: target derives_from this item
-            graph.add_relationship(target_id, &item.id, RelationshipType::DerivesFrom);
-        }
-        for target_id in &item.downstream.is_satisfied_by {
-            graph.add_relationship(&item.id, target_id, RelationshipType::IsSatisfiedBy);
-            // Add inverse: target satisfies this item
-            graph.add_relationship(target_id, &item.id, RelationshipType::Satisfies);
-        }
-        // Design artifact is justified by ADRs (standard downstream relationship)
-        for adr_id in &item.downstream.justified_by {
-            graph.add_relationship(&item.id, adr_id, RelationshipType::IsJustifiedBy);
-            // Add inverse: ADR justifies this item
-            graph.add_relationship(adr_id, &item.id, RelationshipType::Justifies);
-        }
-
-        // Add peer dependencies (for requirement types)
+        // Peer/attribute relationships (stored in attributes, not relationships)
         for target_id in item.attributes.depends_on() {
             graph.add_relationship(&item.id, target_id, RelationshipType::DependsOn);
+            graph.add_relationship(target_id, &item.id, RelationshipType::IsRequiredBy);
         }
-
-        // ADR supersession (peer relationships between ADRs, stored in attributes)
         for target_id in item.attributes.supersedes() {
             graph.add_relationship(&item.id, target_id, RelationshipType::Supersedes);
-            // Add inverse: target is superseded by this ADR
             graph.add_relationship(target_id, &item.id, RelationshipType::IsSupersededBy);
         }
     }
@@ -123,17 +90,14 @@ impl GraphBuilder {
 pub fn resolve_cross_repository_refs(graph: &mut KnowledgeGraph) -> Vec<(ItemId, ItemId)> {
     let mut unresolved = Vec::new();
 
-    // Collect all referenced IDs
     let referenced_ids: Vec<ItemId> = graph
         .items()
         .flat_map(|item| item.all_references())
         .cloned()
         .collect();
 
-    // Check which ones are missing
     for ref_id in referenced_ids {
         if !graph.contains(&ref_id) {
-            // Find the item that references this missing ID
             for item in graph.items() {
                 if item.all_references().any(|id| *id == ref_id) {
                     unresolved.push((item.id.clone(), ref_id.clone()));
@@ -149,8 +113,8 @@ pub fn resolve_cross_repository_refs(graph: &mut KnowledgeGraph) -> Vec<(ItemId,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemType, UpstreamRefs};
-    use crate::test_utils::{create_test_adr, create_test_item, create_test_item_with_upstream};
+    use crate::model::ItemType;
+    use crate::test_utils::{create_test_adr, create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_build_simple_graph() {
@@ -165,13 +129,10 @@ mod tests {
     #[test]
     fn test_build_graph_with_relationships() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         );
 
         let graph = GraphBuilder::new()
@@ -181,7 +142,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(graph.item_count(), 2);
-        assert_eq!(graph.relationship_count(), 1);
+        assert_eq!(graph.relationship_count(), 2);
     }
 
     #[test]
