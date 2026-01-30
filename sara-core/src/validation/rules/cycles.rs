@@ -39,13 +39,8 @@ impl ValidationRule for CyclesRule {
                     .collect();
 
                 let cycle_str = cycle_ids.join(" -> ");
-                let first_item = scc.first().and_then(|idx| inner.node_weight(*idx));
-                let location = first_item.map(|item| item.source.clone());
 
-                errors.push(ValidationError::CircularReference {
-                    cycle: cycle_str,
-                    location,
-                });
+                errors.push(ValidationError::CircularReference { cycle: cycle_str });
             } else if scc.len() == 1 {
                 // Check for self-loop (only with primary relationships)
                 let idx = scc[0];
@@ -56,7 +51,6 @@ impl ValidationRule for CyclesRule {
                 if has_self_loop && let Some(item) = inner.node_weight(idx) {
                     errors.push(ValidationError::CircularReference {
                         cycle: format!("{} -> {}", item.id.as_str(), item.id.as_str()),
-                        location: Some(item.source.clone()),
                     });
                 }
             }

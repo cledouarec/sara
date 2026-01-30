@@ -21,7 +21,6 @@ impl ValidationRule for BrokenReferencesRule {
                     errors.push(ValidationError::BrokenReference {
                         from: item.id.clone(),
                         to: ref_id.clone(),
-                        location: Some(item.source.clone()),
                     });
                 }
             }
