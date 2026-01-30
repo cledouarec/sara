@@ -116,6 +116,7 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<Valid
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{DownstreamRefs, ItemId, ItemType, UpstreamRefs};
     use crate::test_utils::{
         create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
@@ -123,16 +124,18 @@ mod tests {
 
     #[test]
     fn test_valid_relationship() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item_with_upstream(
-            "UC-001",
-            ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
+                "UC-001",
+                ItemType::UseCase,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-001")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
         let rule = RelationshipsRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -144,17 +147,19 @@ mod tests {
 
     #[test]
     fn test_invalid_relationship() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        // Scenario trying to refine Solution directly (should be UseCase)
-        graph.add_item(create_test_item_with_upstream(
-            "SCEN-001",
-            ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            // Scenario trying to refine Solution directly (should be UseCase)
+            .add_item(create_test_item_with_upstream(
+                "SCEN-001",
+                ItemType::Scenario,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-001")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
         let rule = RelationshipsRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -177,17 +182,19 @@ mod tests {
 
     #[test]
     fn test_valid_downstream_relationship() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item_with_refs(
-            "SOL-001",
-            ItemType::Solution,
-            UpstreamRefs::default(),
-            DownstreamRefs {
-                is_refined_by: vec![ItemId::new_unchecked("UC-001")],
-                ..Default::default()
-            },
-        ));
-        graph.add_item(create_test_item("UC-001", ItemType::UseCase));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item_with_refs(
+                "SOL-001",
+                ItemType::Solution,
+                UpstreamRefs::default(),
+                DownstreamRefs {
+                    is_refined_by: vec![ItemId::new_unchecked("UC-001")],
+                    ..Default::default()
+                },
+            ))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .build()
+            .unwrap();
 
         let rule = RelationshipsRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());

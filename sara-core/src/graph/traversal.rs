@@ -310,7 +310,7 @@ impl TraversalResult {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::UpstreamRefs;
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
@@ -335,7 +335,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .add_item(scen)
@@ -366,7 +366,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
@@ -403,7 +403,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .add_item(scen)
@@ -435,7 +435,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()

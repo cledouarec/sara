@@ -8,6 +8,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
+use sara_core::graph::KnowledgeGraphBuilder;
 use sara_core::report::{CoverageReport, TraceabilityMatrix};
 
 use super::CommandContext;
@@ -94,7 +95,8 @@ fn run_coverage(
     output_path: Option<PathBuf>,
     ctx: &CommandContext,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let graph = ctx.build_graph()?;
+    let items = ctx.parse_items(None)?;
+    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
     let report = CoverageReport::generate(&graph);
 
     let output = match format {
@@ -113,7 +115,8 @@ fn run_matrix(
     output_path: Option<PathBuf>,
     ctx: &CommandContext,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let graph = ctx.build_graph()?;
+    let items = ctx.parse_items(None)?;
+    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
     let matrix = TraceabilityMatrix::generate(&graph);
 
     let output = match format {

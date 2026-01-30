@@ -34,21 +34,24 @@ impl ValidationRule for BrokenReferencesRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemId, ItemType, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_no_broken_refs() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item_with_upstream(
-            "UC-001",
-            ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
+                "UC-001",
+                ItemType::UseCase,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-001")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
         let rule = BrokenReferencesRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -57,15 +60,17 @@ mod tests {
 
     #[test]
     fn test_broken_ref_detected() {
-        let mut graph = KnowledgeGraph::new();
-        graph.add_item(create_test_item_with_upstream(
-            "UC-001",
-            ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-MISSING")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item_with_upstream(
+                "UC-001",
+                ItemType::UseCase,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-MISSING")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
         let rule = BrokenReferencesRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());

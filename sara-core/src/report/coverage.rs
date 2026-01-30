@@ -159,7 +159,7 @@ impl CoverageReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemId, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
@@ -175,7 +175,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
@@ -190,7 +190,7 @@ mod tests {
         // UseCase without upstream reference
         let uc = create_test_item("UC-001", ItemType::UseCase);
 
-        let graph = GraphBuilder::new().add_item(uc).build().unwrap();
+        let graph = KnowledgeGraphBuilder::new().add_item(uc).build().unwrap();
 
         let report = CoverageReport::generate(&graph);
         assert!(!report.incomplete_items.is_empty());

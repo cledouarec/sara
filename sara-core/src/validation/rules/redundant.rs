@@ -126,7 +126,7 @@ fn make_pair_key(id1: &ItemId, id2: &ItemId) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{DownstreamRefs, ItemType, UpstreamRefs};
     use crate::test_utils::{
         create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
@@ -145,7 +145,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sysreq)
             .add_item(sarch)
             .build()
@@ -177,7 +177,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sysreq)
             .add_item(sarch)
             .build()

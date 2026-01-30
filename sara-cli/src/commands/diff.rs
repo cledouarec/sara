@@ -1,7 +1,6 @@
 //! Diff command implementation.
 
 use std::error::Error;
-use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::Args;
@@ -41,13 +40,9 @@ pub struct DiffArgs {
 }
 
 /// Runs the diff command.
-pub fn run(
-    args: &DiffArgs,
-    repositories: Vec<PathBuf>,
-    ctx: &CommandContext,
-) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &DiffArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let opts = DiffOptions::new(&args.ref1, &args.ref2)
-        .with_repositories(repositories)
+        .with_repositories(ctx.repositories.clone())
         .with_stat(args.stat);
     let service = DiffService::new();
 

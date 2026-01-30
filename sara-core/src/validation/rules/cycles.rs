@@ -94,13 +94,13 @@ fn would_create_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
-    use crate::model::{ItemId, ItemType, RelationshipType, UpstreamRefs};
+    use crate::graph::KnowledgeGraphBuilder;
+    use crate::model::{ItemId, ItemType, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_no_cycles() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .add_item(create_test_item_with_upstream(
                 "UC-001",
@@ -121,8 +121,6 @@ mod tests {
     #[test]
     fn test_cycle_detected() {
         // Create a cycle: SCEN-001 -> SCEN-002 -> SCEN-001
-        let mut graph = KnowledgeGraph::new();
-
         let scen1 = create_test_item_with_upstream(
             "SCEN-001",
             ItemType::Scenario,
@@ -140,20 +138,11 @@ mod tests {
             },
         );
 
-        graph.add_item(scen1);
-        graph.add_item(scen2);
-
-        // Add the edges manually
-        graph.add_relationship(
-            &ItemId::new_unchecked("SCEN-001"),
-            &ItemId::new_unchecked("SCEN-002"),
-            RelationshipType::Refines,
-        );
-        graph.add_relationship(
-            &ItemId::new_unchecked("SCEN-002"),
-            &ItemId::new_unchecked("SCEN-001"),
-            RelationshipType::Refines,
-        );
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(scen1)
+            .add_item(scen2)
+            .build()
+            .unwrap();
 
         let rule = CyclesRule;
         let errors = rule.validate(&graph, &ValidationConfig::default());
@@ -162,8 +151,6 @@ mod tests {
 
     #[test]
     fn test_would_create_cycle() {
-        let mut graph = KnowledgeGraph::new();
-
         let sol = create_test_item("SOL-001", ItemType::Solution);
         let uc = create_test_item_with_upstream(
             "UC-001",
@@ -174,13 +161,11 @@ mod tests {
             },
         );
 
-        graph.add_item(sol);
-        graph.add_item(uc);
-        graph.add_relationship(
-            &ItemId::new_unchecked("UC-001"),
-            &ItemId::new_unchecked("SOL-001"),
-            RelationshipType::Refines,
-        );
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(sol)
+            .add_item(uc)
+            .build()
+            .unwrap();
 
         // Adding SOL-001 -> UC-001 would create a cycle
         assert!(would_create_cycle(

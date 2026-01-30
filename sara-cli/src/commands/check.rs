@@ -9,9 +9,8 @@ use std::time::{Duration, Instant};
 use clap::Args;
 use serde::Serialize;
 
-use sara_core::graph::{GraphBuilder, KnowledgeGraph};
-use sara_core::model::{Item, ItemType};
-use sara_core::repository::{GitReader, GitRef, parse_repositories};
+use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
+use sara_core::model::ItemType;
 use sara_core::validation::{ValidationReport, pre_validate, validate};
 
 use super::CommandContext;
@@ -103,8 +102,7 @@ pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
     let start = Instant::now();
     let output_config = &ctx.output;
 
-    let repos = collect_repositories(ctx)?;
-    let items = scan_repositories(&repos, args)?;
+    let items = ctx.parse_items(args.at.as_deref())?;
 
     if items.is_empty() {
         print_warning(output_config, "No items found in repositories");
@@ -117,7 +115,7 @@ pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
         return handle_output(args, None, &pre_report, &parse_time, output_config);
     }
 
-    let graph = GraphBuilder::new().add_items(items).build()?;
+    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
 
     let report = validate(&graph, args.strict);
     let report = consolidate_reports(report, pre_report);
@@ -134,43 +132,6 @@ fn consolidate_reports(report: ValidationReport, pre_report: ValidationReport) -
         relationships_checked: report.relationships_checked,
         items_by_type: report.items_by_type,
     }
-}
-
-/// Collects repository paths.
-fn collect_repositories(ctx: &CommandContext) -> Result<Vec<PathBuf>, Box<dyn Error>> {
-    if ctx.repositories.is_empty() {
-        Ok(vec![std::env::current_dir()?])
-    } else {
-        Ok(ctx.repositories.clone())
-    }
-}
-
-/// Scans repositories and parses items.
-fn scan_repositories(repos: &[PathBuf], args: &CheckArgs) -> Result<Vec<Item>, Box<dyn Error>> {
-    if let Some(ref git_ref) = args.at {
-        parse_from_git(repos, git_ref)
-    } else {
-        Ok(parse_repositories(repos)?)
-    }
-}
-
-/// Parses items from a specific Git reference.
-fn parse_from_git(repos: &[PathBuf], git_ref_str: &str) -> Result<Vec<Item>, Box<dyn Error>> {
-    let git_ref = GitRef::parse(git_ref_str);
-    let mut all_items = Vec::new();
-
-    for repo_path in repos {
-        if !repo_path.exists() {
-            tracing::warn!("Repository path does not exist: {}", repo_path.display());
-            continue;
-        }
-
-        let reader = GitReader::open(repo_path)?;
-        let items = reader.parse_commit(&git_ref)?;
-        all_items.extend(items);
-    }
-
-    Ok(all_items)
 }
 
 /// Handles output based on format and validation results.

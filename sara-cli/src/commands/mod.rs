@@ -16,8 +16,8 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use sara_core::config::Config;
-use sara_core::graph::{GraphBuilder, KnowledgeGraph};
-use sara_core::repository::parse_repositories;
+use sara_core::model::Item;
+use sara_core::repository::{GitReader, GitRef, parse_repositories};
 
 use crate::Cli;
 use crate::output::OutputConfig;
@@ -39,12 +39,35 @@ pub struct CommandContext {
 }
 
 impl CommandContext {
-    /// Builds the knowledge graph from the configured repositories.
+    /// Parses items from the configured repositories.
     ///
-    /// Parses all items from the repository paths and constructs a graph.
-    pub fn build_graph(&self) -> Result<KnowledgeGraph, Box<dyn Error>> {
-        let items = parse_repositories(&self.repositories)?;
-        Ok(GraphBuilder::new().add_items(items).build()?)
+    /// If `git_ref` is provided, reads from that git reference instead of the filesystem.
+    pub fn parse_items(&self, git_ref: Option<&str>) -> Result<Vec<Item>, Box<dyn Error>> {
+        let repos = if self.repositories.is_empty() {
+            vec![env::current_dir()?]
+        } else {
+            self.repositories.clone()
+        };
+
+        if let Some(ref_str) = git_ref {
+            let git_ref = GitRef::parse(ref_str);
+            let mut all_items = Vec::new();
+
+            for repo_path in &repos {
+                if !repo_path.exists() {
+                    tracing::warn!("Repository path does not exist: {}", repo_path.display());
+                    continue;
+                }
+
+                let reader = GitReader::open(repo_path)?;
+                let items = reader.parse_commit(&git_ref)?;
+                all_items.extend(items);
+            }
+
+            Ok(all_items)
+        } else {
+            Ok(parse_repositories(&repos)?)
+        }
     }
 }
 
@@ -117,7 +140,7 @@ pub fn run(cli: &Cli, file_config: Option<&Config>) -> Result<ExitCode, Box<dyn 
 
     match &cli.command {
         Commands::Check(args) => check::run(args, &ctx),
-        Commands::Diff(args) => diff::run(args, ctx.repositories.clone(), &ctx),
+        Commands::Diff(args) => diff::run(args, &ctx),
         Commands::Edit(args) => edit::run(args, &ctx),
         Commands::Init(args) => init::run(args, &ctx),
         Commands::Query(args) => query::run(args, &ctx),

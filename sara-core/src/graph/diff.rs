@@ -253,7 +253,7 @@ impl GraphDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::ItemType;
     use crate::test_utils::create_test_item_with_name;
 
@@ -261,8 +261,11 @@ mod tests {
     fn test_no_changes() {
         let item = create_test_item_with_name("SOL-001", ItemType::Solution, "Solution");
 
-        let old_graph = GraphBuilder::new().add_item(item.clone()).build().unwrap();
-        let new_graph = GraphBuilder::new().add_item(item).build().unwrap();
+        let old_graph = KnowledgeGraphBuilder::new()
+            .add_item(item.clone())
+            .build()
+            .unwrap();
+        let new_graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
 
         let diff = GraphDiff::compute(&old_graph, &new_graph);
         assert!(diff.is_empty());
@@ -270,8 +273,8 @@ mod tests {
 
     #[test]
     fn test_added_item() {
-        let old_graph = GraphBuilder::new().build().unwrap();
-        let new_graph = GraphBuilder::new()
+        let old_graph = KnowledgeGraphBuilder::new().build().unwrap();
+        let new_graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_name(
                 "SOL-001",
                 ItemType::Solution,
@@ -287,7 +290,7 @@ mod tests {
 
     #[test]
     fn test_removed_item() {
-        let old_graph = GraphBuilder::new()
+        let old_graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_name(
                 "SOL-001",
                 ItemType::Solution,
@@ -295,7 +298,7 @@ mod tests {
             ))
             .build()
             .unwrap();
-        let new_graph = GraphBuilder::new().build().unwrap();
+        let new_graph = KnowledgeGraphBuilder::new().build().unwrap();
 
         let diff = GraphDiff::compute(&old_graph, &new_graph);
         assert_eq!(diff.stats.items_removed, 1);
@@ -307,8 +310,14 @@ mod tests {
         let old_item = create_test_item_with_name("SOL-001", ItemType::Solution, "Old Name");
         let new_item = create_test_item_with_name("SOL-001", ItemType::Solution, "New Name");
 
-        let old_graph = GraphBuilder::new().add_item(old_item).build().unwrap();
-        let new_graph = GraphBuilder::new().add_item(new_item).build().unwrap();
+        let old_graph = KnowledgeGraphBuilder::new()
+            .add_item(old_item)
+            .build()
+            .unwrap();
+        let new_graph = KnowledgeGraphBuilder::new()
+            .add_item(new_item)
+            .build()
+            .unwrap();
 
         let diff = GraphDiff::compute(&old_graph, &new_graph);
         assert_eq!(diff.stats.items_modified, 1);

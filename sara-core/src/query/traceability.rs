@@ -220,13 +220,13 @@ pub fn check_parent_exists(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::UpstreamRefs;
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_lookup_found() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .build()
             .unwrap();
@@ -244,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_lookup_not_found_with_suggestions() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .add_item(create_test_item("SOL-002", ItemType::Solution))
             .add_item(create_test_item("UC-001", ItemType::UseCase))
@@ -280,7 +280,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
@@ -307,7 +307,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
