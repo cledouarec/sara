@@ -38,7 +38,33 @@ impl Config {
 
     /// Expands all glob patterns in template paths.
     pub fn expand_template_paths(&self) -> Result<Vec<PathBuf>, ConfigError> {
-        expand_glob_patterns(&self.templates.paths)
+        let mut result = Vec::new();
+
+        for pattern in &self.templates.paths {
+            match glob::glob(pattern) {
+                Ok(paths) => {
+                    for entry in paths {
+                        match entry {
+                            Ok(path) => result.push(path),
+                            Err(e) => {
+                                return Err(ConfigError::InvalidGlobPattern {
+                                    pattern: pattern.clone(),
+                                    reason: e.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(ConfigError::InvalidGlobPattern {
+                        pattern: pattern.clone(),
+                        reason: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -97,37 +123,6 @@ pub struct TemplatesConfig {
     /// Custom templates override built-in templates for the corresponding item type.
     #[serde(default)]
     pub paths: Vec<String>,
-}
-
-/// Expands glob patterns in a list of path strings.
-pub fn expand_glob_patterns(patterns: &[String]) -> Result<Vec<PathBuf>, ConfigError> {
-    let mut result = Vec::new();
-
-    for pattern in patterns {
-        match glob::glob(pattern) {
-            Ok(paths) => {
-                for entry in paths {
-                    match entry {
-                        Ok(path) => result.push(path),
-                        Err(e) => {
-                            return Err(ConfigError::InvalidGlobPattern {
-                                pattern: pattern.clone(),
-                                reason: e.to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(ConfigError::InvalidGlobPattern {
-                    pattern: pattern.clone(),
-                    reason: e.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(result)
 }
 
 #[cfg(test)]
