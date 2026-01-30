@@ -234,7 +234,7 @@ impl TraceabilityMatrix {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemId, UpstreamRefs};
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
@@ -250,7 +250,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
@@ -265,7 +265,7 @@ mod tests {
     fn test_matrix_csv() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
 
-        let graph = GraphBuilder::new().add_item(sol).build().unwrap();
+        let graph = KnowledgeGraphBuilder::new().add_item(sol).build().unwrap();
 
         let matrix = TraceabilityMatrix::generate(&graph);
         let csv = matrix.to_csv();
