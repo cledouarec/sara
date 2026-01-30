@@ -53,7 +53,7 @@ pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> 
 
     // Add required fields based on item type
     if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
+        builder = builder.specification("The system SHALL meet this test specification");
     }
 
     if item_type.requires_deciders() {
@@ -100,7 +100,7 @@ pub fn create_test_item_with_upstream(
 
     // Add required fields based on item type
     if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
+        builder = builder.specification("The system SHALL meet this test specification");
     }
 
     if item_type.requires_deciders() {
@@ -166,7 +166,7 @@ pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> It
         .source(source);
 
     if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
+        builder = builder.specification("The system SHALL meet this test specification");
     }
 
     if item_type.requires_deciders() {
@@ -200,7 +200,7 @@ pub fn create_test_item_with_refs(
         .downstream(downstream);
 
     if item_type.requires_specification() {
-        builder = builder.specification("Test specification");
+        builder = builder.specification("The system SHALL meet this test specification");
     }
 
     if item_type.requires_deciders() {

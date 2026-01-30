@@ -1,252 +1,322 @@
 //! Metadata validation rule.
 
-use std::collections::HashSet;
-use std::path::Path;
-
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldName, SourceLocation};
+use crate::model::Item;
+use crate::validation::rule::ValidationRule;
 
-/// Validates metadata completeness for all items.
+/// RFC2119 keywords that should be present in requirement specifications.
+/// See: <https://www.ietf.org/rfc/rfc2119.txt>
+const RFC2119_KEYWORDS: &[&str] = &[
+    "MUST",
+    "MUST NOT",
+    "REQUIRED",
+    "SHALL",
+    "SHALL NOT",
+    "SHOULD",
+    "SHOULD NOT",
+    "RECOMMENDED",
+    "MAY",
+    "OPTIONAL",
+];
+
+/// Metadata validation rule.
 ///
+/// Validates metadata completeness for all items.
 /// Checks:
 /// - Required fields are present (id, type, name already enforced by parsing)
-/// - Specification field is present for requirement types
-pub fn check_metadata(
-    graph: &KnowledgeGraph,
-    _allowed_custom_fields: &[String],
-) -> Vec<ValidationError> {
+/// - Specification field is present and non-empty for requirement types
+/// - Specification contains at least one RFC2119 keyword
+///
+/// This rule supports pre-validation (fail-fast) since it only examines
+/// individual items without requiring graph context.
+pub struct MetadataRule;
+
+impl ValidationRule for MetadataRule {
+    fn pre_validate(&self, items: &[Item], _config: &ValidationConfig) -> Vec<ValidationError> {
+        items.iter().flat_map(validate_item_metadata).collect()
+    }
+
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        graph.items().flat_map(validate_item_metadata).collect()
+    }
+}
+
+/// Validates metadata for a single item.
+fn validate_item_metadata(item: &Item) -> Vec<ValidationError> {
     let mut errors = Vec::new();
 
-    for item in graph.items() {
-        // Check specification requirement
-        if item.item_type.requires_specification()
-            && item
-                .attributes
-                .specification()
-                .is_some_and(|spec| spec.is_empty())
-        {
-            errors.push(ValidationError::InvalidMetadata {
-                file: item.source.file_path.display().to_string(),
-                reason: format!(
-                    "{} requires a non-empty 'specification' field",
-                    item.item_type.display_name()
-                ),
-            });
+    // Check specification requirement
+    if item.item_type.requires_specification() {
+        match item.attributes.specification() {
+            Some(spec) if spec.is_empty() => {
+                errors.push(ValidationError::InvalidMetadata {
+                    file: item.source.file_path.display().to_string(),
+                    reason: format!(
+                        "{} requires a non-empty 'specification' field",
+                        item.item_type.display_name()
+                    ),
+                });
+            }
+            Some(spec) if !contains_rfc2119_keyword(spec) => {
+                errors.push(ValidationError::InvalidMetadata {
+                    file: item.source.file_path.display().to_string(),
+                    reason: format!(
+                        "{} specification must contain at least one RFC2119 keyword (MUST, SHALL, SHOULD, etc.)",
+                        item.item_type.display_name()
+                    ),
+                });
+            }
+            _ => {}
         }
     }
 
     errors
 }
 
-/// Checks for unrecognized fields in YAML frontmatter content (FR-019).
-///
-/// This function parses the raw YAML content and identifies any fields
-/// that are not in the known fields list or the allowed custom fields list.
-/// Unrecognized fields generate warnings, not errors.
-///
-/// # Arguments
-/// * `yaml_content` - The raw YAML frontmatter content
-/// * `file_path` - Path to the file for error reporting
-/// * `allowed_custom_fields` - List of additional allowed field names
-///
-/// # Returns
-/// A vector of warnings for any unrecognized fields.
-pub fn check_custom_fields(
-    yaml_content: &str,
-    file_path: &Path,
-    allowed_custom_fields: &[String],
-) -> Vec<ValidationError> {
-    let mut warnings = Vec::new();
-
-    // Build set of all allowed fields
-    let mut allowed: HashSet<&str> = FieldName::all().iter().map(|f| f.as_str()).collect();
-    for field in allowed_custom_fields {
-        allowed.insert(field.as_str());
-    }
-
-    // Parse YAML as a generic mapping to inspect field names
-    let parsed: Result<serde_yaml::Mapping, _> = serde_yaml::from_str(yaml_content);
-
-    if let Ok(mapping) = parsed {
-        for key in mapping.keys() {
-            if let Some(field_name) = key.as_str()
-                && !allowed.contains(field_name)
-            {
-                warnings.push(ValidationError::UnrecognizedField {
-                    field: field_name.to_string(),
-                    file: file_path.display().to_string(),
-                    location: Some(SourceLocation::new(
-                        file_path.parent().unwrap_or(Path::new(".")),
-                        file_path,
-                    )),
-                });
-            }
-        }
-    }
-
-    warnings
-}
-
-/// Returns the list of known frontmatter fields.
-pub fn known_fields() -> Vec<&'static str> {
-    FieldName::all().iter().map(|f| f.as_str()).collect()
-}
-
-/// Validates that a specification field contains a proper statement.
-///
-/// A valid specification should:
-/// - Not be empty
-/// - Start with "The system SHALL" or similar requirement language
-pub fn validate_specification(spec: &str) -> Result<(), String> {
-    if spec.trim().is_empty() {
-        return Err("Specification cannot be empty".to_string());
-    }
-
-    // Check for requirement language (informational, not enforced as error)
-    let has_shall = spec.to_uppercase().contains("SHALL");
-    let has_must = spec.to_uppercase().contains("MUST");
-    let has_will = spec.to_uppercase().contains("WILL");
-
-    if !has_shall && !has_must && !has_will {
-        // This is a warning, not an error - requirements should use SHALL/MUST/WILL
-        // but we don't enforce it strictly
-    }
-
-    Ok(())
+/// Checks if a specification text contains at least one RFC2119 keyword.
+fn contains_rfc2119_keyword(text: &str) -> bool {
+    let upper = text.to_uppercase();
+    RFC2119_KEYWORDS.iter().any(|keyword| {
+        // Check for whole word match to avoid false positives
+        // e.g., "MUST" shouldn't match in "MUSTARD"
+        upper
+            .split(|c: char| !c.is_alphabetic())
+            .any(|word| word == *keyword)
+    })
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation};
+    use crate::model::{ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation};
     use std::path::PathBuf;
 
-    fn _create_item_with_spec(
-        id: &str,
-        item_type: ItemType,
-        spec: Option<&str>,
-    ) -> crate::model::Item {
+    fn create_item_with_spec(id: &str, item_type: ItemType, spec: &str) -> crate::model::Item {
         let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
+        let attributes = match item_type {
+            ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
+                specification: spec.to_string(),
+                depends_on: Vec::new(),
+            },
+            ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
+                specification: spec.to_string(),
+                depends_on: Vec::new(),
+            },
+            ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
+                specification: spec.to_string(),
+                depends_on: Vec::new(),
+            },
+            _ => ItemAttributes::for_type(item_type),
+        };
+
+        ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(item_type)
             .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(s) = spec {
-            builder = builder.specification(s);
-        } else if item_type.requires_specification() {
-            // For testing - create without spec to test validation
-            builder = builder.specification(""); // This will be caught by validation
-        }
-
-        builder.build().unwrap_or_else(|_| {
-            // If build fails due to missing spec, create with empty spec for testing
-            let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-            ItemBuilder::new()
-                .id(ItemId::new_unchecked(id))
-                .item_type(item_type)
-                .name(format!("Test {}", id))
-                .source(source)
-                .specification("placeholder")
-                .build()
-                .unwrap()
-        })
+            .source(source)
+            .attributes(attributes)
+            .build()
+            .unwrap()
     }
 
     #[test]
-    fn test_valid_metadata() {
+    fn test_valid_metadata_with_rfc2119_keyword() {
         let mut graph = KnowledgeGraph::new(false);
-        let source = SourceLocation::new(PathBuf::from("/repo"), "req.md");
-        let item = ItemBuilder::new()
-            .id(ItemId::new_unchecked("SYSREQ-001"))
-            .item_type(ItemType::SystemRequirement)
-            .name("Test Requirement")
-            .source(source)
-            .specification("The system SHALL respond within 100ms")
-            .build()
-            .unwrap();
+        let item = create_item_with_spec(
+            "SYSREQ-001",
+            ItemType::SystemRequirement,
+            "The system SHALL respond within 100ms",
+        );
         graph.add_item(item);
 
-        let errors = check_metadata(&graph, &[]);
+        let rule = MetadataRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(errors.is_empty());
     }
 
     #[test]
-    fn test_validate_specification() {
-        assert!(validate_specification("The system SHALL respond").is_ok());
-        assert!(validate_specification("The system MUST respond").is_ok());
-        assert!(validate_specification("The system WILL respond").is_ok());
-        assert!(validate_specification("").is_err());
+    fn test_empty_specification_fails() {
+        let mut graph = KnowledgeGraph::new(false);
+        let item = create_item_with_spec("SYSREQ-001", ItemType::SystemRequirement, "");
+        graph.add_item(item);
+
+        let rule = MetadataRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(
+            &errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
+        ));
     }
 
     #[test]
-    fn test_check_custom_fields_known_fields() {
-        let yaml = r#"
-id: "SOL-001"
-type: solution
-name: "Test Solution"
-description: "A description"
-"#;
-        let warnings = check_custom_fields(yaml, Path::new("test.md"), &[]);
+    fn test_specification_without_rfc2119_keyword_fails() {
+        let mut graph = KnowledgeGraph::new(false);
+        let item = create_item_with_spec(
+            "SYSREQ-001",
+            ItemType::SystemRequirement,
+            "The system responds within 100ms",
+        );
+        graph.add_item(item);
+
+        let rule = MetadataRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(
+            &errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+        ));
+    }
+
+    #[test]
+    fn test_contains_rfc2119_keyword() {
+        // Valid specifications with RFC2119 keywords
+        assert!(contains_rfc2119_keyword("The system MUST respond"));
+        assert!(contains_rfc2119_keyword("The system MUST NOT fail"));
+        assert!(contains_rfc2119_keyword("The system SHALL respond"));
+        assert!(contains_rfc2119_keyword("The system SHALL NOT fail"));
+        assert!(contains_rfc2119_keyword("The system SHOULD respond"));
+        assert!(contains_rfc2119_keyword("The system SHOULD NOT fail"));
+        assert!(contains_rfc2119_keyword("This feature is REQUIRED"));
+        assert!(contains_rfc2119_keyword("This feature is RECOMMENDED"));
+        assert!(contains_rfc2119_keyword("This feature is OPTIONAL"));
+        assert!(contains_rfc2119_keyword("The system MAY respond"));
+
+        // Case insensitivity
+        assert!(contains_rfc2119_keyword("The system must respond"));
+        assert!(contains_rfc2119_keyword("The system Must respond"));
+
+        // Invalid specifications without RFC2119 keywords
+        assert!(!contains_rfc2119_keyword("The system responds"));
+        assert!(!contains_rfc2119_keyword("The system will respond"));
+        assert!(!contains_rfc2119_keyword(""));
+
+        // Should not match partial words
+        assert!(!contains_rfc2119_keyword("MUSTARD is a condiment"));
+        assert!(!contains_rfc2119_keyword("MAYONNAISE is also a condiment"));
+    }
+
+    #[test]
+    fn test_all_rfc2119_keywords_accepted() {
+        let keywords = [
+            "MUST",
+            "MUST NOT",
+            "REQUIRED",
+            "SHALL",
+            "SHALL NOT",
+            "SHOULD",
+            "SHOULD NOT",
+            "RECOMMENDED",
+            "MAY",
+            "OPTIONAL",
+        ];
+
+        for keyword in keywords {
+            let spec = format!("The system {} do something", keyword);
+            assert!(
+                contains_rfc2119_keyword(&spec),
+                "Keyword '{}' should be accepted",
+                keyword
+            );
+        }
+    }
+
+    #[test]
+    fn test_pre_validate_valid_items() {
+        let items = vec![create_item_with_spec(
+            "SYSREQ-001",
+            ItemType::SystemRequirement,
+            "The system SHALL respond within 100ms",
+        )];
+
+        let rule = MetadataRule;
+        let errors = rule.pre_validate(&items, &ValidationConfig::default());
+        assert!(errors.is_empty());
+    }
+
+    #[test]
+    fn test_pre_validate_empty_specification() {
+        let items = vec![create_item_with_spec(
+            "SYSREQ-001",
+            ItemType::SystemRequirement,
+            "",
+        )];
+
+        let rule = MetadataRule;
+        let errors = rule.pre_validate(&items, &ValidationConfig::default());
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(
+            &errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
+        ));
+    }
+
+    #[test]
+    fn test_pre_validate_missing_rfc2119_keyword() {
+        let items = vec![create_item_with_spec(
+            "SYSREQ-001",
+            ItemType::SystemRequirement,
+            "The system responds within 100ms",
+        )];
+
+        let rule = MetadataRule;
+        let errors = rule.pre_validate(&items, &ValidationConfig::default());
+        assert_eq!(errors.len(), 1);
+        assert!(matches!(
+            &errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+        ));
+    }
+
+    #[test]
+    fn test_pre_validate_non_requirement_type() {
+        // Solution type doesn't require specification
+        let source = SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md");
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SOL-001"))
+            .item_type(ItemType::Solution)
+            .name("Test Solution")
+            .source(source)
+            .attributes(ItemAttributes::for_type(ItemType::Solution))
+            .build()
+            .unwrap();
+
+        let rule = MetadataRule;
+        let errors = rule.pre_validate(&[item], &ValidationConfig::default());
         assert!(
-            warnings.is_empty(),
-            "Known fields should not generate warnings"
+            errors.is_empty(),
+            "Solution should not require specification"
         );
     }
 
     #[test]
-    fn test_check_custom_fields_unrecognized() {
-        let yaml = r#"
-id: "SOL-001"
-type: solution
-name: "Test Solution"
-custom_field: "some value"
-another_custom: 123
-"#;
-        let warnings = check_custom_fields(yaml, Path::new("test.md"), &[]);
-        assert_eq!(warnings.len(), 2, "Should detect 2 unrecognized fields");
+    fn test_pre_validate_multiple_items() {
+        let items = vec![
+            create_item_with_spec(
+                "SYSREQ-001",
+                ItemType::SystemRequirement,
+                "The system SHALL respond within 100ms",
+            ),
+            create_item_with_spec(
+                "SYSREQ-002",
+                ItemType::SystemRequirement,
+                "Missing keyword here", // Invalid
+            ),
+            create_item_with_spec(
+                "SYSREQ-003",
+                ItemType::SystemRequirement,
+                "The system MUST be secure",
+            ),
+        ];
 
-        // Check that the warnings are for the right fields
-        let warning_fields: Vec<_> = warnings
-            .iter()
-            .filter_map(|w| {
-                if let ValidationError::UnrecognizedField { field, .. } = w {
-                    Some(field.as_str())
-                } else {
-                    None
-                }
-            })
-            .collect();
-        assert!(warning_fields.contains(&"custom_field"));
-        assert!(warning_fields.contains(&"another_custom"));
-    }
-
-    #[test]
-    fn test_check_custom_fields_allowed() {
-        let yaml = r#"
-id: "SOL-001"
-type: solution
-name: "Test Solution"
-custom_field: "some value"
-"#;
-        let allowed = vec!["custom_field".to_string()];
-        let warnings = check_custom_fields(yaml, Path::new("test.md"), &allowed);
-        assert!(
-            warnings.is_empty(),
-            "Allowed custom fields should not generate warnings"
-        );
-    }
-
-    #[test]
-    fn test_known_fields_list() {
-        let fields = known_fields();
-        assert!(fields.contains(&"id"));
-        assert!(fields.contains(&"type"));
-        assert!(fields.contains(&"name"));
-        assert!(fields.contains(&"specification"));
-        assert!(fields.contains(&"refines"));
-        assert!(fields.contains(&"derives_from"));
+        let rule = MetadataRule;
+        let errors = rule.pre_validate(&items, &ValidationConfig::default());
+        assert_eq!(errors.len(), 1, "Should detect one invalid item");
+        assert!(matches!(
+            &errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+        ));
     }
 }

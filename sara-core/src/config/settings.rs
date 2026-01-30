@@ -53,9 +53,10 @@ pub struct RepositoryConfig {
 /// Validation settings.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ValidationConfig {
-    /// Treat orphan items as errors (true) or warnings (false).
+    /// Enable strict validation mode (true) or permissive mode (false).
+    /// In strict mode, orphan items and other non-critical issues are treated as errors.
     #[serde(default)]
-    pub strict_orphans: bool,
+    pub strict_mode: bool,
 
     /// List of allowed custom fields in frontmatter.
     #[serde(default)]
@@ -137,7 +138,7 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert!(config.repositories.paths.is_empty());
-        assert!(!config.validation.strict_orphans);
+        assert!(!config.validation.strict_mode);
         assert!(config.output.colors);
         assert!(config.output.emojis);
     }

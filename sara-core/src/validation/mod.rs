@@ -1,8 +1,13 @@
 //! Validation engine and rules for the knowledge graph.
+//!
+//! The validation system uses trait-based rules orchestrated by the [`Validator`].
+//! External code should use [`validate`] or [`pre_validate`] functions.
 
-pub mod report;
-pub mod rules;
-pub mod validator;
+mod report;
+mod rule;
+mod rules;
+mod validator;
 
-pub use report::{Severity, ValidationIssue, ValidationReport, ValidationReportBuilder};
-pub use validator::{Validator, validate, validate_strict};
+pub use report::{ValidationIssue, ValidationReport};
+pub use rule::Severity;
+pub use validator::{pre_validate, validate};
