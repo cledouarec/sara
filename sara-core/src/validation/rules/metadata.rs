@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_valid_metadata_with_rfc2119_keyword() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         let item = create_item_with_spec(
             "SYSREQ-001",
             ItemType::SystemRequirement,
@@ -138,7 +138,7 @@ mod tests {
 
     #[test]
     fn test_empty_specification_fails() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         let item = create_item_with_spec("SYSREQ-001", ItemType::SystemRequirement, "");
         graph.add_item(item);
 
@@ -153,7 +153,7 @@ mod tests {
 
     #[test]
     fn test_specification_without_rfc2119_keyword_fails() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         let item = create_item_with_spec(
             "SYSREQ-001",
             ItemType::SystemRequirement,

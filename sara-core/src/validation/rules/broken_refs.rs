@@ -39,7 +39,7 @@ mod tests {
 
     #[test]
     fn test_no_broken_refs() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
         graph.add_item(create_test_item_with_upstream(
             "UC-001",
@@ -57,7 +57,7 @@ mod tests {
 
     #[test]
     fn test_broken_ref_detected() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item_with_upstream(
             "UC-001",
             ItemType::UseCase,

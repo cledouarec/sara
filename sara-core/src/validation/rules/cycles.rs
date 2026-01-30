@@ -121,7 +121,7 @@ mod tests {
     #[test]
     fn test_cycle_detected() {
         // Create a cycle: SCEN-001 -> SCEN-002 -> SCEN-001
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
 
         let scen1 = create_test_item_with_upstream(
             "SCEN-001",
@@ -162,7 +162,7 @@ mod tests {
 
     #[test]
     fn test_would_create_cycle() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
 
         let sol = create_test_item("SOL-001", ItemType::Solution);
         let uc = create_test_item_with_upstream(

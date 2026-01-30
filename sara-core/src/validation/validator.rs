@@ -1,6 +1,6 @@
 //! Main validation orchestrator.
 
-use std::time::Instant;
+use std::collections::HashMap;
 
 use crate::config::ValidationConfig;
 use crate::graph::KnowledgeGraph;
@@ -46,7 +46,6 @@ impl Validator {
     /// that can validate items independently (without graph context) will
     /// produce errors here.
     pub fn pre_validate(&self, items: &[Item]) -> ValidationReport {
-        let start = Instant::now();
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
@@ -63,9 +62,14 @@ impl Validator {
             }
         }
 
+        let mut items_by_type = HashMap::new();
+        for item in items {
+            *items_by_type.entry(item.item_type).or_insert(0) += 1;
+        }
+
         ValidationReportBuilder::new()
             .items_checked(items.len())
-            .duration(start.elapsed())
+            .items_by_type(items_by_type)
             .errors(errors)
             .warnings(warnings)
             .build()
@@ -73,8 +77,6 @@ impl Validator {
 
     /// Validates the knowledge graph and returns a report.
     pub fn validate(&self, graph: &KnowledgeGraph) -> ValidationReport {
-        let start = Instant::now();
-
         let mut errors = Vec::new();
         let mut warnings = Vec::new();
 
@@ -94,8 +96,9 @@ impl Validator {
         }
 
         ValidationReportBuilder::new()
+            .items_checked(graph.item_count())
             .relationships_checked(graph.relationship_count())
-            .duration(start.elapsed())
+            .items_by_type(graph.count_by_type())
             .errors(errors)
             .warnings(warnings)
             .build()
@@ -213,7 +216,7 @@ mod tests {
 
     #[test]
     fn test_cycle_detection() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
 
         // Create a cycle
         let scen1 = create_test_item_with_upstream(
@@ -253,7 +256,7 @@ mod tests {
 
     #[test]
     fn test_invalid_relationship() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
 
         // Scenario trying to refine Solution directly (invalid)
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));

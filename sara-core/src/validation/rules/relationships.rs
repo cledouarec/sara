@@ -123,7 +123,7 @@ mod tests {
 
     #[test]
     fn test_valid_relationship() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
         graph.add_item(create_test_item_with_upstream(
             "UC-001",
@@ -144,7 +144,7 @@ mod tests {
 
     #[test]
     fn test_invalid_relationship() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
         // Scenario trying to refine Solution directly (should be UseCase)
         graph.add_item(create_test_item_with_upstream(
@@ -177,7 +177,7 @@ mod tests {
 
     #[test]
     fn test_valid_downstream_relationship() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item_with_refs(
             "SOL-001",
             ItemType::Solution,

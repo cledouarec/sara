@@ -40,7 +40,7 @@ mod tests {
 
     #[test]
     fn test_solution_not_orphan() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
 
         let rule = OrphansRule;
@@ -53,7 +53,7 @@ mod tests {
 
     #[test]
     fn test_use_case_orphan_detected() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("UC-001", ItemType::UseCase));
 
         let rule = OrphansRule;
@@ -70,7 +70,7 @@ mod tests {
 
     #[test]
     fn test_linked_item_not_orphan() {
-        let mut graph = KnowledgeGraph::new(false);
+        let mut graph = KnowledgeGraph::new();
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
         graph.add_item(create_test_item_with_upstream(
             "UC-001",

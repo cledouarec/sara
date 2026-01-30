@@ -18,14 +18,13 @@ cargo install sara-cli
 
 | Command | Description |
 |---------|-------------|
+| `sara check` | Parse documents and validate graph integrity |
 | `sara diff <REF1> <REF2>` | Compare graphs between Git references |
 | `sara edit <ID>` | Edit existing document metadata by item ID |
 | `sara init <FILE>` | Initialize metadata in a Markdown file |
-| `sara parse` | Parse documents and build the knowledge graph |
 | `sara query <ID>` | Query items and traceability chains |
 | `sara report coverage` | Generate coverage report |
 | `sara report matrix` | Generate traceability matrix |
-| `sara validate` | Validate graph integrity |
 
 ## Output Formats
 
