@@ -12,7 +12,7 @@ use serde::Serialize;
 use sara_core::graph::{GraphBuilder, GraphStats, KnowledgeGraph};
 use sara_core::model::Item;
 use sara_core::repository::{GitReader, GitRef, parse_repositories};
-use sara_core::validation::{rules::check_duplicate_items, validate};
+use sara_core::validation::{pre_validate, validate};
 
 use super::CommandContext;
 use crate::output::{OutputConfig, print_error, print_success, print_warning};
@@ -76,8 +76,15 @@ pub fn run(args: &ParseArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
         return Ok(ExitCode::SUCCESS);
     }
 
-    if let Some(exit_code) = check_for_duplicates(&items, output_config) {
-        return Ok(exit_code);
+    let pre_report = pre_validate(&items, false);
+    if !pre_report.is_valid() {
+        for error in pre_report.errors() {
+            print_error(output_config, &format!("{}", error));
+        }
+        return Ok(ExitCode::from(1));
+    }
+    for warning in pre_report.warnings() {
+        print_warning(output_config, &format!("{}", warning));
     }
 
     let graph = build_graph(items.clone())?;
@@ -108,19 +115,6 @@ fn scan_repositories(repos: &[PathBuf], args: &ParseArgs) -> Result<Vec<Item>, B
     } else {
         Ok(parse_repositories(repos)?)
     }
-}
-
-/// Checks for duplicate items and returns an exit code if duplicates are found.
-fn check_for_duplicates(items: &[Item], output_config: &OutputConfig) -> Option<ExitCode> {
-    let duplicate_errors = check_duplicate_items(items);
-    if duplicate_errors.is_empty() {
-        return None;
-    }
-
-    for error in &duplicate_errors {
-        print_error(output_config, &format!("{}", error));
-    }
-    Some(ExitCode::from(1))
 }
 
 /// Builds the knowledge graph.
@@ -183,7 +177,7 @@ fn export_graph_to_json(
 
 /// Warns about validation errors if any are found.
 fn warn_validation_errors(graph: &KnowledgeGraph, output_config: &OutputConfig) {
-    let report = validate(graph);
+    let report = validate(graph, false);
     if report.error_count() > 0 {
         println!();
         print_warning(

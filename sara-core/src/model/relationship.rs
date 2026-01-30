@@ -83,6 +83,27 @@ impl RelationshipType {
         )
     }
 
+    /// Check if this is a primary relationship (not an inverse).
+    ///
+    /// Primary relationships are the declared direction:
+    /// - Refines, DerivesFrom, Satisfies, Justifies (upstream)
+    /// - DependsOn, Supersedes (peer, primary)
+    ///
+    /// Inverse relationships exist only for graph traversal and should not
+    /// be considered when checking for cycles.
+    #[must_use]
+    pub const fn is_primary(&self) -> bool {
+        matches!(
+            self,
+            Self::Refines
+                | Self::DerivesFrom
+                | Self::Satisfies
+                | Self::Justifies
+                | Self::DependsOn
+                | Self::Supersedes
+        )
+    }
+
     /// Returns the corresponding FieldName for this relationship type.
     #[must_use]
     pub const fn field_name(&self) -> FieldName {
