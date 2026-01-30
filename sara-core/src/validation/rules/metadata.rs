@@ -1,126 +1,110 @@
 //! Metadata validation rule.
 
-use std::collections::HashSet;
-use std::path::Path;
-
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldName, SourceLocation};
+use crate::validation::rule::ValidationRule;
 
-/// Validates metadata completeness for all items.
+/// Metadata validation rule.
 ///
+/// Validates metadata completeness for all items.
 /// Checks:
 /// - Required fields are present (id, type, name already enforced by parsing)
 /// - Specification field is present for requirement types
-pub fn check_metadata(
-    graph: &KnowledgeGraph,
-    _allowed_custom_fields: &[String],
-) -> Vec<ValidationError> {
-    let mut errors = Vec::new();
+pub struct MetadataRule;
 
-    for item in graph.items() {
-        // Check specification requirement
-        if item.item_type.requires_specification()
-            && item
-                .attributes
-                .specification()
-                .is_some_and(|spec| spec.is_empty())
-        {
-            errors.push(ValidationError::InvalidMetadata {
-                file: item.source.file_path.display().to_string(),
-                reason: format!(
-                    "{} requires a non-empty 'specification' field",
-                    item.item_type.display_name()
-                ),
-            });
-        }
-    }
+impl ValidationRule for MetadataRule {
+    fn validate(&self, graph: &KnowledgeGraph, config: &ValidationConfig) -> Vec<ValidationError> {
+        let _ = &config.allowed_custom_fields; // Config available for future use
+        let mut errors = Vec::new();
 
-    errors
-}
-
-/// Checks for unrecognized fields in YAML frontmatter content (FR-019).
-///
-/// This function parses the raw YAML content and identifies any fields
-/// that are not in the known fields list or the allowed custom fields list.
-/// Unrecognized fields generate warnings, not errors.
-///
-/// # Arguments
-/// * `yaml_content` - The raw YAML frontmatter content
-/// * `file_path` - Path to the file for error reporting
-/// * `allowed_custom_fields` - List of additional allowed field names
-///
-/// # Returns
-/// A vector of warnings for any unrecognized fields.
-pub fn check_custom_fields(
-    yaml_content: &str,
-    file_path: &Path,
-    allowed_custom_fields: &[String],
-) -> Vec<ValidationError> {
-    let mut warnings = Vec::new();
-
-    // Build set of all allowed fields
-    let mut allowed: HashSet<&str> = FieldName::all().iter().map(|f| f.as_str()).collect();
-    for field in allowed_custom_fields {
-        allowed.insert(field.as_str());
-    }
-
-    // Parse YAML as a generic mapping to inspect field names
-    let parsed: Result<serde_yaml::Mapping, _> = serde_yaml::from_str(yaml_content);
-
-    if let Ok(mapping) = parsed {
-        for key in mapping.keys() {
-            if let Some(field_name) = key.as_str()
-                && !allowed.contains(field_name)
+        for item in graph.items() {
+            // Check specification requirement
+            if item.item_type.requires_specification()
+                && item
+                    .attributes
+                    .specification()
+                    .is_some_and(|spec| spec.is_empty())
             {
-                warnings.push(ValidationError::UnrecognizedField {
-                    field: field_name.to_string(),
-                    file: file_path.display().to_string(),
-                    location: Some(SourceLocation::new(
-                        file_path.parent().unwrap_or(Path::new(".")),
-                        file_path,
-                    )),
+                errors.push(ValidationError::InvalidMetadata {
+                    file: item.source.file_path.display().to_string(),
+                    reason: format!(
+                        "{} requires a non-empty 'specification' field",
+                        item.item_type.display_name()
+                    ),
                 });
             }
         }
+
+        errors
     }
-
-    warnings
-}
-
-/// Returns the list of known frontmatter fields.
-pub fn known_fields() -> Vec<&'static str> {
-    FieldName::all().iter().map(|f| f.as_str()).collect()
-}
-
-/// Validates that a specification field contains a proper statement.
-///
-/// A valid specification should:
-/// - Not be empty
-/// - Start with "The system SHALL" or similar requirement language
-pub fn validate_specification(spec: &str) -> Result<(), String> {
-    if spec.trim().is_empty() {
-        return Err("Specification cannot be empty".to_string());
-    }
-
-    // Check for requirement language (informational, not enforced as error)
-    let has_shall = spec.to_uppercase().contains("SHALL");
-    let has_must = spec.to_uppercase().contains("MUST");
-    let has_will = spec.to_uppercase().contains("WILL");
-
-    if !has_shall && !has_must && !has_will {
-        // This is a warning, not an error - requirements should use SHALL/MUST/WILL
-        // but we don't enforce it strictly
-    }
-
-    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation};
-    use std::path::PathBuf;
+    use crate::model::{
+        FieldName, ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation,
+    };
+    use std::collections::HashSet;
+    use std::path::{Path, PathBuf};
+
+    /// Checks for unrecognized fields in YAML frontmatter content (FR-019).
+    fn check_custom_fields(
+        yaml_content: &str,
+        file_path: &Path,
+        allowed_custom_fields: &[String],
+    ) -> Vec<ValidationError> {
+        let mut warnings = Vec::new();
+
+        // Build set of all allowed fields
+        let mut allowed: HashSet<&str> = FieldName::all().iter().map(|f| f.as_str()).collect();
+        for field in allowed_custom_fields {
+            allowed.insert(field.as_str());
+        }
+
+        // Parse YAML as a generic mapping to inspect field names
+        let parsed: Result<serde_yaml::Mapping, _> = serde_yaml::from_str(yaml_content);
+
+        if let Ok(mapping) = parsed {
+            for key in mapping.keys() {
+                if let Some(field_name) = key.as_str()
+                    && !allowed.contains(field_name)
+                {
+                    warnings.push(ValidationError::UnrecognizedField {
+                        field: field_name.to_string(),
+                        file: file_path.display().to_string(),
+                    });
+                }
+            }
+        }
+
+        warnings
+    }
+
+    /// Returns the list of known frontmatter fields.
+    fn known_fields() -> Vec<&'static str> {
+        FieldName::all().iter().map(|f| f.as_str()).collect()
+    }
+
+    /// Validates that a specification field contains a proper statement.
+    fn validate_specification(spec: &str) -> Result<(), String> {
+        if spec.trim().is_empty() {
+            return Err("Specification cannot be empty".to_string());
+        }
+
+        // Check for requirement language (informational, not enforced as error)
+        let has_shall = spec.to_uppercase().contains("SHALL");
+        let has_must = spec.to_uppercase().contains("MUST");
+        let has_will = spec.to_uppercase().contains("WILL");
+
+        if !has_shall && !has_must && !has_will {
+            // This is a warning, not an error - requirements should use SHALL/MUST/WILL
+            // but we don't enforce it strictly
+        }
+
+        Ok(())
+    }
 
     fn _create_item_with_spec(
         id: &str,
@@ -128,31 +112,44 @@ mod tests {
         spec: Option<&str>,
     ) -> crate::model::Item {
         let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
+        let attributes = match item_type {
+            ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
+                specification: spec.unwrap_or("").to_string(),
+                depends_on: Vec::new(),
+            },
+            ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
+                specification: spec.unwrap_or("").to_string(),
+                depends_on: Vec::new(),
+            },
+            ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
+                specification: spec.unwrap_or("").to_string(),
+                depends_on: Vec::new(),
+            },
+            _ => ItemAttributes::for_type(item_type),
+        };
+
+        ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(item_type)
             .name(format!("Test {}", id))
-            .source(source);
-
-        if let Some(s) = spec {
-            builder = builder.specification(s);
-        } else if item_type.requires_specification() {
-            // For testing - create without spec to test validation
-            builder = builder.specification(""); // This will be caught by validation
-        }
-
-        builder.build().unwrap_or_else(|_| {
-            // If build fails due to missing spec, create with empty spec for testing
-            let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-            ItemBuilder::new()
-                .id(ItemId::new_unchecked(id))
-                .item_type(item_type)
-                .name(format!("Test {}", id))
-                .source(source)
-                .specification("placeholder")
-                .build()
-                .unwrap()
-        })
+            .source(source)
+            .attributes(attributes)
+            .build()
+            .unwrap_or_else(|_| {
+                // If build fails due to missing spec, create with placeholder for testing
+                let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
+                ItemBuilder::new()
+                    .id(ItemId::new_unchecked(id))
+                    .item_type(item_type)
+                    .name(format!("Test {}", id))
+                    .source(source)
+                    .attributes(ItemAttributes::SystemRequirement {
+                        specification: "placeholder".to_string(),
+                        depends_on: Vec::new(),
+                    })
+                    .build()
+                    .unwrap()
+            })
     }
 
     #[test]
@@ -164,12 +161,16 @@ mod tests {
             .item_type(ItemType::SystemRequirement)
             .name("Test Requirement")
             .source(source)
-            .specification("The system SHALL respond within 100ms")
+            .attributes(ItemAttributes::SystemRequirement {
+                specification: "The system SHALL respond within 100ms".to_string(),
+                depends_on: Vec::new(),
+            })
             .build()
             .unwrap();
         graph.add_item(item);
 
-        let errors = check_metadata(&graph, &[]);
+        let rule = MetadataRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
         assert!(errors.is_empty());
     }
 

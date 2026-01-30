@@ -9,10 +9,7 @@ use clap::Args;
 
 use sara_core::graph::GraphBuilder;
 use sara_core::repository::parse_repositories;
-use sara_core::validation::{
-    ValidationReport, ValidationReportBuilder, rules::check_duplicate_items, validate,
-    validate_strict,
-};
+use sara_core::validation::{ValidationReport, validate, validate_strict};
 
 use super::CommandContext;
 use crate::output::{OutputConfig, print_error, print_error_summary, print_success, print_warning};
@@ -48,8 +45,6 @@ pub struct ValidateArgs {
 /// Runs the validate command.
 pub fn run(args: &ValidateArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let output_config = &ctx.output;
-
-    // Parse repositories
     let items = parse_repositories(&ctx.repositories)?;
 
     if items.is_empty() {
@@ -57,43 +52,22 @@ pub fn run(args: &ValidateArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dy
         return Ok(ExitCode::SUCCESS);
     }
 
-    // Check for duplicates before building the graph
-    let duplicate_errors = check_duplicate_items(&items);
-    if !duplicate_errors.is_empty() {
-        // Build report with duplicate errors
-        let report = ValidationReportBuilder::new()
-            .items_checked(items.len())
-            .errors(duplicate_errors)
-            .build();
-
-        // Output and return error
-        match args.format {
-            ValidateFormat::Text => print_text_report(&report, output_config),
-            ValidateFormat::Json => print_json_report(&report, args.output.as_ref())?,
-        }
-        return Ok(ExitCode::from(1));
-    }
-
-    // Build the graph
     let graph = GraphBuilder::new()
         .with_strict_mode(args.strict)
         .add_items(items)
         .build()?;
 
-    // Validate
     let report = if args.strict {
         validate_strict(&graph)
     } else {
         validate(&graph)
     };
 
-    // Output results
     match args.format {
         ValidateFormat::Text => print_text_report(&report, output_config),
         ValidateFormat::Json => print_json_report(&report, args.output.as_ref())?,
     }
 
-    // Return appropriate exit code
     if report.is_valid() {
         Ok(ExitCode::SUCCESS)
     } else {
@@ -103,7 +77,6 @@ pub fn run(args: &ValidateArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dy
 
 /// Prints the validation report in text format.
 fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
-    // Build header
     let output = format!(
         "\nValidation Results\n\
          ==================\n\n\
@@ -114,15 +87,12 @@ fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
 
     println!("{}", output);
 
-    // Print errors with color/emoji
     if report.error_count() > 0 {
         println!();
         for error in report.errors() {
             print_error(config, &error.to_string());
         }
     }
-
-    // Print warnings with color/emoji
     if report.warning_count() > 0 {
         println!();
         for warning in report.warnings() {
@@ -130,7 +100,6 @@ fn print_text_report(report: &ValidationReport, config: &OutputConfig) {
         }
     }
 
-    // Print summary with colors/emojis
     if report.is_valid() {
         if report.warning_count() > 0 {
             print_success(

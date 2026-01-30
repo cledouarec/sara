@@ -1,53 +1,61 @@
 //! Duplicate identifier detection validation rule.
 
-use std::collections::HashMap;
-
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId, SourceLocation};
+use crate::validation::rule::ValidationRule;
 
-/// Detects duplicate identifiers in the knowledge graph.
+/// Duplicate identifier detection rule.
 ///
 /// Each item ID must be unique across all repositories.
-/// This function is typically run during graph construction to detect
-/// when the same ID is used in multiple files.
-pub fn check_duplicates(_graph: &KnowledgeGraph) -> Vec<ValidationError> {
-    // The graph itself prevents duplicates by using a HashMap,
-    // so this check is primarily useful during parsing before
-    // items are added to the graph.
-    // For a built graph, we return empty since duplicates are already prevented.
-    Vec::new()
-}
+/// Note: The graph itself prevents duplicates by using a HashMap,
+/// so this check is primarily useful during parsing before items are added.
+pub struct DuplicatesRule;
 
-/// Checks a collection of items for duplicate IDs before adding to graph.
-///
-/// This is the primary duplicate detection function, used during parsing.
-pub fn check_duplicate_items(items: &[Item]) -> Vec<ValidationError> {
-    let mut seen: HashMap<&ItemId, Vec<&SourceLocation>> = HashMap::new();
-
-    for item in items {
-        seen.entry(&item.id).or_default().push(&item.source);
+impl ValidationRule for DuplicatesRule {
+    fn validate(
+        &self,
+        _graph: &KnowledgeGraph,
+        _config: &ValidationConfig,
+    ) -> Vec<ValidationError> {
+        // The graph itself prevents duplicates by using a HashMap,
+        // so this check is primarily useful during parsing before
+        // items are added to the graph.
+        // For a built graph, we return empty since duplicates are already prevented.
+        Vec::new()
     }
-
-    seen.into_iter()
-        .filter(|(_, locations)| locations.len() > 1)
-        .map(|(id, locations)| ValidationError::DuplicateIdentifier {
-            id: id.clone(),
-            locations: locations.into_iter().cloned().collect(),
-        })
-        .collect()
-}
-
-/// Checks if an item ID would be a duplicate in the graph.
-pub fn would_be_duplicate(graph: &KnowledgeGraph, id: &ItemId) -> bool {
-    graph.contains(id)
 }
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashSet;
+
     use super::*;
-    use crate::model::ItemType;
+    use crate::error::ValidationError;
+    use crate::model::{Item, ItemId, ItemType};
     use crate::test_utils::create_test_item_at;
+
+    /// Checks a collection of items for duplicate IDs.
+    fn check_duplicate_items(items: &[Item]) -> Vec<ValidationError> {
+        let mut seen: HashSet<&ItemId> = HashSet::new();
+        let mut duplicates: HashSet<ItemId> = HashSet::new();
+
+        for item in items {
+            if !seen.insert(&item.id) {
+                duplicates.insert(item.id.clone());
+            }
+        }
+
+        duplicates
+            .into_iter()
+            .map(|id| ValidationError::DuplicateIdentifier { id })
+            .collect()
+    }
+
+    /// Checks if an item ID would be a duplicate in the graph.
+    fn would_be_duplicate(graph: &KnowledgeGraph, id: &ItemId) -> bool {
+        graph.contains(id)
+    }
 
     #[test]
     fn test_no_duplicates() {
@@ -70,9 +78,8 @@ mod tests {
         let errors = check_duplicate_items(&items);
         assert_eq!(errors.len(), 1);
 
-        if let ValidationError::DuplicateIdentifier { id, locations } = &errors[0] {
+        if let ValidationError::DuplicateIdentifier { id } = &errors[0] {
             assert_eq!(id.as_str(), "SOL-001");
-            assert_eq!(locations.len(), 2);
         } else {
             panic!("Expected DuplicateIdentifier error");
         }

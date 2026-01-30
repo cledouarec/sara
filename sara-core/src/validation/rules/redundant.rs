@@ -2,103 +2,52 @@
 
 use std::collections::HashSet;
 
+use crate::config::ValidationConfig;
 use crate::error::ValidationError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId, RelationshipType};
+use crate::model::ItemId;
+use crate::validation::rule::{Severity, ValidationRule};
 
-/// Relationship pair configuration for redundancy checking.
-struct RelationshipPair {
-    from_rel: RelationshipType,
-    to_rel: RelationshipType,
-}
-
-/// Checks for redundant declarations in a specific relationship pair.
-fn check_redundant_pair<F>(
-    item: &Item,
-    graph: &KnowledgeGraph,
-    downstream_refs: &[ItemId],
-    has_inverse: F,
-    pair: &RelationshipPair,
-    seen_pairs: &mut HashSet<(String, String)>,
-    warnings: &mut Vec<ValidationError>,
-) where
-    F: Fn(&Item) -> bool,
-{
-    for target_id in downstream_refs {
-        if let Some(target) = graph.get(target_id)
-            && has_inverse(target)
-        {
-            let pair_key = make_pair_key(&item.id, target_id);
-            if seen_pairs.insert(pair_key) {
-                warnings.push(ValidationError::RedundantRelationship {
-                    from_id: item.id.clone(),
-                    to_id: target_id.clone(),
-                    from_rel: pair.from_rel,
-                    to_rel: pair.to_rel,
-                    from_location: Some(item.source.clone()),
-                    to_location: Some(target.source.clone()),
-                });
-            }
-        }
-    }
-}
-
-/// Detects redundant relationships where both items declare the same link.
+/// Redundant relationship detection rule (warning).
 ///
+/// Detects redundant relationships where both items declare the same link.
 /// For example, if SARCH-001 has `satisfies: [SYSREQ-00001]` and SYSREQ-00001
 /// has `is_satisfied_by: [SARCH-001]`, this is redundant - only one declaration
 /// is needed since the inverse is automatically inferred.
-pub fn check_redundant_relationships(graph: &KnowledgeGraph) -> Vec<ValidationError> {
-    let mut warnings = Vec::new();
-    let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
+pub struct RedundantRelationshipsRule;
 
-    for item in graph.items() {
-        // Check downstream declarations against upstream declarations in target items
+impl ValidationRule for RedundantRelationshipsRule {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+        let mut warnings = Vec::new();
+        let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
 
-        // is_refined_by <-> refines
-        check_redundant_pair(
-            item,
-            graph,
-            &item.downstream.is_refined_by,
-            |target| target.upstream.refines.contains(&item.id),
-            &RelationshipPair {
-                from_rel: RelationshipType::IsRefinedBy,
-                to_rel: RelationshipType::Refines,
-            },
-            &mut seen_pairs,
-            &mut warnings,
-        );
+        for item in graph.items() {
+            // Check each downstream declaration against the inverse upstream in target
+            for (downstream_rel, target_id) in item.downstream_iter_with_types() {
+                let inverse_rel = downstream_rel.inverse();
 
-        // derives <-> derives_from
-        check_redundant_pair(
-            item,
-            graph,
-            &item.downstream.derives,
-            |target| target.upstream.derives_from.contains(&item.id),
-            &RelationshipPair {
-                from_rel: RelationshipType::Derives,
-                to_rel: RelationshipType::DerivesFrom,
-            },
-            &mut seen_pairs,
-            &mut warnings,
-        );
+                if let Some(target) = graph.get(target_id)
+                    && target.upstream_contains_for_type(inverse_rel, &item.id)
+                {
+                    let pair_key = make_pair_key(&item.id, target_id);
+                    if seen_pairs.insert(pair_key) {
+                        warnings.push(ValidationError::RedundantRelationship {
+                            from_id: item.id.clone(),
+                            to_id: target_id.clone(),
+                            from_rel: downstream_rel,
+                            to_rel: inverse_rel,
+                        });
+                    }
+                }
+            }
+        }
 
-        // is_satisfied_by <-> satisfies
-        check_redundant_pair(
-            item,
-            graph,
-            &item.downstream.is_satisfied_by,
-            |target| target.upstream.satisfies.contains(&item.id),
-            &RelationshipPair {
-                from_rel: RelationshipType::IsSatisfiedBy,
-                to_rel: RelationshipType::Satisfies,
-            },
-            &mut seen_pairs,
-            &mut warnings,
-        );
+        warnings
     }
 
-    warnings
+    fn severity(&self) -> Severity {
+        Severity::Warning
+    }
 }
 
 /// Creates a canonical pair key for deduplication (smaller ID first).
@@ -116,22 +65,20 @@ fn make_pair_key(id1: &ItemId, id2: &ItemId) -> (String, String) {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{DownstreamRefs, ItemType, UpstreamRefs};
-    use crate::test_utils::{
-        create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
-    };
+    use crate::model::{ItemType, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_redundancy() {
         // SARCH satisfies SYSREQ, but SYSREQ doesn't declare is_satisfied_by
         let sysreq = create_test_item("SYSREQ-001", ItemType::SystemRequirement);
-        let sarch = create_test_item_with_upstream(
+        let sarch = create_test_item_with_relationships(
             "SARCH-001",
             ItemType::SystemArchitecture,
-            UpstreamRefs {
-                satisfies: vec![ItemId::new_unchecked("SYSREQ-001")],
-                ..Default::default()
-            },
+            vec![(
+                ItemId::new_unchecked("SYSREQ-001"),
+                RelationshipType::Satisfies,
+            )],
         );
 
         let graph = GraphBuilder::new()
@@ -140,29 +87,31 @@ mod tests {
             .build()
             .unwrap();
 
-        let warnings = check_redundant_relationships(&graph);
+        let rule = RedundantRelationshipsRule;
+        let warnings = rule.validate(&graph, &ValidationConfig::default());
         assert!(warnings.is_empty());
     }
 
     #[test]
     fn test_redundant_satisfies() {
         // Both declare the relationship - this is redundant
-        let sysreq = create_test_item_with_refs(
+        // SYSREQ declares is_satisfied_by: SARCH
+        // SARCH declares satisfies: SYSREQ
+        let sysreq = create_test_item_with_relationships(
             "SYSREQ-001",
             ItemType::SystemRequirement,
-            UpstreamRefs::default(),
-            DownstreamRefs {
-                is_satisfied_by: vec![ItemId::new_unchecked("SARCH-001")],
-                ..Default::default()
-            },
+            vec![(
+                ItemId::new_unchecked("SARCH-001"),
+                RelationshipType::IsSatisfiedBy,
+            )],
         );
-        let sarch = create_test_item_with_upstream(
+        let sarch = create_test_item_with_relationships(
             "SARCH-001",
             ItemType::SystemArchitecture,
-            UpstreamRefs {
-                satisfies: vec![ItemId::new_unchecked("SYSREQ-001")],
-                ..Default::default()
-            },
+            vec![(
+                ItemId::new_unchecked("SYSREQ-001"),
+                RelationshipType::Satisfies,
+            )],
         );
 
         let graph = GraphBuilder::new()
@@ -171,7 +120,8 @@ mod tests {
             .build()
             .unwrap();
 
-        let warnings = check_redundant_relationships(&graph);
+        let rule = RedundantRelationshipsRule;
+        let warnings = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
             &warnings[0],

@@ -5,7 +5,22 @@ use std::time::Instant;
 use crate::config::ValidationConfig;
 use crate::graph::KnowledgeGraph;
 use crate::validation::report::{ValidationReport, ValidationReportBuilder};
-use crate::validation::rules;
+use crate::validation::rule::{Severity, ValidationRule};
+use crate::validation::rules::{
+    BrokenReferencesRule, CyclesRule, DuplicatesRule, MetadataRule, OrphansRule,
+    RedundantRelationshipsRule, RelationshipsRule,
+};
+
+/// All validation rules.
+static RULES: &[&dyn ValidationRule] = &[
+    &BrokenReferencesRule,
+    &DuplicatesRule,
+    &CyclesRule,
+    &RelationshipsRule,
+    &MetadataRule,
+    &RedundantRelationshipsRule,
+    &OrphansRule,
+];
 
 /// Orchestrates all validation rules.
 pub struct Validator {
@@ -27,47 +42,32 @@ impl Validator {
     /// Validates the knowledge graph and returns a report.
     pub fn validate(&self, graph: &KnowledgeGraph) -> ValidationReport {
         let start = Instant::now();
-        let mut builder = ValidationReportBuilder::new()
-            .items_checked(graph.item_count())
-            .relationships_checked(graph.relationship_count());
 
-        // Run all validation rules
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
 
-        // 1. Check for broken references (FR-010)
-        let broken_refs = rules::check_broken_references(graph);
-        builder = builder.errors(broken_refs);
-
-        // 2. Check for orphan items (FR-011)
-        // Orphans are errors in strict mode, warnings otherwise
-        let orphans = rules::check_orphans(graph, self.config.strict_orphans);
-        if self.config.strict_orphans {
-            builder = builder.errors(orphans);
-        } else {
-            builder = builder.warnings(orphans);
+        // Run all rules and categorize by severity
+        // In strict mode, all issues become errors
+        for rule in RULES {
+            let issues = rule.validate(graph, &self.config);
+            let severity = if self.config.strict_orphans {
+                Severity::Error
+            } else {
+                rule.severity()
+            };
+            match severity {
+                Severity::Error => errors.extend(issues),
+                Severity::Warning => warnings.extend(issues),
+            }
         }
 
-        // 3. Check for duplicate identifiers (FR-012)
-        // Note: Duplicates are typically caught during parsing/graph construction
-        let duplicates = rules::check_duplicates(graph);
-        builder = builder.errors(duplicates);
-
-        // 4. Check for circular references (FR-013)
-        let cycles = rules::check_cycles(graph);
-        builder = builder.errors(cycles);
-
-        // 5. Check metadata validity (FR-014)
-        let metadata_errors = rules::check_metadata(graph, &self.config.allowed_custom_fields);
-        builder = builder.errors(metadata_errors);
-
-        // 6. Check relationship validity (FR-006, FR-007, FR-008)
-        let relationship_errors = rules::check_relationships(graph);
-        builder = builder.errors(relationship_errors);
-
-        // 7. Check for redundant relationships (warning only)
-        let redundant = rules::check_redundant_relationships(graph);
-        builder = builder.warnings(redundant);
-
-        builder.duration(start.elapsed()).build()
+        ValidationReportBuilder::new()
+            .items_checked(graph.item_count())
+            .relationships_checked(graph.relationship_count())
+            .duration(start.elapsed())
+            .errors(errors)
+            .warnings(warnings)
+            .build()
     }
 }
 
@@ -95,20 +95,17 @@ pub fn validate_strict(graph: &KnowledgeGraph) -> ValidationReport {
 mod tests {
     use super::*;
     use crate::graph::GraphBuilder;
-    use crate::model::{ItemId, ItemType, RelationshipType, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, ItemType, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_valid_graph() {
         let graph = GraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
             ))
             .build()
             .unwrap();
@@ -121,13 +118,13 @@ mod tests {
     #[test]
     fn test_broken_reference() {
         let graph = GraphBuilder::new()
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-MISSING")],
-                    ..Default::default()
-                },
+                vec![(
+                    ItemId::new_unchecked("SOL-MISSING"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -171,21 +168,21 @@ mod tests {
         let mut graph = KnowledgeGraph::new(false);
 
         // Create a cycle
-        let scen1 = create_test_item_with_upstream(
+        let scen1 = create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SCEN-002")],
-                ..Default::default()
-            },
+            vec![(
+                ItemId::new_unchecked("SCEN-002"),
+                RelationshipType::Refines,
+            )],
         );
-        let scen2 = create_test_item_with_upstream(
+        let scen2 = create_test_item_with_relationships(
             "SCEN-002",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SCEN-001")],
-                ..Default::default()
-            },
+            vec![(
+                ItemId::new_unchecked("SCEN-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         graph.add_item(scen1);
@@ -212,13 +209,10 @@ mod tests {
 
         // Scenario trying to refine Solution directly (invalid)
         graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item_with_upstream(
+        graph.add_item(create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
         ));
 
         let report = validate(&graph);
