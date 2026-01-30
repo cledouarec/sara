@@ -1,7 +1,5 @@
 //! File scanner for discovering Markdown files.
 
-#![allow(clippy::result_large_err)]
-
 use std::fs;
 use std::path::{Path, PathBuf};
 

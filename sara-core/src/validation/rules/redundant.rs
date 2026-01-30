@@ -104,8 +104,6 @@ fn check_redundant_pair<F>(
                     to_id: target_id.clone(),
                     from_rel: pair.from_rel,
                     to_rel: pair.to_rel,
-                    from_location: Some(item.source.clone()),
-                    to_location: Some(target.source.clone()),
                 });
             }
         }

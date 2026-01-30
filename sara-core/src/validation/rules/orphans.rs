@@ -22,7 +22,6 @@ impl ValidationRule for OrphansRule {
             .map(|item| ValidationError::OrphanItem {
                 id: item.id.clone(),
                 item_type: item.item_type,
-                location: Some(item.source.clone()),
             })
             .collect()
     }

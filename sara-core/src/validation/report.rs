@@ -194,12 +194,10 @@ mod tests {
                 ValidationError::BrokenReference {
                     from: ItemId::new_unchecked("A"),
                     to: ItemId::new_unchecked("B"),
-                    location: None,
                 },
                 ValidationError::BrokenReference {
                     from: ItemId::new_unchecked("C"),
                     to: ItemId::new_unchecked("D"),
-                    location: None,
                 },
             ])
             .build();
@@ -216,12 +214,10 @@ mod tests {
                 ValidationError::BrokenReference {
                     from: ItemId::new_unchecked("A"),
                     to: ItemId::new_unchecked("B"),
-                    location: None,
                 },
                 ValidationError::BrokenReference {
                     from: ItemId::new_unchecked("C"),
                     to: ItemId::new_unchecked("D"),
-                    location: None,
                 },
             ])
             .build();
@@ -239,7 +235,6 @@ mod tests {
             .errors([ValidationError::BrokenReference {
                 from: ItemId::new_unchecked("A"),
                 to: ItemId::new_unchecked("B"),
-                location: None,
             }])
             .build();
 
