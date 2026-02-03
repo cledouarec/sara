@@ -7,6 +7,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.4.0...sara-cli-v0.5.0) - 2026-02-03
+
+### Added
+
+- add ADR (Architecture Decision Record) management (by @cledouarec) - #39
+
+### Changed
+
+- use KnowledgeGraphBuilder and remove unused functions (by @cledouarec) - #44
+- [**breaking**] consolidate parse and validate commands into check (by @cledouarec) - #44
+- update validation rules to use ValidationRule trait (by @cledouarec) - #44
+- consolidate test helpers and reduce code duplication (by @cledouarec) - #39
+- *(cli)* restructure init command to use subcommands (by @cledouarec)
+- *(templates)* update templates and remove frontmatter.tera (by @cledouarec)
+
+### Fixed
+
+- *(cli)* change error output to stdout, summaries to stderr (by @cledouarec)
+
+### Contributors
+
+* @cledouarec
+
 ## [0.4.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.3.3...sara-cli-v0.4.0) - 2026-01-24
 
 ### Added

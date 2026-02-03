@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.5.0](https://github.com/cledouarec/sara/compare/sara-core-v0.4.0...sara-core-v0.5.0) - 2026-02-03
+
+### Added
+
+- *(test)* add test_utils module with shared test fixtures (by @cledouarec)
+- add ADR (Architecture Decision Record) management (by @cledouarec) - #39
+
+### Changed
+
+- simplify config module by inlining functions (by @cledouarec) - #44
+- remove location fields from ValidationError variants (by @cledouarec) - #44
+- use KnowledgeGraphBuilder and remove unused functions (by @cledouarec) - #44
+- [**breaking**] consolidate parse and validate commands into check (by @cledouarec) - #44
+- update validation rules to use ValidationRule trait (by @cledouarec) - #44
+- extract find_similar_ids_scored helper (by @cledouarec) - #44
+- consolidate test helpers into test_utils module (by @cledouarec) - #44
+- consolidate test helpers and reduce code duplication (by @cledouarec) - #39
+- *(graph)* update to use iterator-based returns (by @cledouarec)
+- *(error)* add ValidationErrorCode enum for type-safe error codes (by @cledouarec)
+- *(model)* add #[must_use] and const fn annotations (by @cledouarec)
+- *(cli)* restructure init command to use subcommands (by @cledouarec)
+- *(templates)* update templates and remove frontmatter.tera (by @cledouarec)
+
+### Documentation
+
+- update sara-core readme (by @cledouarec) - #37
+
+### Fixed
+
+- *(template)* remove deciders body assertion from ADR test (by @cledouarec)
+
+### Contributors
+
+* @cledouarec
+
 ## [0.4.0](https://github.com/cledouarec/sara/compare/sara-core-v0.3.3...sara-core-v0.4.0) - 2026-01-24
 
 ### Added
