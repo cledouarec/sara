@@ -1,11 +1,27 @@
 //! Main validation orchestrator.
 
-use std::time::Instant;
+use std::collections::HashMap;
 
 use crate::config::ValidationConfig;
 use crate::graph::KnowledgeGraph;
+use crate::model::Item;
 use crate::validation::report::{ValidationReport, ValidationReportBuilder};
-use crate::validation::rules;
+use crate::validation::rule::{Severity, ValidationRule};
+use crate::validation::rules::{
+    BrokenReferencesRule, CyclesRule, DuplicatesRule, MetadataRule, OrphansRule,
+    RedundantRelationshipsRule, RelationshipsRule,
+};
+
+/// All validation rules.
+static RULES: &[&dyn ValidationRule] = &[
+    &BrokenReferencesRule,
+    &DuplicatesRule,
+    &CyclesRule,
+    &RelationshipsRule,
+    &MetadataRule,
+    &RedundantRelationshipsRule,
+    &OrphansRule,
+];
 
 /// Orchestrates all validation rules.
 pub struct Validator {
@@ -24,50 +40,68 @@ impl Validator {
         Self::new(ValidationConfig::default())
     }
 
-    /// Validates the knowledge graph and returns a report.
-    pub fn validate(&self, graph: &KnowledgeGraph) -> ValidationReport {
-        let start = Instant::now();
-        let mut builder = ValidationReportBuilder::new()
-            .items_checked(graph.item_count())
-            .relationships_checked(graph.relationship_count());
+    /// Pre-validates a list of items before adding them to the graph.
+    ///
+    /// This enables fail-fast validation during parsing/loading. Only rules
+    /// that can validate items independently (without graph context) will
+    /// produce errors here.
+    pub fn pre_validate(&self, items: &[Item]) -> ValidationReport {
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
 
-        // Run all validation rules
-
-        // 1. Check for broken references (FR-010)
-        let broken_refs = rules::check_broken_references(graph);
-        builder = builder.errors(broken_refs);
-
-        // 2. Check for orphan items (FR-011)
-        // Orphans are errors in strict mode, warnings otherwise
-        let orphans = rules::check_orphans(graph, self.config.strict_orphans);
-        if self.config.strict_orphans {
-            builder = builder.errors(orphans);
-        } else {
-            builder = builder.warnings(orphans);
+        for rule in RULES {
+            let issues = rule.pre_validate(items, &self.config);
+            let severity = if self.config.strict_mode {
+                Severity::Error
+            } else {
+                rule.severity()
+            };
+            match severity {
+                Severity::Error => errors.extend(issues),
+                Severity::Warning => warnings.extend(issues),
+            }
         }
 
-        // 3. Check for duplicate identifiers (FR-012)
-        // Note: Duplicates are typically caught during parsing/graph construction
-        let duplicates = rules::check_duplicates(graph);
-        builder = builder.errors(duplicates);
+        let mut items_by_type = HashMap::new();
+        for item in items {
+            *items_by_type.entry(item.item_type).or_insert(0) += 1;
+        }
 
-        // 4. Check for circular references (FR-013)
-        let cycles = rules::check_cycles(graph);
-        builder = builder.errors(cycles);
+        ValidationReportBuilder::new()
+            .items_checked(items.len())
+            .items_by_type(items_by_type)
+            .errors(errors)
+            .warnings(warnings)
+            .build()
+    }
 
-        // 5. Check metadata validity (FR-014)
-        let metadata_errors = rules::check_metadata(graph, &self.config.allowed_custom_fields);
-        builder = builder.errors(metadata_errors);
+    /// Validates the knowledge graph and returns a report.
+    pub fn validate(&self, graph: &KnowledgeGraph) -> ValidationReport {
+        let mut errors = Vec::new();
+        let mut warnings = Vec::new();
 
-        // 6. Check relationship validity (FR-006, FR-007, FR-008)
-        let relationship_errors = rules::check_relationships(graph);
-        builder = builder.errors(relationship_errors);
+        // Run all rules and categorize by severity
+        // In strict mode, all issues become errors
+        for rule in RULES {
+            let issues = rule.validate(graph, &self.config);
+            let severity = if self.config.strict_mode {
+                Severity::Error
+            } else {
+                rule.severity()
+            };
+            match severity {
+                Severity::Error => errors.extend(issues),
+                Severity::Warning => warnings.extend(issues),
+            }
+        }
 
-        // 7. Check for redundant relationships (warning only)
-        let redundant = rules::check_redundant_relationships(graph);
-        builder = builder.warnings(redundant);
-
-        builder.duration(start.elapsed()).build()
+        ValidationReportBuilder::new()
+            .items_checked(graph.item_count())
+            .relationships_checked(graph.relationship_count())
+            .items_by_type(graph.count_by_type())
+            .errors(errors)
+            .warnings(warnings)
+            .build()
     }
 }
 
@@ -77,30 +111,43 @@ impl Default for Validator {
     }
 }
 
-/// Convenience function to validate a graph with default settings.
-pub fn validate(graph: &KnowledgeGraph) -> ValidationReport {
-    Validator::with_defaults().validate(graph)
-}
-
-/// Convenience function to validate a graph with strict orphan checking.
-pub fn validate_strict(graph: &KnowledgeGraph) -> ValidationReport {
+/// Convenience function to validate a graph.
+///
+/// When `strict` is true, all issues (including orphans) are treated as errors.
+pub fn validate(graph: &KnowledgeGraph, strict: bool) -> ValidationReport {
     let config = ValidationConfig {
-        strict_orphans: true,
+        strict_mode: strict,
         ..Default::default()
     };
     Validator::new(config).validate(graph)
 }
 
+/// Convenience function to pre-validate items before adding them to the graph.
+///
+/// When `strict` is true, all issues are treated as errors.
+/// If the report contains errors, the items should not be added to the graph.
+pub fn pre_validate(items: &[Item], strict: bool) -> ValidationReport {
+    let config = ValidationConfig {
+        strict_mode: strict,
+        ..Default::default()
+    };
+    Validator::new(config).pre_validate(items)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
-    use crate::model::{ItemId, ItemType, RelationshipType, UpstreamRefs};
+    use crate::error::ValidationError;
+    use crate::graph::KnowledgeGraphBuilder;
+    use crate::model::{
+        ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+    };
     use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use std::path::PathBuf;
 
     #[test]
     fn test_valid_graph() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .add_item(create_test_item_with_upstream(
                 "UC-001",
@@ -113,14 +160,14 @@ mod tests {
             .build()
             .unwrap();
 
-        let report = validate(&graph);
+        let report = validate(&graph, false);
         assert!(report.is_valid(), "Valid graph should pass validation");
         assert_eq!(report.error_count(), 0);
     }
 
     #[test]
     fn test_broken_reference() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_upstream(
                 "UC-001",
                 ItemType::UseCase,
@@ -132,20 +179,20 @@ mod tests {
             .build()
             .unwrap();
 
-        let report = validate(&graph);
+        let report = validate(&graph, false);
         assert!(!report.is_valid());
         assert!(report.error_count() > 0);
     }
 
     #[test]
     fn test_orphan_warning() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()
             .unwrap();
 
         // Non-strict mode: orphan is a warning
-        let report = validate(&graph);
+        let report = validate(&graph, false);
         assert!(
             report.is_valid(),
             "Orphan should be warning in non-strict mode"
@@ -155,21 +202,19 @@ mod tests {
 
     #[test]
     fn test_orphan_error_strict() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()
             .unwrap();
 
         // Strict mode: orphan is an error
-        let report = validate_strict(&graph);
+        let report = validate(&graph, true);
         assert!(!report.is_valid(), "Orphan should be error in strict mode");
         assert_eq!(report.error_count(), 1);
     }
 
     #[test]
     fn test_cycle_detection() {
-        let mut graph = KnowledgeGraph::new(false);
-
         // Create a cycle
         let scen1 = create_test_item_with_upstream(
             "SCEN-001",
@@ -188,43 +233,173 @@ mod tests {
             },
         );
 
-        graph.add_item(scen1);
-        graph.add_item(scen2);
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(scen1)
+            .add_item(scen2)
+            .build()
+            .unwrap();
 
-        graph.add_relationship(
-            &ItemId::new_unchecked("SCEN-001"),
-            &ItemId::new_unchecked("SCEN-002"),
-            RelationshipType::Refines,
-        );
-        graph.add_relationship(
-            &ItemId::new_unchecked("SCEN-002"),
-            &ItemId::new_unchecked("SCEN-001"),
-            RelationshipType::Refines,
-        );
-
-        let report = validate(&graph);
+        let report = validate(&graph, false);
         assert!(!report.is_valid(), "Cycle should be detected");
     }
 
     #[test]
     fn test_invalid_relationship() {
-        let mut graph = KnowledgeGraph::new(false);
-
         // Scenario trying to refine Solution directly (invalid)
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item_with_upstream(
-            "SCEN-001",
-            ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
-        ));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item_with_upstream(
+                "SCEN-001",
+                ItemType::Scenario,
+                UpstreamRefs {
+                    refines: vec![ItemId::new_unchecked("SOL-001")],
+                    ..Default::default()
+                },
+            ))
+            .build()
+            .unwrap();
 
-        let report = validate(&graph);
+        let report = validate(&graph, false);
         assert!(
             !report.is_valid(),
             "Invalid relationship should be detected"
         );
+    }
+
+    #[test]
+    fn test_pre_validate_valid_items() {
+        let source = SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md");
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SYSREQ-001"))
+            .item_type(ItemType::SystemRequirement)
+            .name("Test Requirement")
+            .source(source)
+            .attributes(ItemAttributes::SystemRequirement {
+                specification: "The system SHALL respond within 100ms".to_string(),
+                depends_on: Vec::new(),
+            })
+            .build()
+            .unwrap();
+
+        let report = pre_validate(&[item], false);
+        assert!(
+            report.is_valid(),
+            "Valid item should have no pre-validation errors"
+        );
+        assert_eq!(
+            report.warning_count(),
+            0,
+            "Valid item should have no pre-validation warnings"
+        );
+    }
+
+    #[test]
+    fn test_pre_validate_invalid_specification() {
+        let source = SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md");
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SYSREQ-001"))
+            .item_type(ItemType::SystemRequirement)
+            .name("Test Requirement")
+            .source(source)
+            .attributes(ItemAttributes::SystemRequirement {
+                specification: "The system responds within 100ms".to_string(), // Missing RFC2119 keyword
+                depends_on: Vec::new(),
+            })
+            .build()
+            .unwrap();
+
+        let report = pre_validate(&[item], false);
+        assert_eq!(
+            report.error_count(),
+            1,
+            "Should detect missing RFC2119 keyword"
+        );
+        let errors = report.errors();
+        assert!(matches!(
+            errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+        ));
+    }
+
+    #[test]
+    fn test_pre_validate_empty_specification() {
+        let source = SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md");
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SYSREQ-001"))
+            .item_type(ItemType::SystemRequirement)
+            .name("Test Requirement")
+            .source(source)
+            .attributes(ItemAttributes::SystemRequirement {
+                specification: String::new(),
+                depends_on: Vec::new(),
+            })
+            .build()
+            .unwrap();
+
+        let report = pre_validate(&[item], false);
+        assert_eq!(report.error_count(), 1, "Should detect empty specification");
+        let errors = report.errors();
+        assert!(matches!(
+            errors[0],
+            ValidationError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
+        ));
+    }
+
+    #[test]
+    fn test_pre_validate_solution_no_errors() {
+        // Solution type doesn't require specification - should pass pre-validation
+        let source = SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md");
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SOL-001"))
+            .item_type(ItemType::Solution)
+            .name("Test Solution")
+            .source(source)
+            .attributes(ItemAttributes::for_type(ItemType::Solution))
+            .build()
+            .unwrap();
+
+        let report = pre_validate(&[item], false);
+        assert!(report.is_valid(), "Solution should pass pre-validation");
+        assert_eq!(report.warning_count(), 0);
+    }
+
+    #[test]
+    fn test_pre_validate_multiple_items() {
+        let items = vec![
+            ItemBuilder::new()
+                .id(ItemId::new_unchecked("SYSREQ-001"))
+                .item_type(ItemType::SystemRequirement)
+                .name("Valid Requirement")
+                .source(SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md"))
+                .attributes(ItemAttributes::SystemRequirement {
+                    specification: "The system SHALL respond".to_string(),
+                    depends_on: Vec::new(),
+                })
+                .build()
+                .unwrap(),
+            ItemBuilder::new()
+                .id(ItemId::new_unchecked("SYSREQ-002"))
+                .item_type(ItemType::SystemRequirement)
+                .name("Invalid Requirement")
+                .source(SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-002.md"))
+                .attributes(ItemAttributes::SystemRequirement {
+                    specification: "Missing keyword".to_string(), // Invalid
+                    depends_on: Vec::new(),
+                })
+                .build()
+                .unwrap(),
+            ItemBuilder::new()
+                .id(ItemId::new_unchecked("SOL-001"))
+                .item_type(ItemType::Solution)
+                .name("Solution")
+                .source(SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md"))
+                .attributes(ItemAttributes::for_type(ItemType::Solution))
+                .build()
+                .unwrap(),
+        ];
+
+        let report = pre_validate(&items, false);
+        assert_eq!(report.error_count(), 1, "Should detect one invalid item");
+        assert_eq!(report.warning_count(), 0);
     }
 }

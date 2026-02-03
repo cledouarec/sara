@@ -19,76 +19,58 @@ fn sara() -> Command {
     Command::new(env!("CARGO_BIN_EXE_sara"))
 }
 
-mod parse_command {
+mod check_command {
     use super::*;
 
     #[test]
-    fn test_parse_valid_graph() {
+    fn test_check_valid_graph() {
         let fixtures = fixtures_path().join("valid_graph");
 
         sara()
-            .arg("parse")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()
             .success()
-            .stdout(predicate::str::contains("Parse Results"))
-            .stdout(predicate::str::contains("Items parsed:"));
+            .stdout(predicate::str::contains("Check Results"))
+            .stdout(predicate::str::contains("Items:"));
     }
 
     #[test]
-    fn test_parse_nonexistent_repository() {
-        // Non-existent repositories are warned about but don't fail the parse
+    fn test_check_nonexistent_repository() {
+        // Non-existent repositories are warned about but don't fail the check
         // They simply result in no items found
         sara()
-            .arg("parse")
+            .arg("check")
             .arg("-r")
             .arg("/nonexistent/path")
             .assert()
             .success()
             .stdout(
-                predicate::str::contains("No items found")
-                    .or(predicate::str::contains("Items parsed: 0")),
+                predicate::str::contains("No items found").or(predicate::str::contains("Items: 0")),
             );
     }
 
     #[test]
-    fn test_parse_detects_duplicates() {
+    fn test_check_detects_duplicates() {
         let fixtures = fixtures_path().join("duplicates");
 
         sara()
-            .arg("parse")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()
             .failure()
             .stdout(predicate::str::contains("Duplicate identifier"));
     }
-}
-
-mod validate_command {
-    use super::*;
 
     #[test]
-    fn test_validate_valid_graph() {
-        let fixtures = fixtures_path().join("valid_graph");
-
-        sara()
-            .arg("validate")
-            .arg("-r")
-            .arg(&fixtures)
-            .assert()
-            .success()
-            .stdout(predicate::str::contains("Validation"));
-    }
-
-    #[test]
-    fn test_validate_detects_broken_refs() {
+    fn test_check_detects_broken_refs() {
         let fixtures = fixtures_path().join("broken_refs");
 
         // Error details go to stdout, status summary to stderr
         sara()
-            .arg("validate")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()
@@ -97,26 +79,12 @@ mod validate_command {
     }
 
     #[test]
-    fn test_validate_detects_duplicates() {
-        let fixtures = fixtures_path().join("duplicates");
-
-        // Error details go to stdout, status summary to stderr
-        sara()
-            .arg("validate")
-            .arg("-r")
-            .arg(&fixtures)
-            .assert()
-            .failure()
-            .stdout(predicate::str::contains("Duplicate identifier"));
-    }
-
-    #[test]
-    fn test_validate_strict_mode() {
+    fn test_check_strict_mode() {
         let fixtures = fixtures_path().join("orphans");
 
         // In strict mode, orphans should be errors
         sara()
-            .arg("validate")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .arg("--strict")
@@ -125,11 +93,11 @@ mod validate_command {
     }
 
     #[test]
-    fn test_validate_json_output() {
+    fn test_check_json_output() {
         let fixtures = fixtures_path().join("valid_graph");
 
         sara()
-            .arg("validate")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .arg("--format")
@@ -390,12 +358,12 @@ mod cycles_detection {
     use super::*;
 
     #[test]
-    fn test_validate_detects_cycles() {
+    fn test_check_detects_cycles() {
         let fixtures = fixtures_path().join("cycles");
 
         // Error details go to stdout, status summary to stderr
         sara()
-            .arg("validate")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()
@@ -803,8 +771,7 @@ mod global_options {
             .assert()
             .success()
             .stdout(predicate::str::contains("sara"))
-            .stdout(predicate::str::contains("parse"))
-            .stdout(predicate::str::contains("validate"))
+            .stdout(predicate::str::contains("check"))
             .stdout(predicate::str::contains("query"))
             .stdout(predicate::str::contains("report"));
     }
@@ -824,7 +791,7 @@ mod global_options {
 
         sara()
             .arg("--no-color")
-            .arg("parse")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()
@@ -837,7 +804,7 @@ mod global_options {
 
         sara()
             .arg("--no-emoji")
-            .arg("parse")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()
@@ -850,7 +817,7 @@ mod global_options {
 
         sara()
             .env("NO_COLOR", "1")
-            .arg("parse")
+            .arg("check")
             .arg("-r")
             .arg(&fixtures)
             .assert()

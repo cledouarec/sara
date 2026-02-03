@@ -4,7 +4,9 @@ use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
+use std::path::PathBuf;
 
+use crate::error::SaraError;
 use crate::model::{Item, ItemId, ItemType, RelationshipType};
 
 /// The main knowledge graph container.
@@ -15,24 +17,15 @@ pub struct KnowledgeGraph {
 
     /// Index for O(1) lookup by ItemId.
     index: HashMap<ItemId, NodeIndex>,
-
-    /// Validation mode (strict orphan checking).
-    strict_mode: bool,
 }
 
 impl KnowledgeGraph {
     /// Creates a new empty knowledge graph.
-    pub fn new(strict_mode: bool) -> Self {
+    pub fn new() -> Self {
         Self {
             graph: DiGraph::new(),
             index: HashMap::new(),
-            strict_mode,
         }
-    }
-
-    /// Returns whether strict mode is enabled.
-    pub fn is_strict_mode(&self) -> bool {
-        self.strict_mode
     }
 
     /// Returns the number of items in the graph.
@@ -46,7 +39,7 @@ impl KnowledgeGraph {
     }
 
     /// Adds an item to the graph.
-    pub fn add_item(&mut self, item: Item) -> NodeIndex {
+    fn add_item(&mut self, item: Item) -> NodeIndex {
         let id = item.id.clone();
         let idx = self.graph.add_node(item);
         self.index.insert(id, idx);
@@ -54,16 +47,10 @@ impl KnowledgeGraph {
     }
 
     /// Adds a relationship between two items.
-    pub fn add_relationship(
-        &mut self,
-        from: &ItemId,
-        to: &ItemId,
-        rel_type: RelationshipType,
-    ) -> Option<()> {
-        let from_idx = self.index.get(from)?;
-        let to_idx = self.index.get(to)?;
-        self.graph.add_edge(*from_idx, *to_idx, rel_type);
-        Some(())
+    fn add_relationship(&mut self, from: &ItemId, to: &ItemId, rel_type: RelationshipType) {
+        if let (Some(from_idx), Some(to_idx)) = (self.index.get(from), self.index.get(to)) {
+            self.graph.add_edge(*from_idx, *to_idx, rel_type);
+        }
     }
 
     /// Gets an item by ID.
@@ -186,36 +173,126 @@ impl KnowledgeGraph {
 
 impl Default for KnowledgeGraph {
     fn default() -> Self {
-        Self::new(false)
+        Self::new()
+    }
+}
+
+/// Builder for constructing knowledge graphs.
+#[derive(Debug, Default)]
+pub struct KnowledgeGraphBuilder {
+    items: Vec<Item>,
+    repositories: Vec<PathBuf>,
+}
+
+impl KnowledgeGraphBuilder {
+    /// Creates a new graph builder.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds a repository path.
+    pub fn add_repository(mut self, path: impl Into<PathBuf>) -> Self {
+        self.repositories.push(path.into());
+        self
+    }
+
+    /// Adds an item to the graph.
+    pub fn add_item(mut self, item: Item) -> Self {
+        self.items.push(item);
+        self
+    }
+
+    /// Adds multiple items to the graph.
+    pub fn add_items(mut self, items: impl IntoIterator<Item = Item>) -> Self {
+        self.items.extend(items);
+        self
+    }
+
+    /// Builds the knowledge graph.
+    pub fn build(self) -> Result<KnowledgeGraph, SaraError> {
+        let mut graph = KnowledgeGraph::new();
+
+        // First pass: add all items
+        for item in &self.items {
+            graph.add_item(item.clone());
+        }
+
+        // Second pass: add relationships based on item references
+        for item in &self.items {
+            self.add_relationships_for_item(&mut graph, item);
+        }
+
+        Ok(graph)
+    }
+
+    /// Adds relationships for an item based on its references.
+    fn add_relationships_for_item(&self, graph: &mut KnowledgeGraph, item: &Item) {
+        // Add upstream relationships
+        for target_id in &item.upstream.refines {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Refines);
+        }
+        for target_id in &item.upstream.derives_from {
+            graph.add_relationship(&item.id, target_id, RelationshipType::DerivesFrom);
+        }
+        for target_id in &item.upstream.satisfies {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Satisfies);
+        }
+        // ADR justifies design artifacts (standard upstream relationship)
+        for target_id in &item.upstream.justifies {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Justifies);
+            // Add inverse: target is justified by this ADR
+            graph.add_relationship(target_id, &item.id, RelationshipType::IsJustifiedBy);
+        }
+
+        // Add downstream relationships (and their inverse for bidirectional graph queries)
+        for target_id in &item.downstream.is_refined_by {
+            graph.add_relationship(&item.id, target_id, RelationshipType::IsRefinedBy);
+            // Add inverse: target refines this item
+            graph.add_relationship(target_id, &item.id, RelationshipType::Refines);
+        }
+        for target_id in &item.downstream.derives {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Derives);
+            // Add inverse: target derives_from this item
+            graph.add_relationship(target_id, &item.id, RelationshipType::DerivesFrom);
+        }
+        for target_id in &item.downstream.is_satisfied_by {
+            graph.add_relationship(&item.id, target_id, RelationshipType::IsSatisfiedBy);
+            // Add inverse: target satisfies this item
+            graph.add_relationship(target_id, &item.id, RelationshipType::Satisfies);
+        }
+        // Design artifact is justified by ADRs (standard downstream relationship)
+        for adr_id in &item.downstream.justified_by {
+            graph.add_relationship(&item.id, adr_id, RelationshipType::IsJustifiedBy);
+            // Add inverse: ADR justifies this item
+            graph.add_relationship(adr_id, &item.id, RelationshipType::Justifies);
+        }
+
+        // Add peer dependencies (for requirement types)
+        for target_id in item.attributes.depends_on() {
+            graph.add_relationship(&item.id, target_id, RelationshipType::DependsOn);
+        }
+
+        // ADR supersession (peer relationships between ADRs, stored in attributes)
+        for target_id in item.attributes.supersedes() {
+            graph.add_relationship(&item.id, target_id, RelationshipType::Supersedes);
+            // Add inverse: target is superseded by this ADR
+            graph.add_relationship(target_id, &item.id, RelationshipType::IsSupersededBy);
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::{ItemBuilder, SourceLocation};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::model::UpstreamRefs;
+    use crate::test_utils::{create_test_adr, create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_add_and_get_item() {
-        let mut graph = KnowledgeGraph::new(false);
-        let item = create_test_item("SOL-001", ItemType::Solution);
-        graph.add_item(item);
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .build()
+            .unwrap();
 
         let id = ItemId::new_unchecked("SOL-001");
         assert!(graph.contains(&id));
@@ -224,10 +301,12 @@ mod tests {
 
     #[test]
     fn test_items_by_type() {
-        let mut graph = KnowledgeGraph::new(false);
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
-        graph.add_item(create_test_item("UC-001", ItemType::UseCase));
-        graph.add_item(create_test_item("UC-002", ItemType::UseCase));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .add_item(create_test_item("UC-002", ItemType::UseCase))
+            .build()
+            .unwrap();
 
         let solutions = graph.items_by_type(ItemType::Solution);
         assert_eq!(solutions.len(), 1);
@@ -238,13 +317,89 @@ mod tests {
 
     #[test]
     fn test_item_count() {
-        let mut graph = KnowledgeGraph::new(false);
+        let graph = KnowledgeGraphBuilder::new().build().unwrap();
         assert_eq!(graph.item_count(), 0);
 
-        graph.add_item(create_test_item("SOL-001", ItemType::Solution));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .build()
+            .unwrap();
         assert_eq!(graph.item_count(), 1);
 
-        graph.add_item(create_test_item("UC-001", ItemType::UseCase));
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .build()
+            .unwrap();
         assert_eq!(graph.item_count(), 2);
+    }
+
+    #[test]
+    fn test_build_simple_graph() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.item_count(), 1);
+    }
+
+    #[test]
+    fn test_build_graph_with_relationships() {
+        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let uc = create_test_item_with_upstream(
+            "UC-001",
+            ItemType::UseCase,
+            UpstreamRefs {
+                refines: vec![ItemId::new_unchecked("SOL-001")],
+                ..Default::default()
+            },
+        );
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(sol)
+            .add_item(uc)
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.item_count(), 2);
+        assert_eq!(graph.relationship_count(), 1);
+    }
+
+    #[test]
+    fn test_adr_justifies_relationship() {
+        // Create a system architecture item
+        let sysarch = create_test_item("SYSARCH-001", ItemType::SystemArchitecture);
+        // Create an ADR that justifies it
+        let adr = create_test_adr("ADR-001", &["SYSARCH-001"], &[]);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(sysarch)
+            .add_item(adr)
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.item_count(), 2);
+        // ADR-001 -> Justifies -> SYSARCH-001
+        // SYSARCH-001 -> IsJustifiedBy -> ADR-001
+        assert_eq!(graph.relationship_count(), 2);
+    }
+
+    #[test]
+    fn test_adr_supersession_relationship() {
+        // Create two ADRs where the newer one supersedes the older
+        let adr_old = create_test_adr("ADR-001", &[], &[]);
+        let adr_new = create_test_adr("ADR-002", &[], &["ADR-001"]);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(adr_old)
+            .add_item(adr_new)
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.item_count(), 2);
+        // ADR-002 -> Supersedes -> ADR-001
+        // ADR-001 -> IsSupersededBy -> ADR-002
+        assert_eq!(graph.relationship_count(), 2);
     }
 }

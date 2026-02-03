@@ -38,7 +38,33 @@ impl Config {
 
     /// Expands all glob patterns in template paths.
     pub fn expand_template_paths(&self) -> Result<Vec<PathBuf>, ConfigError> {
-        expand_glob_patterns(&self.templates.paths)
+        let mut result = Vec::new();
+
+        for pattern in &self.templates.paths {
+            match glob::glob(pattern) {
+                Ok(paths) => {
+                    for entry in paths {
+                        match entry {
+                            Ok(path) => result.push(path),
+                            Err(e) => {
+                                return Err(ConfigError::InvalidGlobPattern {
+                                    pattern: pattern.clone(),
+                                    reason: e.to_string(),
+                                });
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    return Err(ConfigError::InvalidGlobPattern {
+                        pattern: pattern.clone(),
+                        reason: e.to_string(),
+                    });
+                }
+            }
+        }
+
+        Ok(result)
     }
 }
 
@@ -53,9 +79,10 @@ pub struct RepositoryConfig {
 /// Validation settings.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct ValidationConfig {
-    /// Treat orphan items as errors (true) or warnings (false).
+    /// Enable strict validation mode (true) or permissive mode (false).
+    /// In strict mode, orphan items and other non-critical issues are treated as errors.
     #[serde(default)]
-    pub strict_orphans: bool,
+    pub strict_mode: bool,
 
     /// List of allowed custom fields in frontmatter.
     #[serde(default)]
@@ -98,37 +125,6 @@ pub struct TemplatesConfig {
     pub paths: Vec<String>,
 }
 
-/// Expands glob patterns in a list of path strings.
-pub fn expand_glob_patterns(patterns: &[String]) -> Result<Vec<PathBuf>, ConfigError> {
-    let mut result = Vec::new();
-
-    for pattern in patterns {
-        match glob::glob(pattern) {
-            Ok(paths) => {
-                for entry in paths {
-                    match entry {
-                        Ok(path) => result.push(path),
-                        Err(e) => {
-                            return Err(ConfigError::InvalidGlobPattern {
-                                pattern: pattern.clone(),
-                                reason: e.to_string(),
-                            });
-                        }
-                    }
-                }
-            }
-            Err(e) => {
-                return Err(ConfigError::InvalidGlobPattern {
-                    pattern: pattern.clone(),
-                    reason: e.to_string(),
-                });
-            }
-        }
-    }
-
-    Ok(result)
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -137,7 +133,7 @@ mod tests {
     fn test_default_config() {
         let config = Config::default();
         assert!(config.repositories.paths.is_empty());
-        assert!(!config.validation.strict_orphans);
+        assert!(!config.validation.strict_mode);
         assert!(config.output.colors);
         assert!(config.output.emojis);
     }

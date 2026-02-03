@@ -48,29 +48,8 @@ impl<'a> QueryEngine<'a> {
 
     /// Finds item IDs similar to the given string using Levenshtein distance.
     fn find_similar_ids(&self, query: &str, max_suggestions: usize) -> Vec<&'a ItemId> {
-        let query_lower = query.to_lowercase();
-
-        let mut scored: Vec<_> = self
-            .graph
-            .item_ids()
-            .map(|id| {
-                let id_lower = id.as_str().to_lowercase();
-                let distance = levenshtein(&query_lower, &id_lower);
-                (id, distance)
-            })
-            .collect();
-
-        // Sort by distance (ascending)
-        scored.sort_by_key(|(_, distance)| *distance);
-
-        // Take top suggestions with reasonable distance
-        scored
+        find_similar_ids_scored(self.graph, query, max_suggestions)
             .into_iter()
-            .filter(|(_, distance)| {
-                // Only suggest if distance is reasonable (less than half the query length)
-                *distance <= query.len().max(3)
-            })
-            .take(max_suggestions)
             .map(|(id, _)| id)
             .collect()
     }
@@ -128,6 +107,21 @@ pub fn find_similar_ids(
     query: &str,
     max_suggestions: usize,
 ) -> Vec<String> {
+    find_similar_ids_scored(graph, query, max_suggestions)
+        .into_iter()
+        .map(|(id, _)| id.as_str().to_string())
+        .collect()
+}
+
+/// Core implementation for finding similar IDs with Levenshtein distance scoring.
+///
+/// Returns item IDs with their edit distances, sorted by distance (ascending).
+/// Filters to only include suggestions with reasonable edit distance.
+fn find_similar_ids_scored<'a>(
+    graph: &'a KnowledgeGraph,
+    query: &str,
+    max_suggestions: usize,
+) -> Vec<(&'a ItemId, usize)> {
     let query_lower = query.to_lowercase();
 
     let mut scored: Vec<_> = graph
@@ -135,7 +129,7 @@ pub fn find_similar_ids(
         .map(|id| {
             let id_lower = id.as_str().to_lowercase();
             let distance = levenshtein(&query_lower, &id_lower);
-            (id.as_str().to_string(), distance)
+            (id, distance)
         })
         .collect();
 
@@ -150,7 +144,6 @@ pub fn find_similar_ids(
             *distance <= query.len().max(3)
         })
         .take(max_suggestions)
-        .map(|(id, _)| id)
         .collect()
 }
 
@@ -227,48 +220,13 @@ pub fn check_parent_exists(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
-    use crate::model::{ItemBuilder, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
-
-    fn create_test_item_with_upstream(
-        id: &str,
-        item_type: ItemType,
-        upstream: UpstreamRefs,
-    ) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source)
-            .upstream(upstream);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::graph::KnowledgeGraphBuilder;
+    use crate::model::UpstreamRefs;
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_lookup_found() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .build()
             .unwrap();
@@ -286,7 +244,7 @@ mod tests {
 
     #[test]
     fn test_lookup_not_found_with_suggestions() {
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             .add_item(create_test_item("SOL-002", ItemType::Solution))
             .add_item(create_test_item("UC-001", ItemType::UseCase))
@@ -322,7 +280,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
@@ -349,7 +307,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()

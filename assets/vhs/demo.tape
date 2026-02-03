@@ -18,13 +18,8 @@ Type "cd examples/smart-home"
 Enter
 Sleep 500ms
 
-# Parse all documents
-Type "sara parse"
-Enter
-Sleep 2s
-
-# Validate
-Type "sara validate"
+# Parse and validate all documents
+Type "sara check"
 Enter
 Sleep 2s
 

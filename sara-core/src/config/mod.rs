@@ -2,9 +2,7 @@
 
 mod settings;
 
-pub use settings::{
-    Config, OutputConfig, RepositoryConfig, TemplatesConfig, ValidationConfig, expand_glob_patterns,
-};
+pub use settings::{Config, OutputConfig, RepositoryConfig, TemplatesConfig, ValidationConfig};
 
 use std::path::Path;
 
@@ -20,12 +18,7 @@ pub fn load_config(path: &Path) -> Result<Config, ConfigError> {
         reason: e.to_string(),
     })?;
 
-    parse_config(&content, path)
-}
-
-/// Parses configuration from a TOML string.
-pub fn parse_config(content: &str, path: &Path) -> Result<Config, ConfigError> {
-    toml::from_str(content).map_err(|e| ConfigError::InvalidConfig {
+    toml::from_str(&content).map_err(|e| ConfigError::InvalidConfig {
         path: path.to_path_buf(),
         reason: e.to_string(),
     })
@@ -43,56 +36,5 @@ pub fn load_or_default(path: Option<&Path>) -> Result<Config, ConfigError> {
                 Ok(Config::default())
             }
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use std::path::PathBuf;
-
-    #[test]
-    fn test_parse_config() {
-        let toml = r#"
-[repositories]
-paths = ["./docs", "../other-repo"]
-
-[validation]
-strict_orphans = true
-
-[output]
-colors = true
-emojis = false
-
-[templates]
-paths = ["./templates/*.md"]
-"#;
-
-        let config = parse_config(toml, Path::new("test.toml")).unwrap();
-        assert_eq!(config.repositories.paths.len(), 2);
-        assert!(config.validation.strict_orphans);
-        assert!(config.output.colors);
-        assert!(!config.output.emojis);
-        assert_eq!(config.templates.paths.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_minimal_config() {
-        let toml = r#"
-[repositories]
-paths = ["./docs"]
-"#;
-
-        let config = parse_config(toml, Path::new("test.toml")).unwrap();
-        assert_eq!(config.repositories.paths, vec![PathBuf::from("./docs")]);
-        assert!(!config.validation.strict_orphans);
-        assert!(config.output.colors);
-        assert!(config.output.emojis);
-    }
-
-    #[test]
-    fn test_parse_empty_config() {
-        let config = parse_config("", Path::new("test.toml")).unwrap();
-        assert!(config.repositories.paths.is_empty());
     }
 }

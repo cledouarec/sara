@@ -46,7 +46,7 @@ impl OutputConfig {
 // Common emojis
 pub static EMOJI_SUCCESS: Emoji<'_, '_> = Emoji("✅", "[OK]");
 pub static EMOJI_ERROR: Emoji<'_, '_> = Emoji("❌", "[ERR]");
-pub static EMOJI_WARNING: Emoji<'_, '_> = Emoji("⚠️", "[WARN]");
+pub static EMOJI_WARNING: Emoji<'_, '_> = Emoji("⚠️ ", "[WARN]");
 pub static EMOJI_STATS: Emoji<'_, '_> = Emoji("📊", "[STATS]");
 pub static EMOJI_ITEM: Emoji<'_, '_> = Emoji("📋", "[ITEM]");
 
@@ -111,40 +111,37 @@ fn format_message(config: &OutputConfig, emoji: &Emoji, color: Color, message: &
     format!("{} {}", colored_prefix, message)
 }
 
+/// Formats a success message.
+pub fn format_success(config: &OutputConfig, message: &str) -> String {
+    let msg = colorize(config, message, Color::Green, Style::None);
+    format_message(config, &EMOJI_SUCCESS, Color::Green, &msg)
+}
+
 /// Prints a success message.
 pub fn print_success(config: &OutputConfig, message: &str) {
-    let msg = colorize(config, message, Color::Green, Style::None);
-    println!(
-        "{}",
-        format_message(config, &EMOJI_SUCCESS, Color::Green, &msg)
-    );
+    println!("{}", format_success(config, message));
+}
+
+/// Formats an error message.
+pub fn format_error(config: &OutputConfig, message: &str) -> String {
+    let msg = colorize(config, message, Color::Red, Style::None);
+    format_message(config, &EMOJI_ERROR, Color::Red, &msg)
 }
 
 /// Prints an error message to stdout.
-///
-/// Error details are printed to stdout, while the final status summary
-/// is printed to stderr using `print_error_summary`.
 pub fn print_error(config: &OutputConfig, message: &str) {
-    let msg = colorize(config, message, Color::Red, Style::None);
-    println!("{}", format_message(config, &EMOJI_ERROR, Color::Red, &msg));
+    println!("{}", format_error(config, message));
 }
 
-/// Prints an error summary message to stderr.
-///
-/// Use this for final status summaries (e.g., "Validation failed with N errors").
-/// Individual error details should use `print_error` which prints to stdout.
-pub fn print_error_summary(config: &OutputConfig, message: &str) {
-    let msg = colorize(config, message, Color::Red, Style::None);
-    eprintln!("{}", format_message(config, &EMOJI_ERROR, Color::Red, &msg));
+/// Formats a warning message.
+pub fn format_warning(config: &OutputConfig, message: &str) -> String {
+    let msg = colorize(config, message, Color::Yellow, Style::None);
+    format_message(config, &EMOJI_WARNING, Color::Yellow, &msg)
 }
 
 /// Prints a warning message.
 pub fn print_warning(config: &OutputConfig, message: &str) {
-    let msg = colorize(config, message, Color::Yellow, Style::None);
-    println!(
-        "{}",
-        format_message(config, &EMOJI_WARNING, Color::Yellow, &msg)
-    );
+    println!("{}", format_warning(config, message));
 }
 
 /// Prints a header message (bold if colors enabled).

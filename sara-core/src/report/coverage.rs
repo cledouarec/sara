@@ -159,44 +159,9 @@ impl CoverageReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::graph::GraphBuilder;
-    use crate::model::{Item, ItemBuilder, ItemId, SourceLocation, UpstreamRefs};
-    use std::path::PathBuf;
-
-    fn create_test_item(id: &str, item_type: ItemType) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
-
-    fn create_test_item_with_upstream(
-        id: &str,
-        item_type: ItemType,
-        upstream: UpstreamRefs,
-    ) -> Item {
-        let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
-            .item_type(item_type)
-            .name(format!("Test {}", id))
-            .source(source)
-            .upstream(upstream);
-
-        if item_type.requires_specification() {
-            builder = builder.specification("Test specification");
-        }
-
-        builder.build().unwrap()
-    }
+    use crate::graph::KnowledgeGraphBuilder;
+    use crate::model::{ItemId, UpstreamRefs};
+    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
 
     #[test]
     fn test_coverage_report_complete() {
@@ -210,7 +175,7 @@ mod tests {
             },
         );
 
-        let graph = GraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_item(sol)
             .add_item(uc)
             .build()
@@ -225,7 +190,7 @@ mod tests {
         // UseCase without upstream reference
         let uc = create_test_item("UC-001", ItemType::UseCase);
 
-        let graph = GraphBuilder::new().add_item(uc).build().unwrap();
+        let graph = KnowledgeGraphBuilder::new().add_item(uc).build().unwrap();
 
         let report = CoverageReport::generate(&graph);
         assert!(!report.incomplete_items.is_empty());
