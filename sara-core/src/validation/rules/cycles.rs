@@ -4,7 +4,7 @@ use petgraph::algo::tarjan_scc;
 use petgraph::visit::EdgeFiltered;
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::validation::rule::ValidationRule;
 
@@ -17,7 +17,7 @@ use crate::validation::rule::ValidationRule;
 pub struct CyclesRule;
 
 impl ValidationRule for CyclesRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         let mut errors = Vec::new();
         let inner = graph.inner();
 
@@ -40,7 +40,7 @@ impl ValidationRule for CyclesRule {
 
                 let cycle_str = cycle_ids.join(" -> ");
 
-                errors.push(ValidationError::CircularReference { cycle: cycle_str });
+                errors.push(SaraError::CircularReference { cycle: cycle_str });
             } else if scc.len() == 1 {
                 // Check for self-loop (only with primary relationships)
                 let idx = scc[0];
@@ -49,7 +49,7 @@ impl ValidationRule for CyclesRule {
                     .any(|e| e.weight().is_primary());
 
                 if has_self_loop && let Some(item) = inner.node_weight(idx) {
-                    errors.push(ValidationError::CircularReference {
+                    errors.push(SaraError::CircularReference {
                         cycle: format!("{} -> {}", item.id.as_str(), item.id.as_str()),
                     });
                 }

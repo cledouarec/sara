@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::model::Item;
 
@@ -30,7 +30,7 @@ pub trait ValidationRule: Send + Sync {
     ///
     /// Rules that require the full graph context (e.g., cycle detection,
     /// broken references) should return an empty vector.
-    fn pre_validate(&self, _items: &[Item], _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn pre_validate(&self, _items: &[Item], _config: &ValidationConfig) -> Vec<SaraError> {
         Vec::new()
     }
 
@@ -46,11 +46,7 @@ pub trait ValidationRule: Send + Sync {
     ///
     /// For item-level validations that don't need graph context, prefer
     /// implementing [`pre_validate`](Self::pre_validate) for fail-fast behavior.
-    fn validate(
-        &self,
-        _graph: &KnowledgeGraph,
-        _config: &ValidationConfig,
-    ) -> Vec<ValidationError> {
+    fn validate(&self, _graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         Vec::new()
     }
 
