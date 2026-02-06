@@ -14,7 +14,6 @@ use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
 use sara_core::query::{MissingParentError, check_parent_exists};
 use sara_core::repository::parse_repositories;
-use sara_core::template::suggest_next_id;
 
 use crate::output::{OutputConfig, print_error};
 
@@ -234,7 +233,7 @@ fn prompt_identifier(
         return Ok(id.clone());
     }
 
-    let suggested = suggest_next_id(item_type, graph);
+    let suggested = item_type.suggest_next_id(graph);
     let id = Text::new("Identifier:")
         .with_default(&suggested)
         .with_validator(IdValidator)
@@ -811,7 +810,7 @@ mod tests {
 
     #[test]
     fn test_suggest_next_id_no_graph() {
-        let id = suggest_next_id(ItemType::Solution, None);
+        let id = ItemType::Solution.suggest_next_id(None);
         assert!(id.starts_with("SOL-"));
     }
 

@@ -5,7 +5,7 @@ use std::collections::HashSet;
 use crate::config::ValidationConfig;
 use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId};
+use crate::model::ItemId;
 use crate::validation::rule::{Severity, ValidationRule};
 
 /// Redundant relationship detection rule (warning).
@@ -23,36 +23,32 @@ impl ValidationRule for RedundantRelationshipsRule {
 
         for item in graph.items() {
             // Check downstream declarations against upstream declarations in target items
+            // For each downstream relationship on this item, check if the target has the
+            // corresponding upstream relationship back to this item.
+            for rel in &item.relationships {
+                if !rel.relationship_type.is_downstream() {
+                    continue;
+                }
 
-            // is_refined_by <-> refines
-            check_redundant_pair(
-                item,
-                graph,
-                &item.downstream.is_refined_by,
-                |target| target.upstream.refines.contains(&item.id),
-                &mut seen_pairs,
-                &mut errors,
-            );
+                let inverse_type = rel.relationship_type.inverse();
 
-            // derives <-> derives_from
-            check_redundant_pair(
-                item,
-                graph,
-                &item.downstream.derives,
-                |target| target.upstream.derives_from.contains(&item.id),
-                &mut seen_pairs,
-                &mut errors,
-            );
+                if let Some(target) = graph.get(&rel.to) {
+                    let has_inverse = target
+                        .relationships
+                        .iter()
+                        .any(|r| r.relationship_type == inverse_type && r.to == item.id);
 
-            // is_satisfied_by <-> satisfies
-            check_redundant_pair(
-                item,
-                graph,
-                &item.downstream.is_satisfied_by,
-                |target| target.upstream.satisfies.contains(&item.id),
-                &mut seen_pairs,
-                &mut errors,
-            );
+                    if has_inverse {
+                        let pair_key = make_pair_key(&item.id, &rel.to);
+                        if seen_pairs.insert(pair_key) {
+                            errors.push(SaraError::RedundantRelationship {
+                                from_id: item.id.clone(),
+                                to_id: rel.to.clone(),
+                            });
+                        }
+                    }
+                }
+            }
         }
 
         errors
@@ -60,32 +56,6 @@ impl ValidationRule for RedundantRelationshipsRule {
 
     fn severity(&self) -> Severity {
         Severity::Warning
-    }
-}
-
-/// Checks for redundant declarations in a specific relationship pair.
-fn check_redundant_pair<F>(
-    item: &Item,
-    graph: &KnowledgeGraph,
-    downstream_refs: &[ItemId],
-    has_inverse: F,
-    seen_pairs: &mut HashSet<(String, String)>,
-    errors: &mut Vec<SaraError>,
-) where
-    F: Fn(&Item) -> bool,
-{
-    for target_id in downstream_refs {
-        if let Some(target) = graph.get(target_id)
-            && has_inverse(target)
-        {
-            let pair_key = make_pair_key(&item.id, target_id);
-            if seen_pairs.insert(pair_key) {
-                errors.push(SaraError::RedundantRelationship {
-                    from_id: item.id.clone(),
-                    to_id: target_id.clone(),
-                });
-            }
-        }
     }
 }
 
@@ -104,22 +74,20 @@ fn make_pair_key(id1: &ItemId, id2: &ItemId) -> (String, String) {
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{DownstreamRefs, ItemType, UpstreamRefs};
-    use crate::test_utils::{
-        create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
-    };
+    use crate::model::{ItemType, Relationship, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_redundancy() {
         // SARCH satisfies SYSREQ, but SYSREQ doesn't declare is_satisfied_by
         let sysreq = create_test_item("SYSREQ-001", ItemType::SystemRequirement);
-        let sarch = create_test_item_with_upstream(
+        let sarch = create_test_item_with_relationships(
             "SARCH-001",
             ItemType::SystemArchitecture,
-            UpstreamRefs {
-                satisfies: vec![ItemId::new_unchecked("SYSREQ-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-001"),
+                RelationshipType::Satisfies,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()
@@ -136,22 +104,21 @@ mod tests {
     #[test]
     fn test_redundant_satisfies() {
         // Both declare the relationship - this is redundant
-        let sysreq = create_test_item_with_refs(
+        let sysreq = create_test_item_with_relationships(
             "SYSREQ-001",
             ItemType::SystemRequirement,
-            UpstreamRefs::default(),
-            DownstreamRefs {
-                is_satisfied_by: vec![ItemId::new_unchecked("SARCH-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SARCH-001"),
+                RelationshipType::IsSatisfiedBy,
+            )],
         );
-        let sarch = create_test_item_with_upstream(
+        let sarch = create_test_item_with_relationships(
             "SARCH-001",
             ItemType::SystemArchitecture,
-            UpstreamRefs {
-                satisfies: vec![ItemId::new_unchecked("SYSREQ-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-001"),
+                RelationshipType::Satisfies,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()
