@@ -2,160 +2,10 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
-
 use crate::error::SaraError;
-use crate::model::{
-    AdrStatus, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
-};
+use crate::model::{Item, ItemBuilder, ItemId, ItemType, SourceLocation};
 use crate::parser::frontmatter::extract_frontmatter;
-
-/// Raw frontmatter structure for deserialization.
-///
-/// This represents the YAML frontmatter as it appears in Markdown files.
-/// All relationship fields accept both single values and arrays for flexibility.
-#[derive(Debug, Clone, Deserialize)]
-pub struct RawFrontmatter {
-    /// Unique identifier (required).
-    pub id: String,
-
-    /// Item type (required).
-    #[serde(rename = "type")]
-    pub item_type: ItemType,
-
-    /// Human-readable name (required).
-    pub name: String,
-
-    /// Description (optional).
-    #[serde(default)]
-    pub description: Option<String>,
-
-    // Upstream references (toward Solution)
-    /// Items this item refines (for UseCase, Scenario).
-    #[serde(default)]
-    pub refines: Vec<String>,
-
-    /// Items this item derives from (for SystemRequirement, HW/SW Requirement).
-    #[serde(default)]
-    pub derives_from: Vec<String>,
-
-    /// Items this item satisfies (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default)]
-    pub satisfies: Vec<String>,
-
-    // Downstream references (toward Detailed Designs)
-    /// Items that refine this item (for Solution, UseCase).
-    #[serde(default)]
-    pub is_refined_by: Vec<String>,
-
-    /// Items derived from this item (for Scenario, SystemArchitecture).
-    #[serde(default)]
-    pub derives: Vec<String>,
-
-    /// Items that satisfy this item (for SystemRequirement, HW/SW Requirement).
-    #[serde(default)]
-    pub is_satisfied_by: Vec<String>,
-
-    // Type-specific attributes
-    /// Specification statement (required for requirement types).
-    #[serde(default)]
-    pub specification: Option<String>,
-
-    /// Peer dependencies (for requirement types).
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-
-    /// Target platform (for SystemArchitecture).
-    #[serde(default)]
-    pub platform: Option<String>,
-
-    /// ADR links (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default)]
-    pub justified_by: Option<Vec<String>>,
-
-    /// ADR lifecycle status (required for ADR items).
-    #[serde(default)]
-    pub status: Option<AdrStatus>,
-
-    /// ADR deciders (required for ADR items).
-    #[serde(default)]
-    pub deciders: Vec<String>,
-
-    /// Design artifacts this ADR justifies (for ADR items).
-    #[serde(default)]
-    pub justifies: Vec<String>,
-
-    /// Older ADRs this decision supersedes (for ADR items).
-    #[serde(default)]
-    pub supersedes: Vec<String>,
-
-    /// Newer ADR that supersedes this one.
-    #[serde(default)]
-    pub superseded_by: Option<String>,
-}
-
-impl RawFrontmatter {
-    /// Converts all relationship fields to a Vec of Relationships.
-    pub fn to_relationships(&self) -> Vec<Relationship> {
-        let mut rels = Vec::new();
-
-        // Upstream relationships
-        for id in &self.refines {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Refines,
-            ));
-        }
-        for id in &self.derives_from {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::DerivesFrom,
-            ));
-        }
-        for id in &self.satisfies {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Satisfies,
-            ));
-        }
-        for id in &self.justifies {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Justifies,
-            ));
-        }
-
-        // Downstream relationships
-        for id in &self.is_refined_by {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::IsRefinedBy,
-            ));
-        }
-        for id in &self.derives {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Derives,
-            ));
-        }
-        for id in &self.is_satisfied_by {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::IsSatisfiedBy,
-            ));
-        }
-        if let Some(justified_by) = &self.justified_by {
-            for id in justified_by {
-                rels.push(Relationship::new(
-                    ItemId::new_unchecked(id),
-                    RelationshipType::IsJustifiedBy,
-                ));
-            }
-        }
-
-        rels
-    }
-}
+use crate::parser::yaml::parse_yaml_frontmatter;
 
 /// Parses a Markdown file and extracts the item.
 ///
@@ -167,11 +17,7 @@ pub fn parse_markdown_file(
 ) -> Result<Item, SaraError> {
     let extracted = extract_frontmatter(content, file_path)?;
 
-    let frontmatter: RawFrontmatter =
-        serde_yaml::from_str(&extracted.yaml).map_err(|e| SaraError::InvalidYaml {
-            file: file_path.to_path_buf(),
-            reason: e.to_string(),
-        })?;
+    let frontmatter = parse_yaml_frontmatter(&extracted.yaml, file_path)?;
 
     // Validate item ID format
     let item_id = ItemId::new(&frontmatter.id).map_err(|e| SaraError::InvalidFrontmatter {
@@ -272,6 +118,7 @@ pub fn extract_name_from_content(content: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{AdrStatus, RelationshipType};
     use std::path::PathBuf;
 
     const SOLUTION_MD: &str = r#"---
