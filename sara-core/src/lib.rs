@@ -7,6 +7,7 @@ pub mod config;
 pub mod diff;
 pub mod edit;
 pub mod error;
+pub mod generator;
 pub mod graph;
 pub mod init;
 pub mod model;
@@ -14,7 +15,6 @@ pub mod parser;
 pub mod query;
 pub mod report;
 pub mod repository;
-pub mod template;
 pub mod validation;
 
 #[cfg(test)]

@@ -3,39 +3,17 @@
 use std::fs;
 use std::path::PathBuf;
 
-use serde::Serialize;
-
 use crate::error::SaraError;
+use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldChange, FieldName, Item, ItemType, TraceabilityLinks};
+use crate::model::{
+    FieldChange, FieldName, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
+    SourceLocation, TraceabilityLinks,
+};
 use crate::parser::update_frontmatter;
 use crate::query::lookup_item_or_suggest;
 
 use super::{EditOptions, EditedValues};
-
-/// Serializable representation of YAML frontmatter for an item.
-///
-/// Field order matches the canonical frontmatter layout. Optional fields
-/// and empty lists are omitted via `skip_serializing_if`.
-#[derive(Serialize)]
-struct FrontmatterOutput {
-    id: String,
-    #[serde(rename = "type")]
-    item_type: String,
-    name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    description: Option<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    refines: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    derives_from: Vec<String>,
-    #[serde(skip_serializing_if = "Vec::is_empty")]
-    satisfies: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    specification: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    platform: Option<String>,
-}
 
 /// Result of a successful edit operation.
 #[derive(Debug)]
@@ -281,18 +259,82 @@ impl EditService {
         item_type: ItemType,
         values: &EditedValues,
     ) -> String {
-        let output = FrontmatterOutput {
-            id: item_id.to_string(),
-            item_type: item_type.as_str().to_string(),
-            name: values.name.clone(),
-            description: values.description.clone(),
-            refines: values.traceability.refines.clone(),
-            derives_from: values.traceability.derives_from.clone(),
-            satisfies: values.traceability.satisfies.clone(),
-            specification: values.specification.clone(),
-            platform: values.platform.clone(),
+        let item = self.build_item_from_values(item_id, item_type, values);
+        generator::generate_metadata(&item, OutputFormat::Markdown)
+    }
+
+    /// Builds a temporary `Item` from edit values for frontmatter generation.
+    fn build_item_from_values(
+        &self,
+        item_id: &str,
+        item_type: ItemType,
+        values: &EditedValues,
+    ) -> Item {
+        let source = SourceLocation {
+            repository: PathBuf::new(),
+            file_path: PathBuf::from("edit.md"),
+            git_ref: None,
         };
-        serde_yaml::to_string(&output).expect("frontmatter serialization should not fail")
+
+        let mut builder = ItemBuilder::new()
+            .id(ItemId::new_unchecked(item_id))
+            .item_type(item_type)
+            .name(&values.name)
+            .source(source);
+
+        if let Some(ref desc) = values.description {
+            builder = builder.description(desc);
+        }
+
+        // Build relationships from traceability links
+        let mut rels = Vec::new();
+        for id in &values.traceability.refines {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Refines,
+            ));
+        }
+        for id in &values.traceability.derives_from {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::DerivesFrom,
+            ));
+        }
+        for id in &values.traceability.satisfies {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Satisfies,
+            ));
+        }
+        for id in &values.traceability.justifies {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Justifies,
+            ));
+        }
+        builder = builder.relationships(rels);
+
+        // Type-specific attributes
+        if let Some(ref spec) = values.specification {
+            builder = builder.specification(spec);
+        }
+        if let Some(ref plat) = values.platform {
+            builder = builder.platform(plat);
+        }
+        for id in &values.traceability.depends_on {
+            builder = builder.depends_on(ItemId::new_unchecked(id));
+        }
+
+        // ADR types need status and deciders to build successfully.
+        // For edits, provide defaults since those fields are not
+        // part of EditedValues (they are preserved from the original).
+        if item_type == ItemType::ArchitectureDecisionRecord {
+            builder = builder
+                .status(crate::model::AdrStatus::Proposed)
+                .decider("TBD");
+        }
+
+        builder.build().expect("Failed to build item for edit")
     }
 
     /// Performs a non-interactive edit operation.
@@ -449,9 +491,9 @@ mod tests {
 
         let yaml = service.build_frontmatter_yaml("SOL-001", ItemType::Solution, &values);
 
-        assert!(yaml.contains("id: SOL-001"));
+        assert!(yaml.contains("id: \"SOL-001\""));
         assert!(yaml.contains("type: solution"));
-        assert!(yaml.contains("name: Test Solution"));
-        assert!(yaml.contains("description: A test solution"));
+        assert!(yaml.contains("name: \"Test Solution\""));
+        assert!(yaml.contains("description: \"A test solution\""));
     }
 }
