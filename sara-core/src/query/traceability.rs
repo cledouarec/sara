@@ -153,7 +153,7 @@ fn find_similar_ids_scored<'a>(
 pub fn lookup_item_or_suggest<'a>(
     graph: &'a KnowledgeGraph,
     id: &str,
-) -> Result<&'a Item, crate::error::EditError> {
+) -> Result<&'a Item, crate::error::SaraError> {
     let item_id = ItemId::new_unchecked(id);
 
     if let Some(item) = graph.get(&item_id) {
@@ -162,7 +162,7 @@ pub fn lookup_item_or_suggest<'a>(
 
     // Item not found, find similar IDs for suggestions
     let suggestions = find_similar_ids(graph, id, 3);
-    Err(crate::error::EditError::ItemNotFound {
+    Err(crate::error::SaraError::ItemNotFound {
         id: id.to_string(),
         suggestions,
     })

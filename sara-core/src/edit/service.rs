@@ -3,7 +3,7 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::error::EditError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::model::{FieldChange, FieldName, Item, ItemType, TraceabilityLinks};
 use crate::parser::update_frontmatter;
@@ -86,7 +86,7 @@ impl EditService {
         &self,
         graph: &'a KnowledgeGraph,
         item_id: &str,
-    ) -> Result<&'a Item, EditError> {
+    ) -> Result<&'a Item, SaraError> {
         lookup_item_or_suggest(graph, item_id)
     }
 
@@ -100,16 +100,16 @@ impl EditService {
         &self,
         opts: &EditOptions,
         item_type: ItemType,
-    ) -> Result<(), EditError> {
+    ) -> Result<(), SaraError> {
         if opts.specification.is_some() && !item_type.requires_specification() {
-            return Err(EditError::IoError(format!(
+            return Err(SaraError::EditFailed(format!(
                 "--specification is only valid for requirement types, not {}",
                 item_type.display_name()
             )));
         }
 
         if opts.platform.is_some() && item_type != ItemType::SystemArchitecture {
-            return Err(EditError::IoError(
+            return Err(SaraError::EditFailed(
                 "--platform is only valid for System Architecture items".to_string(),
             ));
         }
@@ -239,12 +239,12 @@ impl EditService {
         item_type: ItemType,
         new_values: &EditedValues,
         file_path: &PathBuf,
-    ) -> Result<(), EditError> {
+    ) -> Result<(), SaraError> {
         let content =
-            fs::read_to_string(file_path).map_err(|e| EditError::IoError(e.to_string()))?;
+            fs::read_to_string(file_path).map_err(|e| SaraError::EditFailed(e.to_string()))?;
         let new_yaml = self.build_frontmatter_yaml(item_id, item_type, new_values);
         let updated_content = update_frontmatter(&content, &new_yaml);
-        fs::write(file_path, updated_content).map_err(|e| EditError::IoError(e.to_string()))?;
+        fs::write(file_path, updated_content).map_err(|e| SaraError::EditFailed(e.to_string()))?;
         Ok(())
     }
 
@@ -325,7 +325,7 @@ impl EditService {
         &self,
         graph: &KnowledgeGraph,
         opts: &EditOptions,
-    ) -> Result<EditResult, EditError> {
+    ) -> Result<EditResult, SaraError> {
         // Look up the item
         let item = self.lookup_item(graph, &opts.item_id)?;
         let item_ctx = self.get_item_context(item);

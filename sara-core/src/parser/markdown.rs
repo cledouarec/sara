@@ -4,7 +4,7 @@ use std::path::Path;
 
 use serde::Deserialize;
 
-use crate::error::ParseError;
+use crate::error::SaraError;
 use crate::model::{
     AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
 };
@@ -92,7 +92,7 @@ pub struct RawFrontmatter {
 
 impl RawFrontmatter {
     /// Converts string IDs to ItemIds for upstream refs.
-    pub fn upstream_refs(&self) -> Result<UpstreamRefs, ParseError> {
+    pub fn upstream_refs(&self) -> Result<UpstreamRefs, SaraError> {
         Ok(UpstreamRefs {
             refines: self.refines.iter().map(ItemId::new_unchecked).collect(),
             derives_from: self
@@ -106,7 +106,7 @@ impl RawFrontmatter {
     }
 
     /// Converts string IDs to ItemIds for downstream refs.
-    pub fn downstream_refs(&self) -> Result<DownstreamRefs, ParseError> {
+    pub fn downstream_refs(&self) -> Result<DownstreamRefs, SaraError> {
         Ok(DownstreamRefs {
             is_refined_by: self
                 .is_refined_by
@@ -141,17 +141,17 @@ pub fn parse_markdown_file(
     content: &str,
     file_path: &Path,
     repository: &Path,
-) -> Result<Item, ParseError> {
+) -> Result<Item, SaraError> {
     let extracted = extract_frontmatter(content, file_path)?;
 
     let frontmatter: RawFrontmatter =
-        serde_yaml::from_str(&extracted.yaml).map_err(|e| ParseError::InvalidYaml {
+        serde_yaml::from_str(&extracted.yaml).map_err(|e| SaraError::InvalidYaml {
             file: file_path.to_path_buf(),
             reason: e.to_string(),
         })?;
 
     // Validate item ID format
-    let item_id = ItemId::new(&frontmatter.id).map_err(|e| ParseError::InvalidFrontmatter {
+    let item_id = ItemId::new(&frontmatter.id).map_err(|e| SaraError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
         reason: format!("Invalid item ID: {}", e),
     })?;
@@ -212,7 +212,7 @@ pub fn parse_markdown_file(
         }
     }
 
-    builder.build().map_err(|e| ParseError::InvalidFrontmatter {
+    builder.build().map_err(|e| SaraError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
         reason: e.to_string(),
     })
@@ -232,7 +232,7 @@ pub fn parse_document(
     content: &str,
     file_path: &Path,
     repository: &Path,
-) -> Result<ParsedDocument, ParseError> {
+) -> Result<ParsedDocument, SaraError> {
     let extracted = extract_frontmatter(content, file_path)?;
     let item = parse_markdown_file(content, file_path, repository)?;
 
