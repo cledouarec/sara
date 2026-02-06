@@ -132,8 +132,8 @@ impl KnowledgeGraph {
                 if item.item_type.is_root() {
                     return false;
                 }
-                // Check if item has any upstream references
-                item.upstream.is_empty()
+                // Check if item has any upstream relationships
+                !item.has_upstream()
             })
             .collect()
     }
@@ -227,47 +227,32 @@ impl KnowledgeGraphBuilder {
 
     /// Adds relationships for an item based on its references.
     fn add_relationships_for_item(&self, graph: &mut KnowledgeGraph, item: &Item) {
-        // Add upstream relationships
-        for target_id in &item.upstream.refines {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Refines);
-        }
-        for target_id in &item.upstream.derives_from {
-            graph.add_relationship(&item.id, target_id, RelationshipType::DerivesFrom);
-        }
-        for target_id in &item.upstream.satisfies {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Satisfies);
-        }
-        // ADR justifies design artifacts (standard upstream relationship)
-        for target_id in &item.upstream.justifies {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Justifies);
-            // Add inverse: target is justified by this ADR
-            graph.add_relationship(target_id, &item.id, RelationshipType::IsJustifiedBy);
+        // Add all relationships from the item's relationships vec
+        for rel in &item.relationships {
+            graph.add_relationship(&item.id, &rel.to, rel.relationship_type);
+
+            // For certain relationship types, add the inverse edge for bidirectional traversal
+            match rel.relationship_type {
+                RelationshipType::Justifies => {
+                    graph.add_relationship(&rel.to, &item.id, RelationshipType::IsJustifiedBy);
+                }
+                RelationshipType::IsRefinedBy => {
+                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Refines);
+                }
+                RelationshipType::Derives => {
+                    graph.add_relationship(&rel.to, &item.id, RelationshipType::DerivesFrom);
+                }
+                RelationshipType::IsSatisfiedBy => {
+                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Satisfies);
+                }
+                RelationshipType::IsJustifiedBy => {
+                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Justifies);
+                }
+                _ => {}
+            }
         }
 
-        // Add downstream relationships (and their inverse for bidirectional graph queries)
-        for target_id in &item.downstream.is_refined_by {
-            graph.add_relationship(&item.id, target_id, RelationshipType::IsRefinedBy);
-            // Add inverse: target refines this item
-            graph.add_relationship(target_id, &item.id, RelationshipType::Refines);
-        }
-        for target_id in &item.downstream.derives {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Derives);
-            // Add inverse: target derives_from this item
-            graph.add_relationship(target_id, &item.id, RelationshipType::DerivesFrom);
-        }
-        for target_id in &item.downstream.is_satisfied_by {
-            graph.add_relationship(&item.id, target_id, RelationshipType::IsSatisfiedBy);
-            // Add inverse: target satisfies this item
-            graph.add_relationship(target_id, &item.id, RelationshipType::Satisfies);
-        }
-        // Design artifact is justified by ADRs (standard downstream relationship)
-        for adr_id in &item.downstream.justified_by {
-            graph.add_relationship(&item.id, adr_id, RelationshipType::IsJustifiedBy);
-            // Add inverse: ADR justifies this item
-            graph.add_relationship(adr_id, &item.id, RelationshipType::Justifies);
-        }
-
-        // Add peer dependencies (for requirement types)
+        // Add peer dependencies (for requirement types, stored in attributes)
         for target_id in item.attributes.depends_on() {
             graph.add_relationship(&item.id, target_id, RelationshipType::DependsOn);
         }
@@ -284,8 +269,8 @@ impl KnowledgeGraphBuilder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::UpstreamRefs;
-    use crate::test_utils::{create_test_adr, create_test_item, create_test_item_with_upstream};
+    use crate::model::Relationship;
+    use crate::test_utils::{create_test_adr, create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_add_and_get_item() {
@@ -347,13 +332,13 @@ mod tests {
     #[test]
     fn test_build_graph_with_relationships() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()

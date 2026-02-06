@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use crate::model::{
-    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+    AdrStatus, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
 };
 
 /// Creates a test item with the given ID and type.
@@ -67,28 +67,25 @@ pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> 
         .expect("Test item should build successfully")
 }
 
-/// Creates a test item with upstream references.
+/// Creates a test item with relationships.
 ///
 /// # Examples
 ///
 /// ```ignore
-/// use sara_core::test_utils::create_test_item_with_upstream;
-/// use sara_core::model::{ItemType, UpstreamRefs, ItemId};
+/// use sara_core::test_utils::create_test_item_with_relationships;
+/// use sara_core::model::{ItemType, Relationship, RelationshipType, ItemId};
 ///
-/// let use_case = create_test_item_with_upstream(
+/// let use_case = create_test_item_with_relationships(
 ///     "UC-001",
 ///     ItemType::UseCase,
-///     UpstreamRefs {
-///         refines: vec![ItemId::new_unchecked("SOL-001")],
-///         ..Default::default()
-///     },
+///     vec![Relationship::new(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
 /// );
 /// ```
 #[must_use]
-pub fn create_test_item_with_upstream(
+pub fn create_test_item_with_relationships(
     id: &str,
     item_type: ItemType,
-    upstream: UpstreamRefs,
+    relationships: Vec<Relationship>,
 ) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
     let mut builder = ItemBuilder::new()
@@ -96,7 +93,7 @@ pub fn create_test_item_with_upstream(
         .item_type(item_type)
         .name(format!("Test {id}"))
         .source(source)
-        .upstream(upstream);
+        .relationships(relationships);
 
     // Add required fields based on item type
     if item_type.requires_specification() {
@@ -127,20 +124,17 @@ pub fn create_test_item_with_upstream(
 #[must_use]
 pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let upstream = UpstreamRefs {
-        justifies: justifies
-            .iter()
-            .map(|s| ItemId::new_unchecked(*s))
-            .collect(),
-        ..Default::default()
-    };
+    let relationships: Vec<Relationship> = justifies
+        .iter()
+        .map(|s| Relationship::new(ItemId::new_unchecked(*s), RelationshipType::Justifies))
+        .collect();
 
     ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(ItemType::ArchitectureDecisionRecord)
         .name(format!("Test {id}"))
         .source(source)
-        .upstream(upstream)
+        .relationships(relationships)
         .status(AdrStatus::Proposed)
         .deciders(vec!["Test Decider".to_string()])
         .supersedes_all(
@@ -180,40 +174,6 @@ pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> It
         .expect("Test item should build successfully")
 }
 
-/// Creates a test item with both upstream and downstream references.
-///
-/// Useful for testing relationship validation.
-#[must_use]
-pub fn create_test_item_with_refs(
-    id: &str,
-    item_type: ItemType,
-    upstream: UpstreamRefs,
-    downstream: DownstreamRefs,
-) -> Item {
-    let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let mut builder = ItemBuilder::new()
-        .id(ItemId::new_unchecked(id))
-        .item_type(item_type)
-        .name(format!("Test {id}"))
-        .source(source)
-        .upstream(upstream)
-        .downstream(downstream);
-
-    if item_type.requires_specification() {
-        builder = builder.specification("The system SHALL meet this test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
-        .build()
-        .expect("Test item should build successfully")
-}
-
 /// Creates a simple graph fixture with Solution -> UseCase -> Scenario chain.
 ///
 /// Returns a vector of items that can be added to a graph.
@@ -221,21 +181,21 @@ pub fn create_test_item_with_refs(
 pub fn create_simple_hierarchy() -> Vec<Item> {
     vec![
         create_test_item("SOL-001", ItemType::Solution),
-        create_test_item_with_upstream(
+        create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )],
         ),
-        create_test_item_with_upstream(
+        create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("UC-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("UC-001"),
+                RelationshipType::Refines,
+            )],
         ),
     ]
 }
@@ -263,7 +223,10 @@ mod tests {
         let item = create_test_adr("ADR-001", &["SYSARCH-001"], &["ADR-000"]);
         assert_eq!(item.id.as_str(), "ADR-001");
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
-        assert_eq!(item.upstream.justifies.len(), 1);
+        let justifies: Vec<_> = item
+            .relationship_ids(RelationshipType::Justifies)
+            .collect();
+        assert_eq!(justifies.len(), 1);
         assert_eq!(item.attributes.supersedes().len(), 1);
     }
 

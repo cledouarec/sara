@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldName, ItemType};
+use crate::model::ItemType;
 
 /// A row in the traceability matrix.
 #[derive(Debug, Clone, Serialize)]
@@ -84,24 +84,19 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        Self::add_targets(
-            &item.upstream.refines,
-            FieldName::Refines.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.upstream.derives_from,
-            FieldName::DerivesFrom.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.upstream.satisfies,
-            FieldName::Satisfies.as_str(),
-            graph,
-            targets,
-        );
+        use crate::model::RelationshipType;
+
+        let upstream_types = [
+            RelationshipType::Refines,
+            RelationshipType::DerivesFrom,
+            RelationshipType::Satisfies,
+            RelationshipType::Justifies,
+        ];
+
+        for rel_type in &upstream_types {
+            let ids: Vec<_> = item.relationship_ids(*rel_type).cloned().collect();
+            Self::add_targets(&ids, rel_type.field_name().as_str(), graph, targets);
+        }
     }
 
     /// Collects downstream relationship targets.
@@ -110,24 +105,19 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        Self::add_targets(
-            &item.downstream.is_refined_by,
-            FieldName::IsRefinedBy.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.downstream.derives,
-            FieldName::Derives.as_str(),
-            graph,
-            targets,
-        );
-        Self::add_targets(
-            &item.downstream.is_satisfied_by,
-            FieldName::IsSatisfiedBy.as_str(),
-            graph,
-            targets,
-        );
+        use crate::model::RelationshipType;
+
+        let downstream_types = [
+            RelationshipType::IsRefinedBy,
+            RelationshipType::Derives,
+            RelationshipType::IsSatisfiedBy,
+            RelationshipType::IsJustifiedBy,
+        ];
+
+        for rel_type in &downstream_types {
+            let ids: Vec<_> = item.relationship_ids(*rel_type).cloned().collect();
+            Self::add_targets(&ids, rel_type.field_name().as_str(), graph, targets);
+        }
     }
 
     /// Adds targets for a list of reference IDs.
@@ -235,19 +225,19 @@ impl TraceabilityMatrix {
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, Relationship, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_matrix_generation() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()

@@ -130,11 +130,11 @@ impl std::fmt::Display for RelationshipType {
     }
 }
 
-/// Represents a link between two items in the graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// Represents a relationship from an Item to another item.
+///
+/// The source item is implied by the `Item` containing this relationship.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Relationship {
-    /// Source item ID.
-    pub from: ItemId,
     /// Target item ID.
     pub to: ItemId,
     /// Type of relationship.
@@ -142,24 +142,25 @@ pub struct Relationship {
 }
 
 impl Relationship {
-    /// Creates a new relationship.
+    /// Creates a new relationship to the given target.
     #[must_use]
-    pub const fn new(from: ItemId, to: ItemId, relationship_type: RelationshipType) -> Self {
+    pub fn new(to: ItemId, relationship_type: RelationshipType) -> Self {
         Self {
-            from,
             to,
             relationship_type,
         }
     }
 
-    /// Returns the inverse relationship.
+    /// Returns the target item ID.
     #[must_use]
-    pub fn inverse(&self) -> Self {
-        Self {
-            from: self.to.clone(),
-            to: self.from.clone(),
-            relationship_type: self.relationship_type.inverse(),
-        }
+    pub fn target(&self) -> &ItemId {
+        &self.to
+    }
+
+    /// Returns the relationship type.
+    #[must_use]
+    pub fn rel_type(&self) -> RelationshipType {
+        self.relationship_type
     }
 }
 

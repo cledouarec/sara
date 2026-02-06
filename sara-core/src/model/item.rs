@@ -6,6 +6,7 @@ use std::path::PathBuf;
 
 use crate::error::SaraError;
 use crate::model::FieldName;
+use crate::model::relationship::{Relationship, RelationshipType};
 
 /// Represents the type of item in the knowledge graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -130,6 +131,41 @@ impl ItemType {
         }
     }
 
+    /// Generates a new ID for the given type with an optional sequence number.
+    ///
+    /// Defaults to sequence 1 if not provided.
+    #[must_use]
+    pub fn generate_id(&self, sequence: Option<u32>) -> String {
+        let num = sequence.unwrap_or(1);
+        format!("{}-{:03}", self.prefix(), num)
+    }
+
+    /// Suggests the next sequential ID based on existing items in the graph.
+    ///
+    /// Finds the highest existing ID for this type and returns the next one.
+    /// If no graph is provided or no items exist, returns the first ID (e.g., "SOL-001").
+    #[must_use]
+    pub fn suggest_next_id(&self, graph: Option<&crate::graph::KnowledgeGraph>) -> String {
+        let Some(graph) = graph else {
+            return self.generate_id(None);
+        };
+
+        let prefix = self.prefix();
+        let max_num = graph
+            .items()
+            .filter(|item| item.item_type == *self)
+            .filter_map(|item| {
+                item.id
+                    .as_str()
+                    .strip_prefix(prefix)
+                    .and_then(|suffix| suffix.trim_start_matches('-').parse::<u32>().ok())
+            })
+            .max()
+            .unwrap_or(0);
+
+        format!("{}-{:03}", prefix, max_num + 1)
+    }
+
     /// Returns the item types that accept the refines field.
     #[must_use]
     pub const fn refines_types() -> &'static [ItemType] {
@@ -243,6 +279,7 @@ impl ItemType {
     }
 
     /// Returns the required parent item type for this type, if any.
+    ///
     /// Solution has no parent (root of the hierarchy).
     #[must_use]
     pub const fn required_parent_type(&self) -> Option<ItemType> {
@@ -430,6 +467,12 @@ impl ItemId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+
+    /// Converts a slice of ItemIds to a Vec of &str references.
+    #[must_use]
+    pub fn slice_to_strs(ids: &[ItemId]) -> Vec<&str> {
+        ids.iter().map(|id| id.as_str()).collect()
+    }
 }
 
 impl fmt::Display for ItemId {
@@ -441,86 +484,6 @@ impl fmt::Display for ItemId {
 impl AsRef<str> for ItemId {
     fn as_ref(&self) -> &str {
         &self.0
-    }
-}
-
-/// Upstream relationship references (this item points to parents).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct UpstreamRefs {
-    /// Items this item refines (for UseCase, Scenario).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub refines: Vec<ItemId>,
-
-    /// Items this item derives from (for SystemRequirement, HW/SW Requirement).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub derives_from: Vec<ItemId>,
-
-    /// Items this item satisfies (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub satisfies: Vec<ItemId>,
-
-    /// Design artifacts this ADR justifies (for ArchitectureDecisionRecord).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub justifies: Vec<ItemId>,
-}
-
-impl UpstreamRefs {
-    /// Returns an iterator over all upstream item IDs.
-    pub fn all_ids(&self) -> impl Iterator<Item = &ItemId> {
-        self.refines
-            .iter()
-            .chain(self.derives_from.iter())
-            .chain(self.satisfies.iter())
-            .chain(self.justifies.iter())
-    }
-
-    /// Returns true if there are no upstream references.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.refines.is_empty()
-            && self.derives_from.is_empty()
-            && self.satisfies.is_empty()
-            && self.justifies.is_empty()
-    }
-}
-
-/// Downstream relationship references (this item points to children).
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
-pub struct DownstreamRefs {
-    /// Items that refine this item (for Solution, UseCase).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub is_refined_by: Vec<ItemId>,
-
-    /// Items derived from this item (for Scenario, SystemArchitecture).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub derives: Vec<ItemId>,
-
-    /// Items that satisfy this item (for SystemRequirement, HW/SW Requirement).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub is_satisfied_by: Vec<ItemId>,
-
-    /// ADRs that justify this item (for design artifacts: SYSARCH, SWDD, HWDD).
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub justified_by: Vec<ItemId>,
-}
-
-impl DownstreamRefs {
-    /// Returns an iterator over all downstream item IDs.
-    pub fn all_ids(&self) -> impl Iterator<Item = &ItemId> {
-        self.is_refined_by
-            .iter()
-            .chain(self.derives.iter())
-            .chain(self.is_satisfied_by.iter())
-            .chain(self.justified_by.iter())
-    }
-
-    /// Returns true if there are no downstream references.
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.is_refined_by.is_empty()
-            && self.derives.is_empty()
-            && self.is_satisfied_by.is_empty()
-            && self.justified_by.is_empty()
     }
 }
 
@@ -552,7 +515,6 @@ pub enum ItemAttributes {
     },
 
     /// System Architecture with platform.
-    /// Note: `justified_by` is now in DownstreamRefs.
     #[serde(rename = "system_architecture")]
     SystemArchitecture {
         /// Target platform.
@@ -581,17 +543,14 @@ pub enum ItemAttributes {
     },
 
     /// Software Detailed Design.
-    /// Note: `justified_by` is now in DownstreamRefs.
     #[serde(rename = "software_detailed_design")]
     SoftwareDetailedDesign,
 
     /// Hardware Detailed Design.
-    /// Note: `justified_by` is now in DownstreamRefs.
     #[serde(rename = "hardware_detailed_design")]
     HardwareDetailedDesign,
 
     /// Architecture Decision Record with ADR-specific fields.
-    /// Note: `justifies` is now in UpstreamRefs, `superseded_by` is auto-generated inverse.
     #[serde(rename = "architecture_decision_record")]
     Adr {
         /// ADR lifecycle status.
@@ -657,6 +616,17 @@ impl ItemAttributes {
         }
     }
 
+    /// Returns the depends_on references as an Option for types that support it.
+    #[must_use]
+    pub fn depends_on_as_option(&self) -> Option<&[ItemId]> {
+        match self {
+            Self::SystemRequirement { depends_on, .. }
+            | Self::SoftwareRequirement { depends_on, .. }
+            | Self::HardwareRequirement { depends_on, .. } => Some(depends_on),
+            _ => None,
+        }
+    }
+
     /// Returns the platform if this is a SystemArchitecture.
     #[must_use]
     pub fn platform(&self) -> Option<&String> {
@@ -715,13 +685,9 @@ pub struct Item {
     /// Source file location.
     pub source: SourceLocation,
 
-    /// Upstream relationships (toward Solution).
+    /// All relationships from this item to other items.
     #[serde(default)]
-    pub upstream: UpstreamRefs,
-
-    /// Downstream relationships (toward Detailed Designs).
-    #[serde(default)]
-    pub downstream: DownstreamRefs,
+    pub relationships: Vec<Relationship>,
 
     /// Type-specific attributes.
     #[serde(default)]
@@ -729,10 +695,33 @@ pub struct Item {
 }
 
 impl Item {
-    /// Returns an iterator over all referenced item IDs (upstream, downstream, and peer).
+    /// Returns an iterator over target IDs for a specific relationship type.
+    pub fn relationship_ids(&self, rel_type: RelationshipType) -> impl Iterator<Item = &ItemId> {
+        self.relationships
+            .iter()
+            .filter(move |r| r.relationship_type == rel_type)
+            .map(|r| &r.to)
+    }
+
+    /// Returns true if this item has any relationships of the given type.
+    #[must_use]
+    pub fn has_relationship_type(&self, rel_type: RelationshipType) -> bool {
+        self.relationships
+            .iter()
+            .any(|r| r.relationship_type == rel_type)
+    }
+
+    /// Returns true if this item has any upstream relationships.
+    #[must_use]
+    pub fn has_upstream(&self) -> bool {
+        self.relationships
+            .iter()
+            .any(|r| r.relationship_type.is_upstream())
+    }
+
+    /// Returns an iterator over all referenced item IDs (relationships and peer refs from attributes).
     pub fn all_references(&self) -> impl Iterator<Item = &ItemId> {
-        // Upstream and downstream references
-        let upstream_downstream = self.upstream.all_ids().chain(self.downstream.all_ids());
+        let relationship_refs = self.relationships.iter().map(|r| &r.to);
 
         // Peer references from attributes (depends_on for requirements, supersedes for ADRs)
         let peer_refs: Box<dyn Iterator<Item = &ItemId>> = match &self.attributes {
@@ -743,7 +732,7 @@ impl Item {
             _ => Box::new(std::iter::empty()),
         };
 
-        upstream_downstream.chain(peer_refs)
+        relationship_refs.chain(peer_refs)
     }
 }
 
@@ -755,8 +744,7 @@ pub struct ItemBuilder {
     name: Option<String>,
     description: Option<String>,
     source: Option<SourceLocation>,
-    upstream: UpstreamRefs,
-    downstream: DownstreamRefs,
+    relationships: Vec<Relationship>,
     // Temporary storage for attributes before we know the type
     specification: Option<String>,
     platform: Option<String>,
@@ -802,15 +790,9 @@ impl ItemBuilder {
         self
     }
 
-    /// Sets the upstream references.
-    pub fn upstream(mut self, upstream: UpstreamRefs) -> Self {
-        self.upstream = upstream;
-        self
-    }
-
-    /// Sets the downstream references.
-    pub fn downstream(mut self, downstream: DownstreamRefs) -> Self {
-        self.downstream = downstream;
+    /// Sets all relationships for this item.
+    pub fn relationships(mut self, relationships: Vec<Relationship>) -> Self {
+        self.relationships = relationships;
         self
     }
 
@@ -864,7 +846,6 @@ impl ItemBuilder {
 
     /// Sets the attributes directly.
     pub fn attributes(mut self, attrs: ItemAttributes) -> Self {
-        // Extract values from the attributes enum
         match attrs {
             ItemAttributes::Solution
             | ItemAttributes::UseCase
@@ -925,19 +906,14 @@ impl ItemBuilder {
         file: &str,
     ) -> Result<ItemAttributes, SaraError> {
         match item_type {
-            // Simple types with no additional attributes
             ItemType::Solution => Ok(ItemAttributes::Solution),
             ItemType::UseCase => Ok(ItemAttributes::UseCase),
             ItemType::Scenario => Ok(ItemAttributes::Scenario),
             ItemType::SoftwareDetailedDesign => Ok(ItemAttributes::SoftwareDetailedDesign),
             ItemType::HardwareDetailedDesign => Ok(ItemAttributes::HardwareDetailedDesign),
-
-            // Architecture with optional platform
             ItemType::SystemArchitecture => Ok(ItemAttributes::SystemArchitecture {
                 platform: self.platform.clone(),
             }),
-
-            // Requirement types with specification and dependencies
             ItemType::SystemRequirement => Ok(ItemAttributes::SystemRequirement {
                 specification: self.require_specification(file)?,
                 depends_on: self.depends_on.clone(),
@@ -950,8 +926,6 @@ impl ItemBuilder {
                 specification: self.require_specification(file)?,
                 depends_on: self.depends_on.clone(),
             }),
-
-            // ADR with status, deciders, and supersedes
             ItemType::ArchitectureDecisionRecord => {
                 let status = self.status.ok_or_else(|| SaraError::MissingField {
                     field: "status".to_string(),
@@ -1026,8 +1000,7 @@ impl ItemBuilder {
             name,
             description: self.description,
             source,
-            upstream: self.upstream,
-            downstream: self.downstream,
+            relationships: self.relationships,
             attributes,
         })
     }
@@ -1089,5 +1062,40 @@ mod tests {
         let item = item.unwrap();
         assert_eq!(item.id.as_str(), "SOL-001");
         assert_eq!(item.name, "Test Solution");
+    }
+
+    #[test]
+    fn test_item_builder_with_relationships() {
+        let source = SourceLocation {
+            repository: PathBuf::from("/repo"),
+            file_path: PathBuf::from("docs/UC-001.md"),
+            git_ref: None,
+        };
+
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("UC-001"))
+            .item_type(ItemType::UseCase)
+            .name("Test Use Case")
+            .source(source)
+            .relationships(vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )])
+            .build()
+            .unwrap();
+
+        let refines: Vec<_> = item.relationship_ids(RelationshipType::Refines).collect();
+        assert_eq!(refines.len(), 1);
+        assert_eq!(refines[0].as_str(), "SOL-001");
+    }
+
+    #[test]
+    fn test_generate_id() {
+        assert_eq!(ItemType::Solution.generate_id(Some(1)), "SOL-001");
+        assert_eq!(ItemType::UseCase.generate_id(Some(42)), "UC-042");
+        assert_eq!(
+            ItemType::SystemRequirement.generate_id(None),
+            "SYSREQ-001"
+        );
     }
 }

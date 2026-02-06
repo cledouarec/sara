@@ -211,8 +211,18 @@ impl GraphDiff {
         }
 
         // Check upstream refs change
-        let old_upstream = Self::refs_to_string(old.upstream.all_ids());
-        let new_upstream = Self::refs_to_string(new.upstream.all_ids());
+        let old_upstream = Self::refs_to_string(
+            old.relationships
+                .iter()
+                .filter(|r| r.relationship_type.is_upstream())
+                .map(|r| &r.to),
+        );
+        let new_upstream = Self::refs_to_string(
+            new.relationships
+                .iter()
+                .filter(|r| r.relationship_type.is_upstream())
+                .map(|r| &r.to),
+        );
         if old_upstream != new_upstream {
             changes.push(FieldChange {
                 field: "upstream".to_string(),
@@ -222,8 +232,18 @@ impl GraphDiff {
         }
 
         // Check downstream refs change
-        let old_downstream = Self::refs_to_string(old.downstream.all_ids());
-        let new_downstream = Self::refs_to_string(new.downstream.all_ids());
+        let old_downstream = Self::refs_to_string(
+            old.relationships
+                .iter()
+                .filter(|r| r.relationship_type.is_downstream())
+                .map(|r| &r.to),
+        );
+        let new_downstream = Self::refs_to_string(
+            new.relationships
+                .iter()
+                .filter(|r| r.relationship_type.is_downstream())
+                .map(|r| &r.to),
+        );
         if old_downstream != new_downstream {
             changes.push(FieldChange {
                 field: "downstream".to_string(),

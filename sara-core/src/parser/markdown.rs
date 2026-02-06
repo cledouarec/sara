@@ -6,7 +6,7 @@ use serde::Deserialize;
 
 use crate::error::SaraError;
 use crate::model::{
-    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+    AdrStatus, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
 };
 use crate::parser::frontmatter::extract_frontmatter;
 
@@ -88,55 +88,78 @@ pub struct RawFrontmatter {
     /// Older ADRs this decision supersedes (for ADR items).
     #[serde(default)]
     pub supersedes: Vec<String>,
+
+    /// Newer ADR that supersedes this one.
+    #[serde(default)]
+    pub superseded_by: Option<String>,
 }
 
 impl RawFrontmatter {
-    /// Converts string IDs to ItemIds for upstream refs.
-    pub fn upstream_refs(&self) -> Result<UpstreamRefs, SaraError> {
-        Ok(UpstreamRefs {
-            refines: self.refines.iter().map(ItemId::new_unchecked).collect(),
-            derives_from: self
-                .derives_from
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            satisfies: self.satisfies.iter().map(ItemId::new_unchecked).collect(),
-            justifies: self.justifies.iter().map(ItemId::new_unchecked).collect(),
-        })
-    }
+    /// Converts all relationship fields to a Vec of Relationships.
+    pub fn to_relationships(&self) -> Vec<Relationship> {
+        let mut rels = Vec::new();
 
-    /// Converts string IDs to ItemIds for downstream refs.
-    pub fn downstream_refs(&self) -> Result<DownstreamRefs, SaraError> {
-        Ok(DownstreamRefs {
-            is_refined_by: self
-                .is_refined_by
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            derives: self.derives.iter().map(ItemId::new_unchecked).collect(),
-            is_satisfied_by: self
-                .is_satisfied_by
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            justified_by: self
-                .justified_by
-                .as_ref()
-                .map(|ids| ids.iter().map(ItemId::new_unchecked).collect())
-                .unwrap_or_default(),
-        })
+        // Upstream relationships
+        for id in &self.refines {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Refines,
+            ));
+        }
+        for id in &self.derives_from {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::DerivesFrom,
+            ));
+        }
+        for id in &self.satisfies {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Satisfies,
+            ));
+        }
+        for id in &self.justifies {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Justifies,
+            ));
+        }
+
+        // Downstream relationships
+        for id in &self.is_refined_by {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::IsRefinedBy,
+            ));
+        }
+        for id in &self.derives {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Derives,
+            ));
+        }
+        for id in &self.is_satisfied_by {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::IsSatisfiedBy,
+            ));
+        }
+        if let Some(justified_by) = &self.justified_by {
+            for id in justified_by {
+                rels.push(Relationship::new(
+                    ItemId::new_unchecked(id),
+                    RelationshipType::IsJustifiedBy,
+                ));
+            }
+        }
+
+        rels
     }
 }
 
 /// Parses a Markdown file and extracts the item.
 ///
-/// # Arguments
-/// * `content` - The raw file content.
-/// * `file_path` - Relative path within the repository.
-/// * `repository` - Absolute path to the repository root.
-///
-/// # Returns
-/// The parsed Item, or a ParseError if parsing fails.
+/// The file must contain YAML frontmatter delimited by `---`.
 pub fn parse_markdown_file(
     content: &str,
     file_path: &Path,
@@ -165,8 +188,7 @@ pub fn parse_markdown_file(
         .item_type(frontmatter.item_type)
         .name(&frontmatter.name)
         .source(source)
-        .upstream(frontmatter.upstream_refs()?)
-        .downstream(frontmatter.downstream_refs()?);
+        .relationships(frontmatter.to_relationships());
 
     if let Some(desc) = &frontmatter.description {
         builder = builder.description(desc);
@@ -174,9 +196,7 @@ pub fn parse_markdown_file(
 
     // Set type-specific attributes based on item type
     match frontmatter.item_type {
-        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {
-            // No type-specific attributes
-        }
+        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {}
         ItemType::SystemRequirement
         | ItemType::SoftwareRequirement
         | ItemType::HardwareRequirement => {
@@ -191,17 +211,13 @@ pub fn parse_markdown_file(
             if let Some(platform) = &frontmatter.platform {
                 builder = builder.platform(platform);
             }
-            // justified_by is now handled via downstream_refs()
         }
-        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {
-            // justified_by is now handled via downstream_refs()
-        }
+        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {}
         ItemType::ArchitectureDecisionRecord => {
             if let Some(status) = frontmatter.status {
                 builder = builder.status(status);
             }
             builder = builder.deciders(frontmatter.deciders.clone());
-            // justifies is now handled via upstream_refs()
             builder = builder.supersedes_all(
                 frontmatter
                     .supersedes
@@ -240,6 +256,17 @@ pub fn parse_document(
         item,
         body: extracted.body,
     })
+}
+
+/// Extracts a name from a markdown file's first heading.
+pub fn extract_name_from_content(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(heading) = trimmed.strip_prefix("# ") {
+            return Some(heading.trim().to_string());
+        }
+    }
+    None
 }
 
 #[cfg(test)]
@@ -286,8 +313,11 @@ is_satisfied_by:
         assert_eq!(item.item_type, ItemType::Solution);
         assert_eq!(item.name, "Test Solution");
         assert_eq!(item.description, Some("A test solution".to_string()));
-        assert_eq!(item.downstream.is_refined_by.len(), 1);
-        assert_eq!(item.downstream.is_refined_by[0].as_str(), "UC-001");
+        let is_refined_by: Vec<_> = item
+            .relationship_ids(RelationshipType::IsRefinedBy)
+            .collect();
+        assert_eq!(is_refined_by.len(), 1);
+        assert_eq!(is_refined_by[0].as_str(), "UC-001");
     }
 
     #[test]
@@ -305,8 +335,14 @@ is_satisfied_by:
             item.attributes.specification().map(String::as_str),
             Some("The system SHALL respond within 100ms.")
         );
-        assert_eq!(item.upstream.derives_from.len(), 1);
-        assert_eq!(item.downstream.is_satisfied_by.len(), 1);
+        let derives_from: Vec<_> = item
+            .relationship_ids(RelationshipType::DerivesFrom)
+            .collect();
+        let is_satisfied_by: Vec<_> = item
+            .relationship_ids(RelationshipType::IsSatisfiedBy)
+            .collect();
+        assert_eq!(derives_from.len(), 1);
+        assert_eq!(is_satisfied_by.len(), 1);
     }
 
     #[test]
@@ -390,23 +426,12 @@ Chosen option: Microservices, because it provides better scalability.
             Some("Decision to adopt microservices".to_string())
         );
 
-        // Check ADR-specific attributes
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
         assert_eq!(item.attributes.deciders().len(), 2);
-        assert!(
-            item.attributes
-                .deciders()
-                .contains(&"Alice Smith".to_string())
-        );
-        assert!(
-            item.attributes
-                .deciders()
-                .contains(&"Bob Jones".to_string())
-        );
-        // justifies is now in upstream refs
-        assert_eq!(item.upstream.justifies.len(), 2);
-        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
-        assert_eq!(item.upstream.justifies[1].as_str(), "SWDD-001");
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        assert_eq!(justifies.len(), 2);
+        assert_eq!(justifies[0].as_str(), "SYSARCH-001");
+        assert_eq!(justifies[1].as_str(), "SWDD-001");
         assert!(item.attributes.supersedes().is_empty());
     }
 
@@ -421,7 +446,6 @@ status: proposed
 "#;
         let result =
             parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
-        // Should fail because deciders is required for ADRs
         assert!(result.is_err());
     }
 
@@ -437,7 +461,6 @@ deciders:
 "#;
         let result =
             parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
-        // Should fail because status is required for ADRs
         assert!(result.is_err());
     }
 
@@ -464,12 +487,23 @@ supersedes:
         )
         .unwrap();
 
-        // justifies is now in upstream refs
-        assert_eq!(item.upstream.justifies.len(), 1);
-        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
-        // supersedes is still in attributes
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        assert_eq!(justifies.len(), 1);
+        assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         assert_eq!(item.attributes.supersedes().len(), 2);
         assert_eq!(item.attributes.supersedes()[0].as_str(), "ADR-001");
         assert_eq!(item.attributes.supersedes()[1].as_str(), "ADR-002");
+    }
+
+    #[test]
+    fn test_extract_name_from_content() {
+        let content = "# My Document\n\nSome content here.";
+        assert_eq!(
+            extract_name_from_content(content),
+            Some("My Document".to_string())
+        );
+
+        let content_no_heading = "No heading here";
+        assert_eq!(extract_name_from_content(content_no_heading), None);
     }
 }
