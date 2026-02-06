@@ -1,7 +1,7 @@
 //! Metadata validation rule.
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::model::Item;
 use crate::validation::rule::ValidationRule;
@@ -34,24 +34,24 @@ const RFC2119_KEYWORDS: &[&str] = &[
 pub struct MetadataRule;
 
 impl ValidationRule for MetadataRule {
-    fn pre_validate(&self, items: &[Item], _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn pre_validate(&self, items: &[Item], _config: &ValidationConfig) -> Vec<SaraError> {
         items.iter().flat_map(validate_item_metadata).collect()
     }
 
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         graph.items().flat_map(validate_item_metadata).collect()
     }
 }
 
 /// Validates metadata for a single item.
-fn validate_item_metadata(item: &Item) -> Vec<ValidationError> {
+fn validate_item_metadata(item: &Item) -> Vec<SaraError> {
     let mut errors = Vec::new();
 
     // Check specification requirement
     if item.item_type.requires_specification() {
         match item.attributes.specification() {
             Some(spec) if spec.is_empty() => {
-                errors.push(ValidationError::InvalidMetadata {
+                errors.push(SaraError::InvalidMetadata {
                     file: item.source.file_path.display().to_string(),
                     reason: format!(
                         "{} requires a non-empty 'specification' field",
@@ -60,7 +60,7 @@ fn validate_item_metadata(item: &Item) -> Vec<ValidationError> {
                 });
             }
             Some(spec) if !contains_rfc2119_keyword(spec) => {
-                errors.push(ValidationError::InvalidMetadata {
+                errors.push(SaraError::InvalidMetadata {
                     file: item.source.file_path.display().to_string(),
                     reason: format!(
                         "{} specification must contain at least one RFC2119 keyword (MUST, SHALL, SHOULD, etc.)",
@@ -146,7 +146,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(matches!(
             &errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
         ));
     }
 
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(matches!(
             &errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
         ));
     }
 
@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(matches!(
             &errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
         ));
     }
 
@@ -264,7 +264,7 @@ mod tests {
         assert_eq!(errors.len(), 1);
         assert!(matches!(
             &errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
         ));
     }
 
@@ -314,7 +314,7 @@ mod tests {
         assert_eq!(errors.len(), 1, "Should detect one invalid item");
         assert!(matches!(
             &errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
         ));
     }
 }

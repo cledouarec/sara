@@ -137,7 +137,7 @@ pub fn pre_validate(items: &[Item], strict: bool) -> ValidationReport {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::ValidationError;
+    use crate::error::SaraError;
     use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{
         ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
@@ -317,7 +317,7 @@ mod tests {
         let errors = report.errors();
         assert!(matches!(
             errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("RFC2119")
         ));
     }
 
@@ -341,7 +341,7 @@ mod tests {
         let errors = report.errors();
         assert!(matches!(
             errors[0],
-            ValidationError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
+            SaraError::InvalidMetadata { reason, .. } if reason.contains("non-empty")
         ));
     }
 

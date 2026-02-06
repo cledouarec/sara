@@ -1,7 +1,7 @@
 //! Broken reference detection validation rule.
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::validation::rule::ValidationRule;
 
@@ -12,13 +12,13 @@ use crate::validation::rule::ValidationRule;
 pub struct BrokenReferencesRule;
 
 impl ValidationRule for BrokenReferencesRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         let mut errors = Vec::new();
 
         for item in graph.items() {
             for ref_id in item.all_references() {
                 if !graph.contains(ref_id) {
-                    errors.push(ValidationError::BrokenReference {
+                    errors.push(SaraError::BrokenReference {
                         from: item.id.clone(),
                         to: ref_id.clone(),
                     });
@@ -75,7 +75,7 @@ mod tests {
         let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1);
 
-        if let ValidationError::BrokenReference { from, to, .. } = &errors[0] {
+        if let SaraError::BrokenReference { from, to, .. } = &errors[0] {
             assert_eq!(from.as_str(), "UC-001");
             assert_eq!(to.as_str(), "SOL-MISSING");
         } else {

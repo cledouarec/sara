@@ -1,7 +1,7 @@
 //! Relationship type validation rule.
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::model::{Item, ItemId, RelationshipRules, RelationshipType};
 use crate::validation::rule::ValidationRule;
@@ -16,7 +16,7 @@ use crate::validation::rule::ValidationRule;
 pub struct RelationshipsRule;
 
 impl ValidationRule for RelationshipsRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         let mut errors = Vec::new();
 
         for item in graph.items() {
@@ -33,13 +33,13 @@ fn check_references<'a>(
     graph: &KnowledgeGraph,
     refs: impl Iterator<Item = &'a ItemId>,
     rel_type: RelationshipType,
-    errors: &mut Vec<ValidationError>,
+    errors: &mut Vec<SaraError>,
 ) {
     for ref_id in refs {
         if let Some(target) = graph.get(ref_id)
             && !RelationshipRules::is_valid_relationship(item.item_type, target.item_type, rel_type)
         {
-            errors.push(ValidationError::InvalidRelationship {
+            errors.push(SaraError::InvalidRelationship {
                 from_id: item.id.clone(),
                 to_id: ref_id.clone(),
                 from_type: item.item_type,
@@ -51,7 +51,7 @@ fn check_references<'a>(
 }
 
 /// Validates relationships for a single item.
-fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<ValidationError> {
+fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<SaraError> {
     let mut errors = Vec::new();
 
     // Check upstream references
@@ -164,7 +164,7 @@ mod tests {
         let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1, "Invalid relationship should produce error");
 
-        if let ValidationError::InvalidRelationship {
+        if let SaraError::InvalidRelationship {
             from_type,
             to_type,
             rel_type,
