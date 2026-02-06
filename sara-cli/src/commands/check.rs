@@ -125,13 +125,9 @@ pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
 
 /// Consolidates two validation reports, keeping all data from the main report
 /// and prepending issues from the pre-validation report.
-fn consolidate_reports(report: ValidationReport, pre_report: ValidationReport) -> ValidationReport {
-    ValidationReport {
-        issues: [pre_report.issues, report.issues].concat(),
-        items_checked: report.items_checked,
-        relationships_checked: report.relationships_checked,
-        items_by_type: report.items_by_type,
-    }
+fn consolidate_reports(mut report: ValidationReport, pre_report: ValidationReport) -> ValidationReport {
+    report.merge(pre_report);
+    report
 }
 
 /// Handles output based on format and validation results.

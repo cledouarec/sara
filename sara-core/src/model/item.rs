@@ -2,8 +2,9 @@
 
 use serde::{Deserialize, Serialize};
 use std::fmt;
+use std::path::PathBuf;
 
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::model::FieldName;
 
 /// Represents the type of item in the knowledge graph.
@@ -391,10 +392,10 @@ pub struct ItemId(String);
 
 impl ItemId {
     /// Creates a new ItemId, validating format.
-    pub fn new(id: impl Into<String>) -> Result<Self, ValidationError> {
+    pub fn new(id: impl Into<String>) -> Result<Self, SaraError> {
         let id = id.into();
         if id.is_empty() {
-            return Err(ValidationError::InvalidId {
+            return Err(SaraError::InvalidId {
                 id: id.clone(),
                 reason: "Item ID cannot be empty".to_string(),
             });
@@ -405,7 +406,7 @@ impl ItemId {
             .chars()
             .all(|c| c.is_alphanumeric() || c == '-' || c == '_')
         {
-            return Err(ValidationError::InvalidId {
+            return Err(SaraError::InvalidId {
                 id: id.clone(),
                 reason:
                     "Item ID must contain only alphanumeric characters, hyphens, and underscores"
@@ -908,12 +909,12 @@ impl ItemBuilder {
     }
 
     /// Validates and returns the specification, returning an error if missing.
-    fn require_specification(&self, file: &str) -> Result<String, ValidationError> {
+    fn require_specification(&self, file: &str) -> Result<String, SaraError> {
         self.specification
             .clone()
-            .ok_or_else(|| ValidationError::MissingField {
+            .ok_or_else(|| SaraError::MissingField {
                 field: "specification".to_string(),
-                file: file.to_string(),
+                file: PathBuf::from(file),
             })
     }
 
@@ -922,7 +923,7 @@ impl ItemBuilder {
         &self,
         item_type: ItemType,
         file: &str,
-    ) -> Result<ItemAttributes, ValidationError> {
+    ) -> Result<ItemAttributes, SaraError> {
         match item_type {
             // Simple types with no additional attributes
             ItemType::Solution => Ok(ItemAttributes::Solution),
@@ -952,14 +953,14 @@ impl ItemBuilder {
 
             // ADR with status, deciders, and supersedes
             ItemType::ArchitectureDecisionRecord => {
-                let status = self.status.ok_or_else(|| ValidationError::MissingField {
+                let status = self.status.ok_or_else(|| SaraError::MissingField {
                     field: "status".to_string(),
-                    file: file.to_string(),
+                    file: PathBuf::from(file),
                 })?;
                 if self.deciders.is_empty() {
-                    return Err(ValidationError::MissingField {
+                    return Err(SaraError::MissingField {
                         field: "deciders".to_string(),
-                        file: file.to_string(),
+                        file: PathBuf::from(file),
                     });
                 }
                 Ok(ItemAttributes::Adr {
@@ -972,48 +973,48 @@ impl ItemBuilder {
     }
 
     /// Builds the Item, returning an error if required fields are missing.
-    pub fn build(self) -> Result<Item, ValidationError> {
+    pub fn build(self) -> Result<Item, SaraError> {
         let id = self
             .id
             .clone()
-            .ok_or_else(|| ValidationError::MissingField {
+            .ok_or_else(|| SaraError::MissingField {
                 field: "id".to_string(),
                 file: self
                     .source
                     .as_ref()
-                    .map(|s| s.file_path.display().to_string())
+                    .map(|s| s.file_path.clone())
                     .unwrap_or_default(),
             })?;
 
         let item_type = self
             .item_type
-            .ok_or_else(|| ValidationError::MissingField {
+            .ok_or_else(|| SaraError::MissingField {
                 field: "type".to_string(),
                 file: self
                     .source
                     .as_ref()
-                    .map(|s| s.file_path.display().to_string())
+                    .map(|s| s.file_path.clone())
                     .unwrap_or_default(),
             })?;
 
         let name = self
             .name
             .clone()
-            .ok_or_else(|| ValidationError::MissingField {
+            .ok_or_else(|| SaraError::MissingField {
                 field: "name".to_string(),
                 file: self
                     .source
                     .as_ref()
-                    .map(|s| s.file_path.display().to_string())
+                    .map(|s| s.file_path.clone())
                     .unwrap_or_default(),
             })?;
 
         let source = self
             .source
             .clone()
-            .ok_or_else(|| ValidationError::MissingField {
+            .ok_or_else(|| SaraError::MissingField {
                 field: "source".to_string(),
-                file: String::new(),
+                file: PathBuf::new(),
             })?;
 
         let file_path = source.file_path.display().to_string();

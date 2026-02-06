@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::error::ConfigError;
+use crate::error::SaraError;
 
 /// Main configuration structure.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -37,7 +37,7 @@ impl Config {
     }
 
     /// Expands all glob patterns in template paths.
-    pub fn expand_template_paths(&self) -> Result<Vec<PathBuf>, ConfigError> {
+    pub fn expand_template_paths(&self) -> Result<Vec<PathBuf>, SaraError> {
         let mut result = Vec::new();
 
         for pattern in &self.templates.paths {
@@ -47,7 +47,7 @@ impl Config {
                         match entry {
                             Ok(path) => result.push(path),
                             Err(e) => {
-                                return Err(ConfigError::InvalidGlobPattern {
+                                return Err(SaraError::InvalidGlobPattern {
                                     pattern: pattern.clone(),
                                     reason: e.to_string(),
                                 });
@@ -56,7 +56,7 @@ impl Config {
                     }
                 }
                 Err(e) => {
-                    return Err(ConfigError::InvalidGlobPattern {
+                    return Err(SaraError::InvalidGlobPattern {
                         pattern: pattern.clone(),
                         reason: e.to_string(),
                     });

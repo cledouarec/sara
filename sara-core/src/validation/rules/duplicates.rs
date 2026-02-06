@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::model::Item;
 use crate::validation::rule::ValidationRule;
 
@@ -16,7 +16,7 @@ use crate::validation::rule::ValidationRule;
 pub struct DuplicatesRule;
 
 impl ValidationRule for DuplicatesRule {
-    fn pre_validate(&self, items: &[Item], _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn pre_validate(&self, items: &[Item], _config: &ValidationConfig) -> Vec<SaraError> {
         // Count occurrences of each ID
         let mut id_counts: HashMap<&str, usize> = HashMap::new();
 
@@ -28,7 +28,7 @@ impl ValidationRule for DuplicatesRule {
         id_counts
             .into_iter()
             .filter(|(_, count)| *count > 1)
-            .map(|(id, _)| ValidationError::DuplicateIdentifier {
+            .map(|(id, _)| SaraError::DuplicateIdentifier {
                 id: crate::model::ItemId::new_unchecked(id),
             })
             .collect()
@@ -64,7 +64,7 @@ mod tests {
         let errors = rule.pre_validate(&items, &ValidationConfig::default());
         assert_eq!(errors.len(), 1);
 
-        if let ValidationError::DuplicateIdentifier { id } = &errors[0] {
+        if let SaraError::DuplicateIdentifier { id } = &errors[0] {
             assert_eq!(id.as_str(), "SOL-001");
         } else {
             panic!("Expected DuplicateIdentifier error");

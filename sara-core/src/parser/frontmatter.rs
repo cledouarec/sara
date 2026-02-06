@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use crate::error::ParseError;
+use crate::error::SaraError;
 
 /// Represents extracted frontmatter content.
 #[derive(Debug, Clone)]
@@ -28,18 +28,18 @@ pub struct ExtractedFrontmatter {
 /// ---
 /// # Markdown content here
 /// ```
-pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontmatter, ParseError> {
+pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontmatter, SaraError> {
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() {
-        return Err(ParseError::MissingFrontmatter {
+        return Err(SaraError::MissingFrontmatter {
             file: file.to_path_buf(),
         });
     }
 
     // Check for opening delimiter
     if lines[0].trim() != "---" {
-        return Err(ParseError::MissingFrontmatter {
+        return Err(SaraError::MissingFrontmatter {
             file: file.to_path_buf(),
         });
     }
@@ -53,7 +53,7 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
         }
     }
 
-    let end_idx = end_idx.ok_or_else(|| ParseError::InvalidFrontmatter {
+    let end_idx = end_idx.ok_or_else(|| SaraError::InvalidFrontmatter {
         file: file.to_path_buf(),
         reason: "Missing closing `---` delimiter".to_string(),
     })?;

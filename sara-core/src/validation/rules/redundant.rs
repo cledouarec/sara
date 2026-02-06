@@ -3,9 +3,9 @@
 use std::collections::HashSet;
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId, RelationshipType};
+use crate::model::{Item, ItemId};
 use crate::validation::rule::{Severity, ValidationRule};
 
 /// Redundant relationship detection rule (warning).
@@ -17,7 +17,7 @@ use crate::validation::rule::{Severity, ValidationRule};
 pub struct RedundantRelationshipsRule;
 
 impl ValidationRule for RedundantRelationshipsRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         let mut errors = Vec::new();
         let mut seen_pairs: HashSet<(String, String)> = HashSet::new();
 
@@ -30,10 +30,6 @@ impl ValidationRule for RedundantRelationshipsRule {
                 graph,
                 &item.downstream.is_refined_by,
                 |target| target.upstream.refines.contains(&item.id),
-                &RelationshipPair {
-                    from_rel: RelationshipType::IsRefinedBy,
-                    to_rel: RelationshipType::Refines,
-                },
                 &mut seen_pairs,
                 &mut errors,
             );
@@ -44,10 +40,6 @@ impl ValidationRule for RedundantRelationshipsRule {
                 graph,
                 &item.downstream.derives,
                 |target| target.upstream.derives_from.contains(&item.id),
-                &RelationshipPair {
-                    from_rel: RelationshipType::Derives,
-                    to_rel: RelationshipType::DerivesFrom,
-                },
                 &mut seen_pairs,
                 &mut errors,
             );
@@ -58,10 +50,6 @@ impl ValidationRule for RedundantRelationshipsRule {
                 graph,
                 &item.downstream.is_satisfied_by,
                 |target| target.upstream.satisfies.contains(&item.id),
-                &RelationshipPair {
-                    from_rel: RelationshipType::IsSatisfiedBy,
-                    to_rel: RelationshipType::Satisfies,
-                },
                 &mut seen_pairs,
                 &mut errors,
             );
@@ -75,21 +63,14 @@ impl ValidationRule for RedundantRelationshipsRule {
     }
 }
 
-/// Relationship pair configuration for redundancy checking.
-struct RelationshipPair {
-    from_rel: RelationshipType,
-    to_rel: RelationshipType,
-}
-
 /// Checks for redundant declarations in a specific relationship pair.
 fn check_redundant_pair<F>(
     item: &Item,
     graph: &KnowledgeGraph,
     downstream_refs: &[ItemId],
     has_inverse: F,
-    pair: &RelationshipPair,
     seen_pairs: &mut HashSet<(String, String)>,
-    errors: &mut Vec<ValidationError>,
+    errors: &mut Vec<SaraError>,
 ) where
     F: Fn(&Item) -> bool,
 {
@@ -99,11 +80,9 @@ fn check_redundant_pair<F>(
         {
             let pair_key = make_pair_key(&item.id, target_id);
             if seen_pairs.insert(pair_key) {
-                errors.push(ValidationError::RedundantRelationship {
+                errors.push(SaraError::RedundantRelationship {
                     from_id: item.id.clone(),
                     to_id: target_id.clone(),
-                    from_rel: pair.from_rel,
-                    to_rel: pair.to_rel,
                 });
             }
         }
@@ -186,7 +165,7 @@ mod tests {
         assert_eq!(warnings.len(), 1);
         assert!(matches!(
             &warnings[0],
-            ValidationError::RedundantRelationship { from_id, to_id, .. }
+            SaraError::RedundantRelationship { from_id, to_id, .. }
             if from_id.as_str() == "SYSREQ-001" && to_id.as_str() == "SARCH-001"
         ));
     }

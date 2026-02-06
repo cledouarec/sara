@@ -64,7 +64,7 @@ enum ParseResult {
     /// Error reading file.
     ReadError(std::io::Error),
     /// Error parsing file.
-    ParseError(crate::error::ParseError),
+    ParseError(crate::error::SaraError),
 }
 
 /// Parses files in parallel using rayon for improved performance.
