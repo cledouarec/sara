@@ -3,9 +3,11 @@
 use std::fs;
 use std::path::PathBuf;
 
-use crate::model::ItemType;
+use crate::generator::{self, OutputFormat};
+use crate::model::{
+    AdrStatus, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
+};
 use crate::parser::{extract_name_from_content, has_frontmatter};
-use crate::template::{GeneratorOptions, generate_document};
 
 use super::{InitOptions, TypeConfig};
 
@@ -72,11 +74,11 @@ impl InitService {
         let id = self.resolve_id(opts);
         let name = self.resolve_name(opts, &id)?;
 
-        // Build generator options
-        let gen_opts = self.build_generator_options(opts, id.clone(), name.clone());
+        // Build an Item from init options
+        let item = self.build_item(opts, &id, &name);
 
         // Write the file
-        let (updated_existing, replaced_frontmatter) = self.write_file(opts, &gen_opts)?;
+        let (updated_existing, replaced_frontmatter) = self.write_file(opts, &item)?;
 
         // Check if specification is needed
         let needs_specification = self.check_needs_specification(&opts.type_config);
@@ -132,105 +134,112 @@ impl InitService {
             .unwrap_or_else(|| fallback.to_string())
     }
 
-    /// Builds generator options from init options.
-    fn build_generator_options(
+    /// Builds an `Item` from init options for document generation.
+    fn build_item(
         &self,
         opts: &InitOptions,
-        id: String,
-        name: String,
-    ) -> GeneratorOptions {
-        let mut gen_opts = GeneratorOptions::new(opts.item_type(), id, name);
+        id: &str,
+        name: &str,
+    ) -> crate::model::Item {
+        let source = SourceLocation {
+            repository: PathBuf::new(),
+            file_path: opts.file.clone(),
+            git_ref: None,
+        };
+
+        let mut builder = ItemBuilder::new()
+            .id(ItemId::new_unchecked(id))
+            .item_type(opts.item_type())
+            .name(name)
+            .source(source);
 
         if let Some(ref desc) = opts.description {
-            gen_opts = gen_opts.with_description(desc);
+            builder = builder.description(desc);
         }
 
-        // Extract type-specific options from TypeConfig
+        // Build relationships and attributes from TypeConfig
         match &opts.type_config {
             TypeConfig::Solution => {}
 
-            TypeConfig::UseCase { refines } => {
-                if !refines.is_empty() {
-                    gen_opts = gen_opts.with_refines(refines.clone());
-                }
-            }
-
-            TypeConfig::Scenario { refines } => {
-                if !refines.is_empty() {
-                    gen_opts = gen_opts.with_refines(refines.clone());
-                }
+            TypeConfig::UseCase { refines } | TypeConfig::Scenario { refines } => {
+                builder = builder.relationships(
+                    refines
+                        .iter()
+                        .map(|r| {
+                            Relationship::new(
+                                ItemId::new_unchecked(r),
+                                RelationshipType::Refines,
+                            )
+                        })
+                        .collect(),
+                );
             }
 
             TypeConfig::SystemRequirement {
                 specification,
                 derives_from,
                 depends_on,
+            }
+            | TypeConfig::SoftwareRequirement {
+                specification,
+                derives_from,
+                depends_on,
+            }
+            | TypeConfig::HardwareRequirement {
+                specification,
+                derives_from,
+                depends_on,
             } => {
-                if let Some(spec) = specification {
-                    gen_opts = gen_opts.with_specification(spec);
-                }
-                if !derives_from.is_empty() {
-                    gen_opts = gen_opts.with_derives_from(derives_from.clone());
-                }
-                if !depends_on.is_empty() {
-                    gen_opts = gen_opts.with_depends_on(depends_on.clone());
+                let spec = specification
+                    .clone()
+                    .unwrap_or_else(|| "The system SHALL <describe the requirement>.".to_string());
+                builder = builder.specification(spec);
+                builder = builder.relationships(
+                    derives_from
+                        .iter()
+                        .map(|r| {
+                            Relationship::new(
+                                ItemId::new_unchecked(r),
+                                RelationshipType::DerivesFrom,
+                            )
+                        })
+                        .collect(),
+                );
+                for dep in depends_on {
+                    builder = builder.depends_on(ItemId::new_unchecked(dep));
                 }
             }
 
-            TypeConfig::SystemArchitecture {
-                platform,
-                satisfies,
-            } => {
+            TypeConfig::SystemArchitecture { platform, satisfies } => {
                 if let Some(p) = platform {
-                    gen_opts = gen_opts.with_platform(p);
+                    builder = builder.platform(p);
                 }
-                if !satisfies.is_empty() {
-                    gen_opts = gen_opts.with_satisfies(satisfies.clone());
-                }
+                builder = builder.relationships(
+                    satisfies
+                        .iter()
+                        .map(|r| {
+                            Relationship::new(
+                                ItemId::new_unchecked(r),
+                                RelationshipType::Satisfies,
+                            )
+                        })
+                        .collect(),
+                );
             }
 
-            TypeConfig::SoftwareRequirement {
-                specification,
-                derives_from,
-                depends_on,
-            } => {
-                if let Some(spec) = specification {
-                    gen_opts = gen_opts.with_specification(spec);
-                }
-                if !derives_from.is_empty() {
-                    gen_opts = gen_opts.with_derives_from(derives_from.clone());
-                }
-                if !depends_on.is_empty() {
-                    gen_opts = gen_opts.with_depends_on(depends_on.clone());
-                }
-            }
-
-            TypeConfig::HardwareRequirement {
-                specification,
-                derives_from,
-                depends_on,
-            } => {
-                if let Some(spec) = specification {
-                    gen_opts = gen_opts.with_specification(spec);
-                }
-                if !derives_from.is_empty() {
-                    gen_opts = gen_opts.with_derives_from(derives_from.clone());
-                }
-                if !depends_on.is_empty() {
-                    gen_opts = gen_opts.with_depends_on(depends_on.clone());
-                }
-            }
-
-            TypeConfig::SoftwareDetailedDesign { satisfies } => {
-                if !satisfies.is_empty() {
-                    gen_opts = gen_opts.with_satisfies(satisfies.clone());
-                }
-            }
-
-            TypeConfig::HardwareDetailedDesign { satisfies } => {
-                if !satisfies.is_empty() {
-                    gen_opts = gen_opts.with_satisfies(satisfies.clone());
-                }
+            TypeConfig::SoftwareDetailedDesign { satisfies }
+            | TypeConfig::HardwareDetailedDesign { satisfies } => {
+                builder = builder.relationships(
+                    satisfies
+                        .iter()
+                        .map(|r| {
+                            Relationship::new(
+                                ItemId::new_unchecked(r),
+                                RelationshipType::Satisfies,
+                            )
+                        })
+                        .collect(),
+                );
             }
 
             TypeConfig::Adr {
@@ -238,55 +247,80 @@ impl InitService {
                 deciders,
                 justifies,
                 supersedes,
-                superseded_by,
+                superseded_by: _,
             } => {
-                if let Some(s) = status {
-                    gen_opts = gen_opts.with_status(s);
-                }
+                let adr_status = status
+                    .as_deref()
+                    .and_then(|s| match s {
+                        "proposed" => Some(AdrStatus::Proposed),
+                        "accepted" => Some(AdrStatus::Accepted),
+                        "deprecated" => Some(AdrStatus::Deprecated),
+                        "superseded" => Some(AdrStatus::Superseded),
+                        _ => None,
+                    })
+                    .unwrap_or(AdrStatus::Proposed);
+                builder = builder.status(adr_status);
                 if !deciders.is_empty() {
-                    gen_opts = gen_opts.with_deciders(deciders.clone());
+                    builder = builder.deciders(deciders.clone());
+                } else {
+                    // Default decider to avoid build failure
+                    builder = builder.decider("TBD");
                 }
-                if !justifies.is_empty() {
-                    gen_opts = gen_opts.with_justifies(justifies.clone());
+
+                let mut rels: Vec<Relationship> = justifies
+                    .iter()
+                    .map(|r| {
+                        Relationship::new(
+                            ItemId::new_unchecked(r),
+                            RelationshipType::Justifies,
+                        )
+                    })
+                    .collect();
+
+                for sup in supersedes {
+                    rels.push(Relationship::new(
+                        ItemId::new_unchecked(sup),
+                        RelationshipType::Supersedes,
+                    ));
                 }
-                if !supersedes.is_empty() {
-                    gen_opts = gen_opts.with_supersedes(supersedes.clone());
-                }
-                if let Some(sb) = superseded_by {
-                    gen_opts = gen_opts.with_superseded_by(sb);
+
+                builder = builder.relationships(rels);
+                for sup in supersedes {
+                    builder = builder.supersedes(ItemId::new_unchecked(sup));
                 }
             }
         }
 
-        gen_opts
+        builder.build().expect("Failed to build item for init")
     }
 
     /// Writes the file, either updating existing or creating new.
+    ///
     /// Returns (updated_existing, replaced_frontmatter).
     fn write_file(
         &self,
         opts: &InitOptions,
-        gen_opts: &GeneratorOptions,
+        item: &crate::model::Item,
     ) -> Result<(bool, bool), InitError> {
         if opts.file.exists() {
-            let replaced = self.update_existing_file(opts, gen_opts)?;
+            let replaced = self.update_existing_file(opts, item)?;
             Ok((true, replaced))
         } else {
-            self.create_new_file(opts, gen_opts)?;
+            self.create_new_file(opts, item)?;
             Ok((false, false))
         }
     }
 
     /// Updates an existing file by adding or replacing frontmatter.
+    ///
     /// Returns true if frontmatter was replaced, false if it was added.
     fn update_existing_file(
         &self,
         opts: &InitOptions,
-        gen_opts: &GeneratorOptions,
+        item: &crate::model::Item,
     ) -> Result<bool, InitError> {
         let content = fs::read_to_string(&opts.file)?;
-        let document = generate_document(gen_opts);
-        let frontmatter = extract_frontmatter(&document);
+        let frontmatter = generator::generate_metadata(item, OutputFormat::Markdown);
 
         let (new_content, replaced) = if has_frontmatter(&content) && opts.force {
             let body = remove_frontmatter(&content);
@@ -303,9 +337,9 @@ impl InitService {
     fn create_new_file(
         &self,
         opts: &InitOptions,
-        gen_opts: &GeneratorOptions,
+        item: &crate::model::Item,
     ) -> Result<(), InitError> {
-        let document = generate_document(gen_opts);
+        let document = generator::generate_document(item, OutputFormat::Markdown);
 
         if let Some(parent) = opts.file.parent() {
             fs::create_dir_all(parent)?;
@@ -313,19 +347,6 @@ impl InitService {
 
         fs::write(&opts.file, document)?;
         Ok(())
-    }
-}
-
-/// Extracts the frontmatter (including delimiters) from a document.
-fn extract_frontmatter(content: &str) -> &str {
-    if !content.starts_with("---") {
-        return "";
-    }
-    let after_first = &content[3..];
-    if let Some(end_pos) = after_first.find("\n---") {
-        &content[..end_pos + 3 + 4] // "---" + content + "\n---"
-    } else {
-        ""
     }
 }
 
