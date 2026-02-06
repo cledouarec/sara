@@ -3,6 +3,8 @@
 use std::fs;
 use std::path::PathBuf;
 
+use serde::Serialize;
+
 use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::model::{FieldChange, FieldName, Item, ItemType, TraceabilityLinks};
@@ -10,6 +12,30 @@ use crate::parser::update_frontmatter;
 use crate::query::lookup_item_or_suggest;
 
 use super::{EditOptions, EditedValues};
+
+/// Serializable representation of YAML frontmatter for an item.
+///
+/// Field order matches the canonical frontmatter layout. Optional fields
+/// and empty lists are omitted via `skip_serializing_if`.
+#[derive(Serialize)]
+struct FrontmatterOutput {
+    id: String,
+    #[serde(rename = "type")]
+    item_type: String,
+    name: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    description: Option<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    refines: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    derives_from: Vec<String>,
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    satisfies: Vec<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    specification: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    platform: Option<String>,
+}
 
 /// Result of a successful edit operation.
 #[derive(Debug)]
@@ -65,7 +91,7 @@ impl ItemContext {
             description: item.description.clone(),
             specification: item.attributes.specification().map(ToOwned::to_owned),
             platform: item.attributes.platform().map(ToOwned::to_owned),
-            traceability: TraceabilityLinks::from_upstream(&item.upstream),
+            traceability: TraceabilityLinks::from_item(item),
             file_path: item.source.full_path(),
         }
     }
@@ -255,69 +281,18 @@ impl EditService {
         item_type: ItemType,
         values: &EditedValues,
     ) -> String {
-        let mut yaml = format!(
-            "{}: \"{}\"\n{}: {}\n{}: \"{}\"\n",
-            FieldName::Id.as_str(),
-            item_id,
-            FieldName::Type.as_str(),
-            item_type.as_str(),
-            FieldName::Name.as_str(),
-            values.name.replace('"', "\\\"")
-        );
-
-        if let Some(ref desc) = values.description {
-            yaml += &format!(
-                "{}: \"{}\"\n",
-                FieldName::Description.as_str(),
-                desc.replace('"', "\\\"")
-            );
-        }
-
-        self.append_traceability_yaml(
-            &mut yaml,
-            FieldName::Refines.as_str(),
-            &values.traceability.refines,
-        );
-        self.append_traceability_yaml(
-            &mut yaml,
-            FieldName::DerivesFrom.as_str(),
-            &values.traceability.derives_from,
-        );
-        self.append_traceability_yaml(
-            &mut yaml,
-            FieldName::Satisfies.as_str(),
-            &values.traceability.satisfies,
-        );
-
-        if let Some(ref spec) = values.specification {
-            yaml += &format!(
-                "{}: \"{}\"\n",
-                FieldName::Specification.as_str(),
-                spec.replace('"', "\\\"")
-            );
-        }
-
-        if let Some(ref plat) = values.platform {
-            yaml += &format!(
-                "{}: \"{}\"\n",
-                FieldName::Platform.as_str(),
-                plat.replace('"', "\\\"")
-            );
-        }
-
-        yaml
-    }
-
-    /// Appends a traceability list to YAML if non-empty.
-    fn append_traceability_yaml(&self, yaml: &mut String, field: &str, ids: &[String]) {
-        if ids.is_empty() {
-            return;
-        }
-
-        *yaml += &format!("{}:\n", field);
-        for id in ids {
-            *yaml += &format!("  - \"{}\"\n", id);
-        }
+        let output = FrontmatterOutput {
+            id: item_id.to_string(),
+            item_type: item_type.as_str().to_string(),
+            name: values.name.clone(),
+            description: values.description.clone(),
+            refines: values.traceability.refines.clone(),
+            derives_from: values.traceability.derives_from.clone(),
+            satisfies: values.traceability.satisfies.clone(),
+            specification: values.specification.clone(),
+            platform: values.platform.clone(),
+        };
+        serde_yaml::to_string(&output).expect("frontmatter serialization should not fail")
     }
 
     /// Performs a non-interactive edit operation.
@@ -474,9 +449,9 @@ mod tests {
 
         let yaml = service.build_frontmatter_yaml("SOL-001", ItemType::Solution, &values);
 
-        assert!(yaml.contains("id: \"SOL-001\""));
+        assert!(yaml.contains("id: SOL-001"));
         assert!(yaml.contains("type: solution"));
-        assert!(yaml.contains("name: \"Test Solution\""));
-        assert!(yaml.contains("description: \"A test solution\""));
+        assert!(yaml.contains("name: Test Solution"));
+        assert!(yaml.contains("description: A test solution"));
     }
 }

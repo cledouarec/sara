@@ -140,22 +140,23 @@ mod tests {
     use crate::error::SaraError;
     use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{
-        ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
+        ItemAttributes, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
+        SourceLocation,
     };
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
     use std::path::PathBuf;
 
     #[test]
     fn test_valid_graph() {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -168,13 +169,13 @@ mod tests {
     #[test]
     fn test_broken_reference() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-MISSING")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-MISSING"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -216,21 +217,21 @@ mod tests {
     #[test]
     fn test_cycle_detection() {
         // Create a cycle
-        let scen1 = create_test_item_with_upstream(
+        let scen1 = create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SCEN-002")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-002"),
+                RelationshipType::Refines,
+            )],
         );
-        let scen2 = create_test_item_with_upstream(
+        let scen2 = create_test_item_with_relationships(
             "SCEN-002",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SCEN-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()
@@ -248,13 +249,13 @@ mod tests {
         // Scenario trying to refine Solution directly (invalid)
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "SCEN-001",
                 ItemType::Scenario,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();

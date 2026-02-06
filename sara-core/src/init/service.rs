@@ -4,10 +4,8 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::model::ItemType;
-use crate::parser::has_frontmatter;
-use crate::template::{
-    GeneratorOptions, extract_name_from_content, generate_document, generate_id,
-};
+use crate::parser::{extract_name_from_content, has_frontmatter};
+use crate::template::{GeneratorOptions, generate_document};
 
 use super::{InitOptions, TypeConfig};
 
@@ -108,7 +106,7 @@ impl InitService {
     fn resolve_id(&self, opts: &InitOptions) -> String {
         opts.id
             .clone()
-            .unwrap_or_else(|| generate_id(opts.item_type(), None))
+            .unwrap_or_else(|| opts.item_type().generate_id(None))
     }
 
     /// Resolves the name from options, file content, or file stem.
