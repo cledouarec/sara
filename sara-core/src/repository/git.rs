@@ -6,7 +6,7 @@ use git2::{Commit, ObjectType, Repository};
 
 use crate::error::SaraError;
 use crate::model::Item;
-use crate::parser::parse_markdown_file;
+use crate::parser::InputFormat;
 
 /// Represents a Git reference that can be used to read files.
 #[derive(Debug, Clone)]
@@ -211,7 +211,7 @@ impl GitReader {
                 continue;
             }
 
-            match parse_markdown_file(&content, &file_path, &self.repo_path) {
+            match crate::parser::parse_metadata(&content, &file_path, &self.repo_path, InputFormat::Markdown) {
                 Ok(item) => items.push(item),
                 Err(e) => {
                     tracing::warn!("Failed to parse {}: {}", file_path.display(), e);

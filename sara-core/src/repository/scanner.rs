@@ -7,7 +7,7 @@ use rayon::prelude::*;
 
 use crate::error::SaraError;
 use crate::model::Item;
-use crate::parser::parse_markdown_file;
+use crate::parser::InputFormat;
 
 /// Scans a directory for Markdown files and returns their paths.
 pub fn scan_directory(path: &Path) -> Result<Vec<PathBuf>, SaraError> {
@@ -97,7 +97,7 @@ pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, Sar
                 .to_path_buf();
 
             // Parse the markdown file
-            match parse_markdown_file(&content, &relative_path, repository_path) {
+            match crate::parser::parse_metadata(&content, &relative_path, repository_path, InputFormat::Markdown) {
                 Ok(item) => ParseResult::Item(Box::new(item)),
                 Err(e) => ParseResult::ParseError(e),
             }
