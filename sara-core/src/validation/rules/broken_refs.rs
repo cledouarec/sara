@@ -34,20 +34,20 @@ impl ValidationRule for BrokenReferencesRule {
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, ItemType, Relationship, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_broken_refs() {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -60,13 +60,13 @@ mod tests {
     #[test]
     fn test_broken_ref_detected() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-MISSING")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-MISSING"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();

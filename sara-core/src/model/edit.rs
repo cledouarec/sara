@@ -102,7 +102,6 @@ impl FieldChange {
 ///
 /// This struct represents traceability links using plain strings,
 /// suitable for CLI input, interactive prompts, and serialization.
-/// Use `UpstreamRefs` for the validated graph model.
 #[derive(Debug, Default, Clone)]
 pub struct TraceabilityLinks {
     /// Items this item refines (for UseCase, Scenario).
@@ -127,66 +126,27 @@ impl TraceabilityLinks {
             && self.justifies.is_empty()
     }
 
-    /// Creates from an Item's upstream references.
-    pub fn from_upstream(upstream: &super::UpstreamRefs) -> Self {
-        Self {
-            refines: upstream
-                .refines
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            derives_from: upstream
-                .derives_from
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            satisfies: upstream
-                .satisfies
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            depends_on: Vec::new(),
-            justifies: upstream
-                .justifies
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-        }
-    }
-
-    /// Creates from an Item's upstream references and peer dependencies.
+    /// Creates traceability links from an Item's relationships and attributes.
     pub fn from_item(item: &super::Item) -> Self {
+        use super::RelationshipType;
+
+        let collect_ids = |rel_type: RelationshipType| -> Vec<String> {
+            item.relationship_ids(rel_type)
+                .map(|id| id.as_str().to_string())
+                .collect()
+        };
+
         Self {
-            refines: item
-                .upstream
-                .refines
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            derives_from: item
-                .upstream
-                .derives_from
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
-            satisfies: item
-                .upstream
-                .satisfies
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
+            refines: collect_ids(RelationshipType::Refines),
+            derives_from: collect_ids(RelationshipType::DerivesFrom),
+            satisfies: collect_ids(RelationshipType::Satisfies),
             depends_on: item
                 .attributes
                 .depends_on()
                 .iter()
                 .map(|id| id.as_str().to_string())
                 .collect(),
-            justifies: item
-                .upstream
-                .justifies
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
+            justifies: collect_ids(RelationshipType::Justifies),
         }
     }
 }
