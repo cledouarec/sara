@@ -18,7 +18,7 @@ repository = "https://github.com/cledouarec/sara"
 petgraph = "0.8.3"
 
 # CLI argument parsing
-clap = { version = "4.5.58", features = ["derive"] }
+clap = { version = "4.5.59", features = ["derive"] }
 
 # Markdown parsing
 pulldown-cmark = "0.13"
@@ -27,7 +27,7 @@ pulldown-cmark = "0.13"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 serde_json = "1.0.149"
-toml = "1.0.0"
+toml = "1.0.2"
 
 # Git operations (vendored OpenSSL for cross-compilation support)
 git2 = { version = "0.20.4", features = ["vendored-openssl"] }
