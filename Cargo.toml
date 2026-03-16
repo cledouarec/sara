@@ -27,7 +27,7 @@ pulldown-cmark = "0.13"
 serde = { version = "1.0.228", features = ["derive"] }
 serde_yaml = "0.9.34"
 serde_json = "1.0.149"
-toml = "1.0.3"
+toml = "1.0.6"
 
 # Git operations (vendored OpenSSL for cross-compilation support)
 git2 = { version = "0.20.4", features = ["vendored-openssl"] }
@@ -62,6 +62,6 @@ indicatif = "0.18.3"
 inquire = "0.9.4"
 
 # Testing
-assert_cmd = "2.1.2"
+assert_cmd = "2.2.0"
 predicates = "3.1.4"
-tempfile = "3.26.0"
+tempfile = "3.27.0"
