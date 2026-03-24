@@ -4,7 +4,6 @@ use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
-use std::path::PathBuf;
 
 use crate::error::SaraError;
 use crate::model::{Item, ItemId, ItemType, RelationshipType};
@@ -181,19 +180,12 @@ impl Default for KnowledgeGraph {
 #[derive(Debug, Default)]
 pub struct KnowledgeGraphBuilder {
     items: Vec<Item>,
-    repositories: Vec<PathBuf>,
 }
 
 impl KnowledgeGraphBuilder {
     /// Creates a new graph builder.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Adds a repository path.
-    pub fn add_repository(mut self, path: impl Into<PathBuf>) -> Self {
-        self.repositories.push(path.into());
-        self
     }
 
     /// Adds an item to the graph.
