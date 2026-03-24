@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/cledouarec/sara/compare/sara-core-v0.5.4...sara-core-v0.6.0) - 2026-03-24
+
+### Changed
+
+- introduce TemplateRegistry with frontmatter partials (by @cledouarec) - #59
+- extract ids_to_relationships helper and clean up service module (by @cledouarec) - #57
+- consolidate diff, edit, init modules into service module (by @cledouarec) - #57
+- extract adr and builder submodules from model/item (by @cledouarec) - #57
+- extract parser/yaml submodule from markdown parser (by @cledouarec) - #57
+- replace template module with generator module (by @cledouarec) - #57
+- replace upstream/downstream with relationships Vec on Item (by @cledouarec) - #57
+- consolidate error types into a single SaraError enum (by @cledouarec) - #57
+
+### Fixed
+
+- resolve clippy warnings and wire up supersedes relationships (by @cledouarec) - #57
+
+### Contributors
+
+* @cledouarec
+
 ## [0.5.4](https://github.com/cledouarec/sara/compare/sara-core-v0.5.3...sara-core-v0.5.4) - 2026-03-24
 
 ### Other

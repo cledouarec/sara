@@ -7,6 +7,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.6.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.5.4...sara-cli-v0.6.0) - 2026-03-24
+
+### Changed
+
+- consolidate diff, edit, init modules into service module (by @cledouarec) - #57
+- replace upstream/downstream with relationships Vec on Item (by @cledouarec) - #57
+- consolidate error types into a single SaraError enum (by @cledouarec) - #57
+
+### Contributors
+
+* @cledouarec
+
 ## [0.5.4](https://github.com/cledouarec/sara/compare/sara-cli-v0.5.3...sara-cli-v0.5.4) - 2026-03-24
 
 ### Other
