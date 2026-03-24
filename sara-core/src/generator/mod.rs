@@ -8,7 +8,6 @@
 //! to produce output without depending on format-specific functions.
 
 mod markdown;
-mod yaml;
 
 use crate::model::Item;
 
@@ -35,7 +34,7 @@ pub fn generate_document(item: &Item, format: OutputFormat) -> String {
 #[must_use]
 pub fn generate_metadata(item: &Item, format: OutputFormat) -> String {
     match format {
-        OutputFormat::Markdown => yaml::generate_metadata(item),
+        OutputFormat::Markdown => markdown::generate_frontmatter(item),
     }
 }
 

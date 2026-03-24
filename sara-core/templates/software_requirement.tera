@@ -1,26 +1,4 @@
----
-id: "{{ id }}"
-type: {{ type }}
-name: "{{ name }}"
-{%- if description %}
-description: "{{ description }}"
-{%- endif %}
-{%- if specification %}
-specification: "{{ specification }}"
-{%- endif %}
-{%- if derives_from %}
-derives_from:
-{%- for ref in derives_from %}
-  - "{{ ref }}"
-{%- endfor %}
-{%- endif %}
-{%- if depends_on %}
-depends_on:
-{%- for ref in depends_on %}
-  - "{{ ref }}"
-{%- endfor %}
-{%- endif %}
----
+{% include "software_requirement_frontmatter.tera" %}
 
 # Software Requirement: {{ name }}
 
