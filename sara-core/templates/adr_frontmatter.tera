@@ -1,0 +1,27 @@
+---
+id: "{{ id }}"
+type: {{ type }}
+name: "{{ name }}"
+{%- if description %}
+description: "{{ description }}"
+{%- endif %}
+status: {{ status | default(value="proposed") }}
+{%- if deciders %}
+deciders:
+{%- for decider in deciders %}
+  - "{{ decider }}"
+{%- endfor %}
+{%- endif %}
+{%- if justifies %}
+justifies:
+{%- for ref in justifies %}
+  - "{{ ref }}"
+{%- endfor %}
+{%- endif %}
+{%- if supersedes %}
+supersedes:
+{%- for ref in supersedes %}
+  - "{{ ref }}"
+{%- endfor %}
+{%- endif %}
+---

@@ -1,0 +1,17 @@
+---
+id: "{{ id }}"
+type: {{ type }}
+name: "{{ name }}"
+{%- if description %}
+description: "{{ description }}"
+{%- endif %}
+{%- if platform %}
+platform: "{{ platform }}"
+{%- endif %}
+{%- if satisfies %}
+satisfies:
+{%- for ref in satisfies %}
+  - "{{ ref }}"
+{%- endfor %}
+{%- endif %}
+---
