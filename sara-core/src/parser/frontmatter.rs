@@ -9,8 +9,6 @@ use crate::error::SaraError;
 pub struct ExtractedFrontmatter {
     /// The raw YAML content between the `---` delimiters.
     pub yaml: String,
-    /// Line number where the frontmatter ends (at the closing `---`).
-    pub end_line: usize,
     /// The remaining Markdown content after the frontmatter.
     pub body: String,
 }
@@ -70,11 +68,7 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
     };
     let body = body_lines.join("\n");
 
-    Ok(ExtractedFrontmatter {
-        yaml,
-        end_line: end_idx + 1, // 1-indexed
-        body,
-    })
+    Ok(ExtractedFrontmatter { yaml, body })
 }
 
 /// Checks if content has frontmatter (starts with `---`).
@@ -144,7 +138,6 @@ name: "Test"
         let result = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
         assert!(result.yaml.contains("id: \"SOL-001\""));
         assert!(result.yaml.contains("type: solution"));
-        assert_eq!(result.end_line, 5);
         assert_eq!(result.body.trim(), "# Body content");
     }
 

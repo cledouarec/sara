@@ -155,6 +155,20 @@ impl RawFrontmatter {
             }
         }
 
+        // Peer relationships
+        for id in &self.supersedes {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::Supersedes,
+            ));
+        }
+        if let Some(id) = &self.superseded_by {
+            rels.push(Relationship::new(
+                ItemId::new_unchecked(id),
+                RelationshipType::IsSupersededBy,
+            ));
+        }
+
         rels
     }
 }
@@ -230,7 +244,8 @@ supersedes:
         assert_eq!(fm.supersedes, vec!["ADR-000"]);
 
         let rels = fm.to_relationships();
-        assert_eq!(rels.len(), 1); // Only justifies as relationship
+        assert_eq!(rels.len(), 2);
         assert_eq!(rels[0].relationship_type, RelationshipType::Justifies);
+        assert_eq!(rels[1].relationship_type, RelationshipType::Supersedes);
     }
 }
