@@ -5,8 +5,8 @@ use std::process::ExitCode;
 
 use clap::Args;
 
-use sara_core::diff::{DiffOptions, DiffResult, DiffService};
 use sara_core::graph::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
+use sara_core::service::{DiffOptions, DiffResult, DiffService};
 
 use super::CommandContext;
 use crate::output::{
