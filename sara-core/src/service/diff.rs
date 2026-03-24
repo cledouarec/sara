@@ -174,21 +174,15 @@ impl DiffService {
         }))
     }
 
-    /// Falls back to comparing current working directory state with itself.
     fn diff_working_directory(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
         let items = self.parse_repositories(&opts.repositories)?;
 
-        let graph1 = KnowledgeGraphBuilder::new()
-            .add_items(items.clone())
-            .build()
-            .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
-
-        let graph2 = KnowledgeGraphBuilder::new()
+        let graph = KnowledgeGraphBuilder::new()
             .add_items(items)
             .build()
             .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
 
-        let diff = GraphDiff::compute(&graph1, &graph2);
+        let diff = GraphDiff::compute(&graph, &graph);
 
         Ok(DiffResult {
             diff,
