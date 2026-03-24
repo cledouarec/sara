@@ -7,9 +7,7 @@ use std::fs;
 use std::path::PathBuf;
 
 use crate::generator::{self, OutputFormat};
-use crate::model::{
-    AdrStatus, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
-};
+use crate::model::{AdrStatus, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation};
 use crate::parser::{extract_name_from_content, has_frontmatter};
 
 /// Options for initializing a new item or adding frontmatter to an existing file.
@@ -432,14 +430,10 @@ impl InitService {
             TypeConfig::Solution => {}
 
             TypeConfig::UseCase { refines } | TypeConfig::Scenario { refines } => {
-                builder = builder.relationships(
-                    refines
-                        .iter()
-                        .map(|r| {
-                            Relationship::new(ItemId::new_unchecked(r), RelationshipType::Refines)
-                        })
-                        .collect(),
-                );
+                builder = builder.relationships(super::ids_to_relationships(
+                    refines,
+                    RelationshipType::Refines,
+                ));
             }
 
             TypeConfig::SystemRequirement {
@@ -461,17 +455,10 @@ impl InitService {
                     .clone()
                     .unwrap_or_else(|| "The system SHALL <describe the requirement>.".to_string());
                 builder = builder.specification(spec);
-                builder = builder.relationships(
-                    derives_from
-                        .iter()
-                        .map(|r| {
-                            Relationship::new(
-                                ItemId::new_unchecked(r),
-                                RelationshipType::DerivesFrom,
-                            )
-                        })
-                        .collect(),
-                );
+                builder = builder.relationships(super::ids_to_relationships(
+                    derives_from,
+                    RelationshipType::DerivesFrom,
+                ));
                 for dep in depends_on {
                     builder = builder.depends_on(ItemId::new_unchecked(dep));
                 }
@@ -484,26 +471,18 @@ impl InitService {
                 if let Some(p) = platform {
                     builder = builder.platform(p);
                 }
-                builder = builder.relationships(
-                    satisfies
-                        .iter()
-                        .map(|r| {
-                            Relationship::new(ItemId::new_unchecked(r), RelationshipType::Satisfies)
-                        })
-                        .collect(),
-                );
+                builder = builder.relationships(super::ids_to_relationships(
+                    satisfies,
+                    RelationshipType::Satisfies,
+                ));
             }
 
             TypeConfig::SoftwareDetailedDesign { satisfies }
             | TypeConfig::HardwareDetailedDesign { satisfies } => {
-                builder = builder.relationships(
-                    satisfies
-                        .iter()
-                        .map(|r| {
-                            Relationship::new(ItemId::new_unchecked(r), RelationshipType::Satisfies)
-                        })
-                        .collect(),
-                );
+                builder = builder.relationships(super::ids_to_relationships(
+                    satisfies,
+                    RelationshipType::Satisfies,
+                ));
             }
 
             TypeConfig::Adr {
@@ -531,19 +510,11 @@ impl InitService {
                     builder = builder.decider("TBD");
                 }
 
-                let mut rels: Vec<Relationship> = justifies
-                    .iter()
-                    .map(|r| {
-                        Relationship::new(ItemId::new_unchecked(r), RelationshipType::Justifies)
-                    })
-                    .collect();
-
-                for sup in supersedes {
-                    rels.push(Relationship::new(
-                        ItemId::new_unchecked(sup),
-                        RelationshipType::Supersedes,
-                    ));
-                }
+                let mut rels = super::ids_to_relationships(justifies, RelationshipType::Justifies);
+                rels.extend(super::ids_to_relationships(
+                    supersedes,
+                    RelationshipType::Supersedes,
+                ));
 
                 builder = builder.relationships(rels);
                 for sup in supersedes {
@@ -611,32 +582,29 @@ impl InitService {
     }
 }
 
-/// Removes frontmatter from content.
+/// Removes YAML frontmatter delimited by `---` from `content`.
 fn remove_frontmatter(content: &str) -> &str {
     let mut in_frontmatter = false;
-    let mut frontmatter_end = 0;
+    let mut byte_offset = 0;
 
-    for (i, line) in content.lines().enumerate() {
+    for line in content.lines() {
+        // Advance past the line and its newline delimiter.
+        let line_end = byte_offset + line.len() + 1;
+
         if line.trim() == "---" {
             if !in_frontmatter {
                 in_frontmatter = true;
             } else {
-                // Found end of frontmatter
-                frontmatter_end = content
-                    .lines()
-                    .take(i + 1)
-                    .map(|l| l.len() + 1)
-                    .sum::<usize>();
-                break;
+                // Found closing delimiter; return everything after it.
+                let end = line_end.min(content.len());
+                return &content[end..];
             }
         }
+
+        byte_offset = line_end;
     }
 
-    if frontmatter_end > 0 && frontmatter_end < content.len() {
-        &content[frontmatter_end..]
-    } else {
-        content
-    }
+    content
 }
 
 /// Parses an item type string into `ItemType` enum.

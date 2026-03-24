@@ -9,8 +9,8 @@ use crate::error::SaraError;
 use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
 use crate::model::{
-    FieldChange, FieldName, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
-    SourceLocation, TraceabilityLinks,
+    FieldChange, FieldName, Item, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
+    TraceabilityLinks,
 };
 use crate::parser::update_frontmatter;
 use crate::query::lookup_item_or_suggest;
@@ -495,31 +495,20 @@ impl EditService {
         }
 
         // Build relationships from traceability links
-        let mut rels = Vec::new();
-        for id in &values.traceability.refines {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Refines,
-            ));
-        }
-        for id in &values.traceability.derives_from {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::DerivesFrom,
-            ));
-        }
-        for id in &values.traceability.satisfies {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Satisfies,
-            ));
-        }
-        for id in &values.traceability.justifies {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Justifies,
-            ));
-        }
+        let mut rels =
+            super::ids_to_relationships(&values.traceability.refines, RelationshipType::Refines);
+        rels.extend(super::ids_to_relationships(
+            &values.traceability.derives_from,
+            RelationshipType::DerivesFrom,
+        ));
+        rels.extend(super::ids_to_relationships(
+            &values.traceability.satisfies,
+            RelationshipType::Satisfies,
+        ));
+        rels.extend(super::ids_to_relationships(
+            &values.traceability.justifies,
+            RelationshipType::Justifies,
+        ));
         builder = builder.relationships(rels);
 
         // Type-specific attributes
