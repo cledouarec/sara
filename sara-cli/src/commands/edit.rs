@@ -9,10 +9,10 @@ use std::process::ExitCode;
 use clap::Args;
 use inquire::{Confirm, InquireError};
 
-use sara_core::edit::{EditOptions, EditService, EditedValues, ItemContext};
 use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};
+use sara_core::service::{EditOptions, EditService, EditedValues, ItemContext};
 
 use super::CommandContext;
 use super::interactive::{
