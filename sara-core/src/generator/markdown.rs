@@ -1,69 +1,180 @@
 //! Markdown document generation using Tera templates.
 //!
 //! Renders full Markdown documents (frontmatter + body) from core `Item`
-//! structures. The Tera templates are embedded at compile time from
-//! `sara-core/templates/*.tera`.
+//! structures. Each [`ItemType`] maps to a [`TemplateEntry`] that pairs a
+//! frontmatter partial with a full document template. Both are embedded at
+//! compile time from `sara-core/templates/*.tera`.
 
+use std::collections::HashMap;
 use std::sync::OnceLock;
 
 use tera::{Context, Tera};
 
 use crate::model::{FieldName, Item, ItemAttributes, ItemType, RelationshipType};
 
-/// Embedded templates compiled into the binary.
-const SOLUTION_TEMPLATE: &str = include_str!("../../templates/solution.tera");
-const USE_CASE_TEMPLATE: &str = include_str!("../../templates/use_case.tera");
-const SCENARIO_TEMPLATE: &str = include_str!("../../templates/scenario.tera");
-const SYSTEM_REQUIREMENT_TEMPLATE: &str = include_str!("../../templates/system_requirement.tera");
-const HARDWARE_REQUIREMENT_TEMPLATE: &str =
-    include_str!("../../templates/hardware_requirement.tera");
-const SOFTWARE_REQUIREMENT_TEMPLATE: &str =
-    include_str!("../../templates/software_requirement.tera");
-const SYSTEM_ARCHITECTURE_TEMPLATE: &str = include_str!("../../templates/system_architecture.tera");
-const HARDWARE_DETAILED_DESIGN_TEMPLATE: &str =
-    include_str!("../../templates/hardware_detailed_design.tera");
-const SOFTWARE_DETAILED_DESIGN_TEMPLATE: &str =
-    include_str!("../../templates/software_detailed_design.tera");
-const ADR_TEMPLATE: &str = include_str!("../../templates/adr.tera");
+/// Pairs a frontmatter partial with its full document template.
+#[derive(Debug)]
+struct TemplateEntry {
+    /// Tera registration name for the frontmatter partial (e.g., `"adr_frontmatter.tera"`).
+    frontmatter_name: &'static str,
+    /// Tera registration name for the full document (e.g., `"adr.tera"`).
+    document_name: &'static str,
+    /// Embedded frontmatter template source.
+    frontmatter: &'static str,
+    /// Embedded full document template source.
+    document: &'static str,
+}
 
-/// Global Tera instance, lazily initialized.
-static TERA: OnceLock<Tera> = OnceLock::new();
+/// Compile-time list of all template definitions, one per [`ItemType`].
+const TEMPLATE_DEFS: &[(ItemType, TemplateEntry)] = &[
+    (
+        ItemType::Solution,
+        TemplateEntry {
+            frontmatter_name: "solution_frontmatter.tera",
+            document_name: "solution.tera",
+            frontmatter: include_str!("../../templates/solution_frontmatter.tera"),
+            document: include_str!("../../templates/solution.tera"),
+        },
+    ),
+    (
+        ItemType::UseCase,
+        TemplateEntry {
+            frontmatter_name: "use_case_frontmatter.tera",
+            document_name: "use_case.tera",
+            frontmatter: include_str!("../../templates/use_case_frontmatter.tera"),
+            document: include_str!("../../templates/use_case.tera"),
+        },
+    ),
+    (
+        ItemType::Scenario,
+        TemplateEntry {
+            frontmatter_name: "scenario_frontmatter.tera",
+            document_name: "scenario.tera",
+            frontmatter: include_str!("../../templates/scenario_frontmatter.tera"),
+            document: include_str!("../../templates/scenario.tera"),
+        },
+    ),
+    (
+        ItemType::SystemRequirement,
+        TemplateEntry {
+            frontmatter_name: "system_requirement_frontmatter.tera",
+            document_name: "system_requirement.tera",
+            frontmatter: include_str!("../../templates/system_requirement_frontmatter.tera"),
+            document: include_str!("../../templates/system_requirement.tera"),
+        },
+    ),
+    (
+        ItemType::HardwareRequirement,
+        TemplateEntry {
+            frontmatter_name: "hardware_requirement_frontmatter.tera",
+            document_name: "hardware_requirement.tera",
+            frontmatter: include_str!("../../templates/hardware_requirement_frontmatter.tera"),
+            document: include_str!("../../templates/hardware_requirement.tera"),
+        },
+    ),
+    (
+        ItemType::SoftwareRequirement,
+        TemplateEntry {
+            frontmatter_name: "software_requirement_frontmatter.tera",
+            document_name: "software_requirement.tera",
+            frontmatter: include_str!("../../templates/software_requirement_frontmatter.tera"),
+            document: include_str!("../../templates/software_requirement.tera"),
+        },
+    ),
+    (
+        ItemType::SystemArchitecture,
+        TemplateEntry {
+            frontmatter_name: "system_architecture_frontmatter.tera",
+            document_name: "system_architecture.tera",
+            frontmatter: include_str!("../../templates/system_architecture_frontmatter.tera"),
+            document: include_str!("../../templates/system_architecture.tera"),
+        },
+    ),
+    (
+        ItemType::HardwareDetailedDesign,
+        TemplateEntry {
+            frontmatter_name: "hardware_detailed_design_frontmatter.tera",
+            document_name: "hardware_detailed_design.tera",
+            frontmatter: include_str!("../../templates/hardware_detailed_design_frontmatter.tera"),
+            document: include_str!("../../templates/hardware_detailed_design.tera"),
+        },
+    ),
+    (
+        ItemType::SoftwareDetailedDesign,
+        TemplateEntry {
+            frontmatter_name: "software_detailed_design_frontmatter.tera",
+            document_name: "software_detailed_design.tera",
+            frontmatter: include_str!("../../templates/software_detailed_design_frontmatter.tera"),
+            document: include_str!("../../templates/software_detailed_design.tera"),
+        },
+    ),
+    (
+        ItemType::ArchitectureDecisionRecord,
+        TemplateEntry {
+            frontmatter_name: "adr_frontmatter.tera",
+            document_name: "adr.tera",
+            frontmatter: include_str!("../../templates/adr_frontmatter.tera"),
+            document: include_str!("../../templates/adr.tera"),
+        },
+    ),
+];
 
-/// Returns the global Tera instance, initializing on first call.
-fn get_tera() -> &'static Tera {
-    TERA.get_or_init(|| {
+/// Holds the Tera engine and the template lookup map.
+struct TemplateRegistry {
+    tera: Tera,
+    entries: HashMap<ItemType, &'static TemplateEntry>,
+}
+
+/// Global template registry, lazily initialized.
+static REGISTRY: OnceLock<TemplateRegistry> = OnceLock::new();
+
+/// Returns the global template registry, initializing on first call.
+fn get_registry() -> &'static TemplateRegistry {
+    REGISTRY.get_or_init(|| {
         let mut tera = Tera::default();
-        tera.add_raw_templates(vec![
-            ("solution.tera", SOLUTION_TEMPLATE),
-            ("use_case.tera", USE_CASE_TEMPLATE),
-            ("scenario.tera", SCENARIO_TEMPLATE),
-            ("system_requirement.tera", SYSTEM_REQUIREMENT_TEMPLATE),
-            ("hardware_requirement.tera", HARDWARE_REQUIREMENT_TEMPLATE),
-            ("software_requirement.tera", SOFTWARE_REQUIREMENT_TEMPLATE),
-            ("system_architecture.tera", SYSTEM_ARCHITECTURE_TEMPLATE),
-            (
-                "hardware_detailed_design.tera",
-                HARDWARE_DETAILED_DESIGN_TEMPLATE,
-            ),
-            (
-                "software_detailed_design.tera",
-                SOFTWARE_DETAILED_DESIGN_TEMPLATE,
-            ),
-            ("adr.tera", ADR_TEMPLATE),
-        ])
-        .expect("Failed to load embedded templates");
-        tera
+        let raw: Vec<(&str, &str)> = TEMPLATE_DEFS
+            .iter()
+            .flat_map(|(_, e)| {
+                [
+                    (e.frontmatter_name, e.frontmatter),
+                    (e.document_name, e.document),
+                ]
+            })
+            .collect();
+        tera.add_raw_templates(raw)
+            .expect("Failed to load embedded templates");
+
+        let entries: HashMap<ItemType, &'static TemplateEntry> = TEMPLATE_DEFS
+            .iter()
+            .map(|(item_type, entry)| (*item_type, entry))
+            .collect();
+
+        TemplateRegistry { tera, entries }
     })
 }
 
 /// Generates a complete Markdown document (frontmatter + body) from an `Item`.
 #[must_use]
 pub fn generate_document(item: &Item) -> String {
-    let tera = get_tera();
+    let registry = get_registry();
     let context = build_context(item);
-    let template_name = template_name_for(item.item_type);
-    tera.render(template_name, &context)
+    let entry = &registry.entries[&item.item_type];
+    registry
+        .tera
+        .render(entry.document_name, &context)
         .expect("Failed to render document template")
+}
+
+/// Renders only the YAML frontmatter block from an `Item`.
+#[must_use]
+pub fn generate_frontmatter(item: &Item) -> String {
+    let registry = get_registry();
+    let context = build_context(item);
+    let entry = &registry.entries[&item.item_type];
+    registry
+        .tera
+        .render(entry.frontmatter_name, &context)
+        .expect("Failed to render frontmatter template")
 }
 
 /// Builds a Tera context from an `Item`, populating all fields the templates expect.
@@ -173,22 +284,6 @@ fn insert_relationship_ids(
         .collect();
     if !ids.is_empty() {
         context.insert(field.as_str(), &ids);
-    }
-}
-
-/// Returns the Tera template name for the given item type.
-const fn template_name_for(item_type: ItemType) -> &'static str {
-    match item_type {
-        ItemType::Solution => "solution.tera",
-        ItemType::UseCase => "use_case.tera",
-        ItemType::Scenario => "scenario.tera",
-        ItemType::SystemRequirement => "system_requirement.tera",
-        ItemType::HardwareRequirement => "hardware_requirement.tera",
-        ItemType::SoftwareRequirement => "software_requirement.tera",
-        ItemType::SystemArchitecture => "system_architecture.tera",
-        ItemType::HardwareDetailedDesign => "hardware_detailed_design.tera",
-        ItemType::SoftwareDetailedDesign => "software_detailed_design.tera",
-        ItemType::ArchitectureDecisionRecord => "adr.tera",
     }
 }
 
@@ -308,6 +403,26 @@ mod tests {
         assert!(doc.contains("## Context and problem statement"));
         assert!(doc.contains("## Considered options"));
         assert!(doc.contains("## Decision Outcome"));
+    }
+
+    #[test]
+    fn test_generate_frontmatter_solution() {
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SOL-001"))
+            .item_type(ItemType::Solution)
+            .name("Test Solution")
+            .source(test_source())
+            .build()
+            .unwrap();
+
+        let fm = generate_frontmatter(&item);
+
+        assert!(fm.starts_with("---"));
+        assert!(fm.ends_with("---"));
+        assert!(fm.contains("id: \"SOL-001\""));
+        assert!(fm.contains("type: solution"));
+        assert!(fm.contains("name: \"Test Solution\""));
+        assert!(!fm.contains("## Overview"));
     }
 
     #[test]
