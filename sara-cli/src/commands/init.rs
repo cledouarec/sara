@@ -6,7 +6,7 @@ use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
 
-use sara_core::init::{InitError, InitOptions, InitResult, InitService, TypeConfig};
+use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
 
 use super::CommandContext;
 use super::interactive::{
