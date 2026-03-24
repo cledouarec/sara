@@ -203,9 +203,7 @@ fn escape_yaml_string(s: &str) -> String {
 mod tests {
     use super::*;
     use crate::model::SourceLocation;
-    use crate::model::{
-        AdrStatus, ItemAttributes, ItemBuilder, ItemId, Relationship, RelationshipType,
-    };
+    use crate::model::{AdrStatus, ItemBuilder, ItemId, Relationship, RelationshipType};
     use std::path::PathBuf;
 
     fn test_source() -> SourceLocation {

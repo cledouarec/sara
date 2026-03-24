@@ -685,7 +685,6 @@ impl Item {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::path::PathBuf;
 
     #[test]
     fn test_item_id_valid() {

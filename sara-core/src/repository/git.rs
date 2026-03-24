@@ -222,7 +222,7 @@ impl GitReader {
         }
 
         if !parse_errors.is_empty() && items.is_empty() {
-            return Err(parse_errors.remove(0).into());
+            return Err(parse_errors.remove(0));
         }
 
         Ok(items)
