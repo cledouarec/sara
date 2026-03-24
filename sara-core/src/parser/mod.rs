@@ -11,9 +11,9 @@ mod markdown;
 mod yaml;
 
 #[doc(inline)]
-pub use frontmatter::{extract_body, has_frontmatter, update_frontmatter};
+pub use frontmatter::{has_frontmatter, update_frontmatter};
 #[doc(inline)]
-pub use markdown::{ParsedDocument, extract_name_from_content};
+pub use markdown::extract_name_from_content;
 
 use std::path::Path;
 
@@ -42,24 +42,6 @@ pub fn parse_metadata(
 ) -> Result<Item, SaraError> {
     match format {
         InputFormat::Markdown => markdown::parse_markdown_file(content, file_path, repository),
-    }
-}
-
-/// Parses content and returns both the [`Item`] and body text.
-///
-/// Dispatches to the appropriate format-specific parser based on `format`.
-///
-/// # Errors
-///
-/// Returns `SaraError` if the content cannot be parsed in the given format.
-pub fn parse_document(
-    content: &str,
-    file_path: &Path,
-    repository: &Path,
-    format: InputFormat,
-) -> Result<ParsedDocument, SaraError> {
-    match format {
-        InputFormat::Markdown => markdown::parse_document(content, file_path, repository),
     }
 }
 
@@ -100,21 +82,6 @@ Body content.
             .collect();
         assert_eq!(is_refined_by.len(), 1);
         assert_eq!(is_refined_by[0].as_str(), "UC-001");
-    }
-
-    #[test]
-    fn test_parse_document_markdown() {
-        let doc = parse_document(
-            SOLUTION_MD,
-            &PathBuf::from("SOL-001.md"),
-            &PathBuf::from("/repo"),
-            InputFormat::Markdown,
-        )
-        .unwrap();
-
-        assert_eq!(doc.item.id.as_str(), "SOL-001");
-        assert!(doc.body.contains("# Test Solution"));
-        assert!(doc.body.contains("Body content."));
     }
 
     #[test]

@@ -15,9 +15,9 @@ pub fn parse_markdown_file(
     file_path: &Path,
     repository: &Path,
 ) -> Result<Item, SaraError> {
-    let extracted = extract_frontmatter(content, file_path)?;
+    let yaml = extract_frontmatter(content, file_path)?;
 
-    let frontmatter = parse_yaml_frontmatter(&extracted.yaml, file_path)?;
+    let frontmatter = parse_yaml_frontmatter(&yaml, file_path)?;
 
     // Validate item ID format
     let item_id = ItemId::new(&frontmatter.id).map_err(|e| SaraError::InvalidFrontmatter {
@@ -77,30 +77,6 @@ pub fn parse_markdown_file(
     builder.build().map_err(|e| SaraError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
         reason: e.to_string(),
-    })
-}
-
-/// Represents a parsed document with its item and body content.
-#[derive(Debug)]
-pub struct ParsedDocument {
-    /// The extracted item.
-    pub item: Item,
-    /// The Markdown body content after frontmatter.
-    pub body: String,
-}
-
-/// Parses a Markdown file and returns the item and body.
-pub fn parse_document(
-    content: &str,
-    file_path: &Path,
-    repository: &Path,
-) -> Result<ParsedDocument, SaraError> {
-    let extracted = extract_frontmatter(content, file_path)?;
-    let item = parse_markdown_file(content, file_path, repository)?;
-
-    Ok(ParsedDocument {
-        item,
-        body: extracted.body,
     })
 }
 
@@ -190,19 +166,6 @@ is_satisfied_by:
             .collect();
         assert_eq!(derives_from.len(), 1);
         assert_eq!(is_satisfied_by.len(), 1);
-    }
-
-    #[test]
-    fn test_parse_document() {
-        let doc = parse_document(
-            SOLUTION_MD,
-            &PathBuf::from("SOL-001.md"),
-            &PathBuf::from("/repo"),
-        )
-        .unwrap();
-
-        assert_eq!(doc.item.id.as_str(), "SOL-001");
-        assert!(doc.body.contains("# Test Solution"));
     }
 
     #[test]
