@@ -2,15 +2,13 @@
 
 use std::path::Path;
 
-use crate::error::ParseError;
+use crate::error::SaraError;
 
 /// Represents extracted frontmatter content.
 #[derive(Debug, Clone)]
 pub struct ExtractedFrontmatter {
     /// The raw YAML content between the `---` delimiters.
     pub yaml: String,
-    /// Line number where the frontmatter ends (at the closing `---`).
-    pub end_line: usize,
     /// The remaining Markdown content after the frontmatter.
     pub body: String,
 }
@@ -28,18 +26,18 @@ pub struct ExtractedFrontmatter {
 /// ---
 /// # Markdown content here
 /// ```
-pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontmatter, ParseError> {
+pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontmatter, SaraError> {
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() {
-        return Err(ParseError::MissingFrontmatter {
+        return Err(SaraError::MissingFrontmatter {
             file: file.to_path_buf(),
         });
     }
 
     // Check for opening delimiter
     if lines[0].trim() != "---" {
-        return Err(ParseError::MissingFrontmatter {
+        return Err(SaraError::MissingFrontmatter {
             file: file.to_path_buf(),
         });
     }
@@ -53,7 +51,7 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
         }
     }
 
-    let end_idx = end_idx.ok_or_else(|| ParseError::InvalidFrontmatter {
+    let end_idx = end_idx.ok_or_else(|| SaraError::InvalidFrontmatter {
         file: file.to_path_buf(),
         reason: "Missing closing `---` delimiter".to_string(),
     })?;
@@ -70,11 +68,7 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
     };
     let body = body_lines.join("\n");
 
-    Ok(ExtractedFrontmatter {
-        yaml,
-        end_line: end_idx + 1, // 1-indexed
-        body,
-    })
+    Ok(ExtractedFrontmatter { yaml, body })
 }
 
 /// Checks if content has frontmatter (starts with `---`).
@@ -144,7 +138,6 @@ name: "Test"
         let result = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
         assert!(result.yaml.contains("id: \"SOL-001\""));
         assert!(result.yaml.contains("type: solution"));
-        assert_eq!(result.end_line, 5);
         assert_eq!(result.body.trim(), "# Body content");
     }
 

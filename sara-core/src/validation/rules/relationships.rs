@@ -1,7 +1,7 @@
 //! Relationship type validation rule.
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::model::{Item, ItemId, RelationshipRules, RelationshipType};
 use crate::validation::rule::ValidationRule;
@@ -16,7 +16,7 @@ use crate::validation::rule::ValidationRule;
 pub struct RelationshipsRule;
 
 impl ValidationRule for RelationshipsRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         let mut errors = Vec::new();
 
         for item in graph.items() {
@@ -33,13 +33,13 @@ fn check_references<'a>(
     graph: &KnowledgeGraph,
     refs: impl Iterator<Item = &'a ItemId>,
     rel_type: RelationshipType,
-    errors: &mut Vec<ValidationError>,
+    errors: &mut Vec<SaraError>,
 ) {
     for ref_id in refs {
         if let Some(target) = graph.get(ref_id)
             && !RelationshipRules::is_valid_relationship(item.item_type, target.item_type, rel_type)
         {
-            errors.push(ValidationError::InvalidRelationship {
+            errors.push(SaraError::InvalidRelationship {
                 from_id: item.id.clone(),
                 to_id: ref_id.clone(),
                 from_type: item.item_type,
@@ -51,56 +51,21 @@ fn check_references<'a>(
 }
 
 /// Validates relationships for a single item.
-fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<ValidationError> {
+fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<SaraError> {
     let mut errors = Vec::new();
 
-    // Check upstream references
-    check_references(
-        item,
-        graph,
-        item.upstream.refines.iter(),
-        RelationshipType::Refines,
-        &mut errors,
-    );
-    check_references(
-        item,
-        graph,
-        item.upstream.derives_from.iter(),
-        RelationshipType::DerivesFrom,
-        &mut errors,
-    );
-    check_references(
-        item,
-        graph,
-        item.upstream.satisfies.iter(),
-        RelationshipType::Satisfies,
-        &mut errors,
-    );
+    // Check all relationships from the item's relationships vec
+    for rel in &item.relationships {
+        check_references(
+            item,
+            graph,
+            std::iter::once(&rel.to),
+            rel.relationship_type,
+            &mut errors,
+        );
+    }
 
-    // Check downstream references
-    check_references(
-        item,
-        graph,
-        item.downstream.is_refined_by.iter(),
-        RelationshipType::IsRefinedBy,
-        &mut errors,
-    );
-    check_references(
-        item,
-        graph,
-        item.downstream.derives.iter(),
-        RelationshipType::Derives,
-        &mut errors,
-    );
-    check_references(
-        item,
-        graph,
-        item.downstream.is_satisfied_by.iter(),
-        RelationshipType::IsSatisfiedBy,
-        &mut errors,
-    );
-
-    // Check peer dependencies
+    // Check peer dependencies (stored in attributes)
     check_references(
         item,
         graph,
@@ -116,22 +81,20 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<Valid
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{DownstreamRefs, ItemId, ItemType, UpstreamRefs};
-    use crate::test_utils::{
-        create_test_item, create_test_item_with_refs, create_test_item_with_upstream,
-    };
+    use crate::model::{ItemId, ItemType, Relationship};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_valid_relationship() {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -149,13 +112,13 @@ mod tests {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
             // Scenario trying to refine Solution directly (should be UseCase)
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "SCEN-001",
                 ItemType::Scenario,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -164,7 +127,7 @@ mod tests {
         let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1, "Invalid relationship should produce error");
 
-        if let ValidationError::InvalidRelationship {
+        if let SaraError::InvalidRelationship {
             from_type,
             to_type,
             rel_type,
@@ -182,14 +145,13 @@ mod tests {
     #[test]
     fn test_valid_downstream_relationship() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item_with_refs(
+            .add_item(create_test_item_with_relationships(
                 "SOL-001",
                 ItemType::Solution,
-                UpstreamRefs::default(),
-                DownstreamRefs {
-                    is_refined_by: vec![ItemId::new_unchecked("UC-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("UC-001"),
+                    RelationshipType::IsRefinedBy,
+                )],
             ))
             .add_item(create_test_item("UC-001", ItemType::UseCase))
             .build()

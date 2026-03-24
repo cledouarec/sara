@@ -1,15 +1,227 @@
-//! Edit service implementation.
+//! Edit service for modifying existing document metadata.
+//!
+//! Provides functionality for editing requirement items (FR-054 through FR-066).
 
 use std::fs;
 use std::path::PathBuf;
 
-use crate::error::EditError;
+use crate::error::SaraError;
+use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldChange, FieldName, Item, ItemType, TraceabilityLinks};
+use crate::model::{
+    FieldChange, FieldName, Item, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
+    TraceabilityLinks,
+};
 use crate::parser::update_frontmatter;
 use crate::query::lookup_item_or_suggest;
 
-use super::{EditOptions, EditedValues};
+/// Options for editing an item.
+#[derive(Debug, Clone, Default)]
+pub struct EditOptions {
+    /// The item ID to edit.
+    pub item_id: String,
+    /// New name (if provided).
+    pub name: Option<String>,
+    /// New description (if provided).
+    pub description: Option<String>,
+    /// New refines references (if provided).
+    pub refines: Option<Vec<String>>,
+    /// New derives_from references (if provided).
+    pub derives_from: Option<Vec<String>>,
+    /// New satisfies references (if provided).
+    pub satisfies: Option<Vec<String>>,
+    /// New depends_on references (if provided).
+    pub depends_on: Option<Vec<String>>,
+    /// New justifies references (if provided, for ADRs).
+    pub justifies: Option<Vec<String>>,
+    /// New specification (if provided).
+    pub specification: Option<String>,
+    /// New platform (if provided).
+    pub platform: Option<String>,
+}
+
+impl EditOptions {
+    /// Creates new edit options for the given item ID.
+    pub fn new(item_id: impl Into<String>) -> Self {
+        Self {
+            item_id: item_id.into(),
+            ..Default::default()
+        }
+    }
+
+    /// Sets the name.
+    pub fn with_name(mut self, name: impl Into<String>) -> Self {
+        self.name = Some(name.into());
+        self
+    }
+
+    /// Sets the name if provided.
+    pub fn maybe_name(mut self, name: Option<String>) -> Self {
+        self.name = name;
+        self
+    }
+
+    /// Sets the description.
+    pub fn with_description(mut self, description: impl Into<String>) -> Self {
+        self.description = Some(description.into());
+        self
+    }
+
+    /// Sets the description if provided.
+    pub fn maybe_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+
+    /// Sets the refines references.
+    pub fn with_refines(mut self, refines: Vec<String>) -> Self {
+        self.refines = Some(refines);
+        self
+    }
+
+    /// Sets the refines references if provided.
+    pub fn maybe_refines(mut self, refines: Option<Vec<String>>) -> Self {
+        self.refines = refines;
+        self
+    }
+
+    /// Sets the derives_from references.
+    pub fn with_derives_from(mut self, derives_from: Vec<String>) -> Self {
+        self.derives_from = Some(derives_from);
+        self
+    }
+
+    /// Sets the derives_from references if provided.
+    pub fn maybe_derives_from(mut self, derives_from: Option<Vec<String>>) -> Self {
+        self.derives_from = derives_from;
+        self
+    }
+
+    /// Sets the satisfies references.
+    pub fn with_satisfies(mut self, satisfies: Vec<String>) -> Self {
+        self.satisfies = Some(satisfies);
+        self
+    }
+
+    /// Sets the satisfies references if provided.
+    pub fn maybe_satisfies(mut self, satisfies: Option<Vec<String>>) -> Self {
+        self.satisfies = satisfies;
+        self
+    }
+
+    /// Sets the depends_on references.
+    pub fn with_depends_on(mut self, depends_on: Vec<String>) -> Self {
+        self.depends_on = Some(depends_on);
+        self
+    }
+
+    /// Sets the depends_on references if provided.
+    pub fn maybe_depends_on(mut self, depends_on: Option<Vec<String>>) -> Self {
+        self.depends_on = depends_on;
+        self
+    }
+
+    /// Sets the justifies references.
+    pub fn with_justifies(mut self, justifies: Vec<String>) -> Self {
+        self.justifies = Some(justifies);
+        self
+    }
+
+    /// Sets the justifies references if provided.
+    pub fn maybe_justifies(mut self, justifies: Option<Vec<String>>) -> Self {
+        self.justifies = justifies;
+        self
+    }
+
+    /// Sets the specification.
+    pub fn with_specification(mut self, specification: impl Into<String>) -> Self {
+        self.specification = Some(specification.into());
+        self
+    }
+
+    /// Sets the specification if provided.
+    pub fn maybe_specification(mut self, specification: Option<String>) -> Self {
+        self.specification = specification;
+        self
+    }
+
+    /// Sets the platform.
+    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
+        self.platform = Some(platform.into());
+        self
+    }
+
+    /// Sets the platform if provided.
+    pub fn maybe_platform(mut self, platform: Option<String>) -> Self {
+        self.platform = platform;
+        self
+    }
+
+    /// Returns true if any modification was requested.
+    pub fn has_updates(&self) -> bool {
+        self.name.is_some()
+            || self.description.is_some()
+            || self.refines.is_some()
+            || self.derives_from.is_some()
+            || self.satisfies.is_some()
+            || self.depends_on.is_some()
+            || self.justifies.is_some()
+            || self.specification.is_some()
+            || self.platform.is_some()
+    }
+}
+
+/// Values to apply during editing.
+#[derive(Debug, Clone)]
+pub struct EditedValues {
+    /// The name.
+    pub name: String,
+    /// Optional description.
+    pub description: Option<String>,
+    /// Optional specification.
+    pub specification: Option<String>,
+    /// Optional platform.
+    pub platform: Option<String>,
+    /// Traceability links.
+    pub traceability: TraceabilityLinks,
+}
+
+impl EditedValues {
+    /// Creates new edited values.
+    pub fn new(name: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            description: None,
+            specification: None,
+            platform: None,
+            traceability: TraceabilityLinks::default(),
+        }
+    }
+
+    /// Sets the description.
+    pub fn with_description(mut self, description: Option<String>) -> Self {
+        self.description = description;
+        self
+    }
+
+    /// Sets the specification.
+    pub fn with_specification(mut self, specification: Option<String>) -> Self {
+        self.specification = specification;
+        self
+    }
+
+    /// Sets the platform.
+    pub fn with_platform(mut self, platform: Option<String>) -> Self {
+        self.platform = platform;
+        self
+    }
+
+    /// Sets the traceability links.
+    pub fn with_traceability(mut self, traceability: TraceabilityLinks) -> Self {
+        self.traceability = traceability;
+        self
+    }
+}
 
 /// Result of a successful edit operation.
 #[derive(Debug)]
@@ -56,7 +268,7 @@ pub struct ItemContext {
 }
 
 impl ItemContext {
-    /// Creates a context from an Item.
+    /// Creates a context from an `Item`.
     pub fn from_item(item: &Item) -> Self {
         Self {
             id: item.id.as_str().to_string(),
@@ -65,7 +277,7 @@ impl ItemContext {
             description: item.description.clone(),
             specification: item.attributes.specification().map(ToOwned::to_owned),
             platform: item.attributes.platform().map(ToOwned::to_owned),
-            traceability: TraceabilityLinks::from_upstream(&item.upstream),
+            traceability: TraceabilityLinks::from_item(item),
             file_path: item.source.full_path(),
         }
     }
@@ -86,7 +298,7 @@ impl EditService {
         &self,
         graph: &'a KnowledgeGraph,
         item_id: &str,
-    ) -> Result<&'a Item, EditError> {
+    ) -> Result<&'a Item, SaraError> {
         lookup_item_or_suggest(graph, item_id)
     }
 
@@ -100,16 +312,16 @@ impl EditService {
         &self,
         opts: &EditOptions,
         item_type: ItemType,
-    ) -> Result<(), EditError> {
+    ) -> Result<(), SaraError> {
         if opts.specification.is_some() && !item_type.requires_specification() {
-            return Err(EditError::IoError(format!(
+            return Err(SaraError::EditFailed(format!(
                 "--specification is only valid for requirement types, not {}",
                 item_type.display_name()
             )));
         }
 
         if opts.platform.is_some() && item_type != ItemType::SystemArchitecture {
-            return Err(EditError::IoError(
+            return Err(SaraError::EditFailed(
                 "--platform is only valid for System Architecture items".to_string(),
             ));
         }
@@ -239,12 +451,12 @@ impl EditService {
         item_type: ItemType,
         new_values: &EditedValues,
         file_path: &PathBuf,
-    ) -> Result<(), EditError> {
+    ) -> Result<(), SaraError> {
         let content =
-            fs::read_to_string(file_path).map_err(|e| EditError::IoError(e.to_string()))?;
+            fs::read_to_string(file_path).map_err(|e| SaraError::EditFailed(e.to_string()))?;
         let new_yaml = self.build_frontmatter_yaml(item_id, item_type, new_values);
         let updated_content = update_frontmatter(&content, &new_yaml);
-        fs::write(file_path, updated_content).map_err(|e| EditError::IoError(e.to_string()))?;
+        fs::write(file_path, updated_content).map_err(|e| SaraError::EditFailed(e.to_string()))?;
         Ok(())
     }
 
@@ -255,69 +467,71 @@ impl EditService {
         item_type: ItemType,
         values: &EditedValues,
     ) -> String {
-        let mut yaml = format!(
-            "{}: \"{}\"\n{}: {}\n{}: \"{}\"\n",
-            FieldName::Id.as_str(),
-            item_id,
-            FieldName::Type.as_str(),
-            item_type.as_str(),
-            FieldName::Name.as_str(),
-            values.name.replace('"', "\\\"")
-        );
-
-        if let Some(ref desc) = values.description {
-            yaml += &format!(
-                "{}: \"{}\"\n",
-                FieldName::Description.as_str(),
-                desc.replace('"', "\\\"")
-            );
-        }
-
-        self.append_traceability_yaml(
-            &mut yaml,
-            FieldName::Refines.as_str(),
-            &values.traceability.refines,
-        );
-        self.append_traceability_yaml(
-            &mut yaml,
-            FieldName::DerivesFrom.as_str(),
-            &values.traceability.derives_from,
-        );
-        self.append_traceability_yaml(
-            &mut yaml,
-            FieldName::Satisfies.as_str(),
-            &values.traceability.satisfies,
-        );
-
-        if let Some(ref spec) = values.specification {
-            yaml += &format!(
-                "{}: \"{}\"\n",
-                FieldName::Specification.as_str(),
-                spec.replace('"', "\\\"")
-            );
-        }
-
-        if let Some(ref plat) = values.platform {
-            yaml += &format!(
-                "{}: \"{}\"\n",
-                FieldName::Platform.as_str(),
-                plat.replace('"', "\\\"")
-            );
-        }
-
-        yaml
+        let item = self.build_item_from_values(item_id, item_type, values);
+        generator::generate_metadata(&item, OutputFormat::Markdown)
     }
 
-    /// Appends a traceability list to YAML if non-empty.
-    fn append_traceability_yaml(&self, yaml: &mut String, field: &str, ids: &[String]) {
-        if ids.is_empty() {
-            return;
+    /// Builds a temporary `Item` from edit values for frontmatter generation.
+    fn build_item_from_values(
+        &self,
+        item_id: &str,
+        item_type: ItemType,
+        values: &EditedValues,
+    ) -> Item {
+        let source = SourceLocation {
+            repository: PathBuf::new(),
+            file_path: PathBuf::from("edit.md"),
+            git_ref: None,
+        };
+
+        let mut builder = ItemBuilder::new()
+            .id(ItemId::new_unchecked(item_id))
+            .item_type(item_type)
+            .name(&values.name)
+            .source(source);
+
+        if let Some(ref desc) = values.description {
+            builder = builder.description(desc);
         }
 
-        *yaml += &format!("{}:\n", field);
-        for id in ids {
-            *yaml += &format!("  - \"{}\"\n", id);
+        // Build relationships from traceability links
+        let mut rels =
+            super::ids_to_relationships(&values.traceability.refines, RelationshipType::Refines);
+        rels.extend(super::ids_to_relationships(
+            &values.traceability.derives_from,
+            RelationshipType::DerivesFrom,
+        ));
+        rels.extend(super::ids_to_relationships(
+            &values.traceability.satisfies,
+            RelationshipType::Satisfies,
+        ));
+        rels.extend(super::ids_to_relationships(
+            &values.traceability.justifies,
+            RelationshipType::Justifies,
+        ));
+        builder = builder.relationships(rels);
+
+        // Type-specific attributes
+        if let Some(ref spec) = values.specification {
+            builder = builder.specification(spec);
         }
+        if let Some(ref plat) = values.platform {
+            builder = builder.platform(plat);
+        }
+        for id in &values.traceability.depends_on {
+            builder = builder.depends_on(ItemId::new_unchecked(id));
+        }
+
+        // ADR types need status and deciders to build successfully.
+        // For edits, provide defaults since those fields are not
+        // part of EditedValues (they are preserved from the original).
+        if item_type == ItemType::ArchitectureDecisionRecord {
+            builder = builder
+                .status(crate::model::AdrStatus::Proposed)
+                .decider("TBD");
+        }
+
+        builder.build().expect("Failed to build item for edit")
     }
 
     /// Performs a non-interactive edit operation.
@@ -325,7 +539,7 @@ impl EditService {
         &self,
         graph: &KnowledgeGraph,
         opts: &EditOptions,
-    ) -> Result<EditResult, EditError> {
+    ) -> Result<EditResult, SaraError> {
         // Look up the item
         let item = self.lookup_item(graph, &opts.item_id)?;
         let item_ctx = self.get_item_context(item);

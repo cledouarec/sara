@@ -153,7 +153,7 @@ fn find_similar_ids_scored<'a>(
 pub fn lookup_item_or_suggest<'a>(
     graph: &'a KnowledgeGraph,
     id: &str,
-) -> Result<&'a Item, crate::error::EditError> {
+) -> Result<&'a Item, crate::error::SaraError> {
     let item_id = ItemId::new_unchecked(id);
 
     if let Some(item) = graph.get(&item_id) {
@@ -162,7 +162,7 @@ pub fn lookup_item_or_suggest<'a>(
 
     // Item not found, find similar IDs for suggestions
     let suggestions = find_similar_ids(graph, id, 3);
-    Err(crate::error::EditError::ItemNotFound {
+    Err(crate::error::SaraError::ItemNotFound {
         id: id.to_string(),
         suggestions,
     })
@@ -221,8 +221,8 @@ pub fn check_parent_exists(
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::UpstreamRefs;
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{Relationship, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_lookup_found() {
@@ -271,13 +271,13 @@ mod tests {
     #[test]
     fn test_trace_upstream() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()
@@ -298,13 +298,13 @@ mod tests {
     #[test]
     fn test_trace_downstream() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()

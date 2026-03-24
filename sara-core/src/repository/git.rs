@@ -6,7 +6,7 @@ use git2::{Commit, ObjectType, Repository};
 
 use crate::error::SaraError;
 use crate::model::Item;
-use crate::parser::parse_markdown_file;
+use crate::parser::InputFormat;
 
 /// Represents a Git reference that can be used to read files.
 #[derive(Debug, Clone)]
@@ -56,17 +56,17 @@ pub struct GitReader {
 impl GitReader {
     /// Opens a Git repository at the given path.
     pub fn open(path: &Path) -> Result<Self, SaraError> {
-        let repo = Repository::open(path).map_err(|e| SaraError::GitError(e.to_string()))?;
+        let repo = Repository::open(path).map_err(|e| SaraError::Git(e.to_string()))?;
         let repo_path = path.to_path_buf();
         Ok(Self { repo, repo_path })
     }
 
     /// Discovers and opens the Git repository containing the given path.
     pub fn discover(path: &Path) -> Result<Self, SaraError> {
-        let repo = Repository::discover(path).map_err(|e| SaraError::GitError(e.to_string()))?;
+        let repo = Repository::discover(path).map_err(|e| SaraError::Git(e.to_string()))?;
         let repo_path = repo
             .workdir()
-            .ok_or_else(|| SaraError::GitError("Bare repository not supported".to_string()))?
+            .ok_or_else(|| SaraError::Git("Bare repository not supported".to_string()))?
             .to_path_buf();
         Ok(Self { repo, repo_path })
     }
@@ -83,66 +83,62 @@ impl GitReader {
                 let head = self
                     .repo
                     .head()
-                    .map_err(|e| SaraError::GitError(e.to_string()))?;
+                    .map_err(|e| SaraError::Git(e.to_string()))?;
                 head.peel_to_commit()
-                    .map_err(|e| SaraError::GitError(e.to_string()))
+                    .map_err(|e| SaraError::Git(e.to_string()))
             }
             GitRef::Commit(sha) => {
                 // Use revparse_single to handle abbreviated SHAs
                 let obj = self
                     .repo
                     .revparse_single(sha)
-                    .map_err(|e| SaraError::GitError(e.to_string()))?;
+                    .map_err(|e| SaraError::Git(e.to_string()))?;
                 obj.peel_to_commit()
-                    .map_err(|e| SaraError::GitError(e.to_string()))
+                    .map_err(|e| SaraError::Git(e.to_string()))
             }
             GitRef::Branch(name) => {
                 let branch = self
                     .repo
                     .find_branch(name, git2::BranchType::Local)
-                    .map_err(|e| SaraError::GitError(e.to_string()))?;
+                    .map_err(|e| SaraError::Git(e.to_string()))?;
                 branch
                     .get()
                     .peel_to_commit()
-                    .map_err(|e| SaraError::GitError(e.to_string()))
+                    .map_err(|e| SaraError::Git(e.to_string()))
             }
             GitRef::Tag(name) => {
                 let tag_ref = format!("refs/tags/{}", name);
                 let obj = self
                     .repo
                     .revparse_single(&tag_ref)
-                    .map_err(|e| SaraError::GitError(e.to_string()))?;
+                    .map_err(|e| SaraError::Git(e.to_string()))?;
                 obj.peel_to_commit()
-                    .map_err(|e| SaraError::GitError(e.to_string()))
+                    .map_err(|e| SaraError::Git(e.to_string()))
             }
         }
     }
 
     /// Reads a file from a specific commit.
     pub fn read_file(&self, commit: &Commit<'_>, path: &Path) -> Result<String, SaraError> {
-        let tree = commit
-            .tree()
-            .map_err(|e| SaraError::GitError(e.to_string()))?;
+        let tree = commit.tree().map_err(|e| SaraError::Git(e.to_string()))?;
 
         let entry = tree
             .get_path(path)
-            .map_err(|e| SaraError::GitError(e.to_string()))?;
+            .map_err(|e| SaraError::Git(e.to_string()))?;
 
         let blob = entry
             .to_object(&self.repo)
-            .map_err(|e| SaraError::GitError(e.to_string()))?
+            .map_err(|e| SaraError::Git(e.to_string()))?
             .peel_to_blob()
-            .map_err(|e| SaraError::GitError(e.to_string()))?;
+            .map_err(|e| SaraError::Git(e.to_string()))?;
 
         String::from_utf8(blob.content().to_vec())
-            .map_err(|e| SaraError::GitError(format!("Invalid UTF-8 in file: {}", e)))
+            .map_err(|e| SaraError::Git(format!("Invalid UTF-8 in file: {}", e)))
     }
 
     /// Lists all Markdown files in a commit's tree.
     pub fn list_markdown_files(&self, commit: &Commit<'_>) -> Result<Vec<PathBuf>, SaraError> {
-        let tree = commit
-            .tree()
-            .map_err(|e| SaraError::GitError(e.to_string()))?;
+        let tree = commit.tree().map_err(|e| SaraError::Git(e.to_string()))?;
 
         let mut files = Vec::new();
         self.walk_tree(&tree, PathBuf::new(), &mut files)?;
@@ -159,7 +155,7 @@ impl GitReader {
         for entry in tree.iter() {
             let name = entry
                 .name()
-                .ok_or_else(|| SaraError::GitError("Invalid file name".to_string()))?;
+                .ok_or_else(|| SaraError::Git("Invalid file name".to_string()))?;
 
             // Skip hidden files and directories
             if name.starts_with('.') {
@@ -178,9 +174,9 @@ impl GitReader {
                 Some(ObjectType::Tree) => {
                     let subtree = entry
                         .to_object(&self.repo)
-                        .map_err(|e| SaraError::GitError(e.to_string()))?
+                        .map_err(|e| SaraError::Git(e.to_string()))?
                         .peel_to_tree()
-                        .map_err(|e| SaraError::GitError(e.to_string()))?;
+                        .map_err(|e| SaraError::Git(e.to_string()))?;
                     self.walk_tree(&subtree, path, files)?;
                 }
                 _ => {}
@@ -211,7 +207,12 @@ impl GitReader {
                 continue;
             }
 
-            match parse_markdown_file(&content, &file_path, &self.repo_path) {
+            match crate::parser::parse_metadata(
+                &content,
+                &file_path,
+                &self.repo_path,
+                InputFormat::Markdown,
+            ) {
                 Ok(item) => items.push(item),
                 Err(e) => {
                     tracing::warn!("Failed to parse {}: {}", file_path.display(), e);
@@ -221,7 +222,7 @@ impl GitReader {
         }
 
         if !parse_errors.is_empty() && items.is_empty() {
-            return Err(parse_errors.remove(0).into());
+            return Err(parse_errors.remove(0));
         }
 
         Ok(items)

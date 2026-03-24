@@ -4,23 +4,23 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::model::ItemType;
 
 use super::rule::Severity;
 
 /// A validation issue with its severity.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ValidationIssue {
     /// Severity of the issue.
     pub severity: Severity,
     /// The underlying validation error.
-    pub error: ValidationError,
+    pub error: SaraError,
 }
 
 impl ValidationIssue {
     /// Creates a new error-level issue.
-    pub fn error(error: ValidationError) -> Self {
+    pub fn error(error: SaraError) -> Self {
         Self {
             severity: Severity::Error,
             error,
@@ -28,7 +28,7 @@ impl ValidationIssue {
     }
 
     /// Creates a new warning-level issue.
-    pub fn warning(error: ValidationError) -> Self {
+    pub fn warning(error: SaraError) -> Self {
         Self {
             severity: Severity::Warning,
             error,
@@ -37,7 +37,7 @@ impl ValidationIssue {
 }
 
 /// Validation report containing all issues found.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Serialize)]
 pub struct ValidationReport {
     /// All validation issues found.
     pub issues: Vec<ValidationIssue>,
@@ -82,7 +82,7 @@ impl ValidationReport {
     }
 
     /// Returns all errors.
-    pub fn errors(&self) -> Vec<&ValidationError> {
+    pub fn errors(&self) -> Vec<&SaraError> {
         self.issues
             .iter()
             .filter(|i| i.severity == Severity::Error)
@@ -91,7 +91,7 @@ impl ValidationReport {
     }
 
     /// Returns all warnings.
-    pub fn warnings(&self) -> Vec<&ValidationError> {
+    pub fn warnings(&self) -> Vec<&SaraError> {
         self.issues
             .iter()
             .filter(|i| i.severity == Severity::Warning)
@@ -153,7 +153,7 @@ impl ValidationReportBuilder {
     }
 
     /// Adds errors to the report.
-    pub fn errors(mut self, errors: impl IntoIterator<Item = ValidationError>) -> Self {
+    pub fn errors(mut self, errors: impl IntoIterator<Item = SaraError>) -> Self {
         for error in errors {
             self.report.issues.push(ValidationIssue::error(error));
         }
@@ -161,7 +161,7 @@ impl ValidationReportBuilder {
     }
 
     /// Adds multiple warnings.
-    pub fn warnings(mut self, warnings: impl IntoIterator<Item = ValidationError>) -> Self {
+    pub fn warnings(mut self, warnings: impl IntoIterator<Item = SaraError>) -> Self {
         for warning in warnings {
             self.report.issues.push(ValidationIssue::warning(warning));
         }
@@ -191,11 +191,11 @@ mod tests {
     fn test_report_with_errors() {
         let report = ValidationReportBuilder::new()
             .errors([
-                ValidationError::BrokenReference {
+                SaraError::BrokenReference {
                     from: ItemId::new_unchecked("A"),
                     to: ItemId::new_unchecked("B"),
                 },
-                ValidationError::BrokenReference {
+                SaraError::BrokenReference {
                     from: ItemId::new_unchecked("C"),
                     to: ItemId::new_unchecked("D"),
                 },
@@ -211,11 +211,11 @@ mod tests {
     fn test_report_with_warnings() {
         let report = ValidationReportBuilder::new()
             .warnings([
-                ValidationError::BrokenReference {
+                SaraError::BrokenReference {
                     from: ItemId::new_unchecked("A"),
                     to: ItemId::new_unchecked("B"),
                 },
-                ValidationError::BrokenReference {
+                SaraError::BrokenReference {
                     from: ItemId::new_unchecked("C"),
                     to: ItemId::new_unchecked("D"),
                 },
@@ -232,7 +232,7 @@ mod tests {
         let report = ValidationReportBuilder::new()
             .items_checked(10)
             .relationships_checked(15)
-            .errors([ValidationError::BrokenReference {
+            .errors([SaraError::BrokenReference {
                 from: ItemId::new_unchecked("A"),
                 to: ItemId::new_unchecked("B"),
             }])

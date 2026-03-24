@@ -4,7 +4,7 @@ use petgraph::algo::tarjan_scc;
 use petgraph::visit::EdgeFiltered;
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::validation::rule::ValidationRule;
 
@@ -17,7 +17,7 @@ use crate::validation::rule::ValidationRule;
 pub struct CyclesRule;
 
 impl ValidationRule for CyclesRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         let mut errors = Vec::new();
         let inner = graph.inner();
 
@@ -40,7 +40,7 @@ impl ValidationRule for CyclesRule {
 
                 let cycle_str = cycle_ids.join(" -> ");
 
-                errors.push(ValidationError::CircularReference { cycle: cycle_str });
+                errors.push(SaraError::CircularReference { cycle: cycle_str });
             } else if scc.len() == 1 {
                 // Check for self-loop (only with primary relationships)
                 let idx = scc[0];
@@ -49,7 +49,7 @@ impl ValidationRule for CyclesRule {
                     .any(|e| e.weight().is_primary());
 
                 if has_self_loop && let Some(item) = inner.node_weight(idx) {
-                    errors.push(ValidationError::CircularReference {
+                    errors.push(SaraError::CircularReference {
                         cycle: format!("{} -> {}", item.id.as_str(), item.id.as_str()),
                     });
                 }
@@ -89,20 +89,20 @@ fn would_create_cycle(
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, ItemType, Relationship, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_cycles() {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
@@ -115,21 +115,21 @@ mod tests {
     #[test]
     fn test_cycle_detected() {
         // Create a cycle: SCEN-001 -> SCEN-002 -> SCEN-001
-        let scen1 = create_test_item_with_upstream(
+        let scen1 = create_test_item_with_relationships(
             "SCEN-001",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SCEN-002")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-002"),
+                RelationshipType::Refines,
+            )],
         );
-        let scen2 = create_test_item_with_upstream(
+        let scen2 = create_test_item_with_relationships(
             "SCEN-002",
             ItemType::Scenario,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SCEN-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()
@@ -146,13 +146,13 @@ mod tests {
     #[test]
     fn test_would_create_cycle() {
         let sol = create_test_item("SOL-001", ItemType::Solution);
-        let uc = create_test_item_with_upstream(
+        let uc = create_test_item_with_relationships(
             "UC-001",
             ItemType::UseCase,
-            UpstreamRefs {
-                refines: vec![ItemId::new_unchecked("SOL-001")],
-                ..Default::default()
-            },
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                RelationshipType::Refines,
+            )],
         );
 
         let graph = KnowledgeGraphBuilder::new()

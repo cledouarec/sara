@@ -2,156 +2,25 @@
 
 use std::path::Path;
 
-use serde::Deserialize;
-
-use crate::error::ParseError;
-use crate::model::{
-    AdrStatus, DownstreamRefs, Item, ItemBuilder, ItemId, ItemType, SourceLocation, UpstreamRefs,
-};
+use crate::error::SaraError;
+use crate::model::{Item, ItemBuilder, ItemId, ItemType, SourceLocation};
 use crate::parser::frontmatter::extract_frontmatter;
-
-/// Raw frontmatter structure for deserialization.
-///
-/// This represents the YAML frontmatter as it appears in Markdown files.
-/// All relationship fields accept both single values and arrays for flexibility.
-#[derive(Debug, Clone, Deserialize)]
-pub struct RawFrontmatter {
-    /// Unique identifier (required).
-    pub id: String,
-
-    /// Item type (required).
-    #[serde(rename = "type")]
-    pub item_type: ItemType,
-
-    /// Human-readable name (required).
-    pub name: String,
-
-    /// Description (optional).
-    #[serde(default)]
-    pub description: Option<String>,
-
-    // Upstream references (toward Solution)
-    /// Items this item refines (for UseCase, Scenario).
-    #[serde(default)]
-    pub refines: Vec<String>,
-
-    /// Items this item derives from (for SystemRequirement, HW/SW Requirement).
-    #[serde(default)]
-    pub derives_from: Vec<String>,
-
-    /// Items this item satisfies (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default)]
-    pub satisfies: Vec<String>,
-
-    // Downstream references (toward Detailed Designs)
-    /// Items that refine this item (for Solution, UseCase).
-    #[serde(default)]
-    pub is_refined_by: Vec<String>,
-
-    /// Items derived from this item (for Scenario, SystemArchitecture).
-    #[serde(default)]
-    pub derives: Vec<String>,
-
-    /// Items that satisfy this item (for SystemRequirement, HW/SW Requirement).
-    #[serde(default)]
-    pub is_satisfied_by: Vec<String>,
-
-    // Type-specific attributes
-    /// Specification statement (required for requirement types).
-    #[serde(default)]
-    pub specification: Option<String>,
-
-    /// Peer dependencies (for requirement types).
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-
-    /// Target platform (for SystemArchitecture).
-    #[serde(default)]
-    pub platform: Option<String>,
-
-    /// ADR links (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default)]
-    pub justified_by: Option<Vec<String>>,
-
-    /// ADR lifecycle status (required for ADR items).
-    #[serde(default)]
-    pub status: Option<AdrStatus>,
-
-    /// ADR deciders (required for ADR items).
-    #[serde(default)]
-    pub deciders: Vec<String>,
-
-    /// Design artifacts this ADR justifies (for ADR items).
-    #[serde(default)]
-    pub justifies: Vec<String>,
-
-    /// Older ADRs this decision supersedes (for ADR items).
-    #[serde(default)]
-    pub supersedes: Vec<String>,
-}
-
-impl RawFrontmatter {
-    /// Converts string IDs to ItemIds for upstream refs.
-    pub fn upstream_refs(&self) -> Result<UpstreamRefs, ParseError> {
-        Ok(UpstreamRefs {
-            refines: self.refines.iter().map(ItemId::new_unchecked).collect(),
-            derives_from: self
-                .derives_from
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            satisfies: self.satisfies.iter().map(ItemId::new_unchecked).collect(),
-            justifies: self.justifies.iter().map(ItemId::new_unchecked).collect(),
-        })
-    }
-
-    /// Converts string IDs to ItemIds for downstream refs.
-    pub fn downstream_refs(&self) -> Result<DownstreamRefs, ParseError> {
-        Ok(DownstreamRefs {
-            is_refined_by: self
-                .is_refined_by
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            derives: self.derives.iter().map(ItemId::new_unchecked).collect(),
-            is_satisfied_by: self
-                .is_satisfied_by
-                .iter()
-                .map(ItemId::new_unchecked)
-                .collect(),
-            justified_by: self
-                .justified_by
-                .as_ref()
-                .map(|ids| ids.iter().map(ItemId::new_unchecked).collect())
-                .unwrap_or_default(),
-        })
-    }
-}
+use crate::parser::yaml::parse_yaml_frontmatter;
 
 /// Parses a Markdown file and extracts the item.
 ///
-/// # Arguments
-/// * `content` - The raw file content.
-/// * `file_path` - Relative path within the repository.
-/// * `repository` - Absolute path to the repository root.
-///
-/// # Returns
-/// The parsed Item, or a ParseError if parsing fails.
+/// The file must contain YAML frontmatter delimited by `---`.
 pub fn parse_markdown_file(
     content: &str,
     file_path: &Path,
     repository: &Path,
-) -> Result<Item, ParseError> {
+) -> Result<Item, SaraError> {
     let extracted = extract_frontmatter(content, file_path)?;
 
-    let frontmatter: RawFrontmatter =
-        serde_yaml::from_str(&extracted.yaml).map_err(|e| ParseError::InvalidYaml {
-            file: file_path.to_path_buf(),
-            reason: e.to_string(),
-        })?;
+    let frontmatter = parse_yaml_frontmatter(&extracted.yaml, file_path)?;
 
     // Validate item ID format
-    let item_id = ItemId::new(&frontmatter.id).map_err(|e| ParseError::InvalidFrontmatter {
+    let item_id = ItemId::new(&frontmatter.id).map_err(|e| SaraError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
         reason: format!("Invalid item ID: {}", e),
     })?;
@@ -165,8 +34,7 @@ pub fn parse_markdown_file(
         .item_type(frontmatter.item_type)
         .name(&frontmatter.name)
         .source(source)
-        .upstream(frontmatter.upstream_refs()?)
-        .downstream(frontmatter.downstream_refs()?);
+        .relationships(frontmatter.to_relationships());
 
     if let Some(desc) = &frontmatter.description {
         builder = builder.description(desc);
@@ -174,9 +42,7 @@ pub fn parse_markdown_file(
 
     // Set type-specific attributes based on item type
     match frontmatter.item_type {
-        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {
-            // No type-specific attributes
-        }
+        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {}
         ItemType::SystemRequirement
         | ItemType::SoftwareRequirement
         | ItemType::HardwareRequirement => {
@@ -191,17 +57,13 @@ pub fn parse_markdown_file(
             if let Some(platform) = &frontmatter.platform {
                 builder = builder.platform(platform);
             }
-            // justified_by is now handled via downstream_refs()
         }
-        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {
-            // justified_by is now handled via downstream_refs()
-        }
+        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {}
         ItemType::ArchitectureDecisionRecord => {
             if let Some(status) = frontmatter.status {
                 builder = builder.status(status);
             }
             builder = builder.deciders(frontmatter.deciders.clone());
-            // justifies is now handled via upstream_refs()
             builder = builder.supersedes_all(
                 frontmatter
                     .supersedes
@@ -212,7 +74,7 @@ pub fn parse_markdown_file(
         }
     }
 
-    builder.build().map_err(|e| ParseError::InvalidFrontmatter {
+    builder.build().map_err(|e| SaraError::InvalidFrontmatter {
         file: file_path.to_path_buf(),
         reason: e.to_string(),
     })
@@ -232,7 +94,7 @@ pub fn parse_document(
     content: &str,
     file_path: &Path,
     repository: &Path,
-) -> Result<ParsedDocument, ParseError> {
+) -> Result<ParsedDocument, SaraError> {
     let extracted = extract_frontmatter(content, file_path)?;
     let item = parse_markdown_file(content, file_path, repository)?;
 
@@ -242,9 +104,21 @@ pub fn parse_document(
     })
 }
 
+/// Extracts a name from a markdown file's first heading.
+pub fn extract_name_from_content(content: &str) -> Option<String> {
+    for line in content.lines() {
+        let trimmed = line.trim();
+        if let Some(heading) = trimmed.strip_prefix("# ") {
+            return Some(heading.trim().to_string());
+        }
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::model::{AdrStatus, RelationshipType};
     use std::path::PathBuf;
 
     const SOLUTION_MD: &str = r#"---
@@ -286,8 +160,11 @@ is_satisfied_by:
         assert_eq!(item.item_type, ItemType::Solution);
         assert_eq!(item.name, "Test Solution");
         assert_eq!(item.description, Some("A test solution".to_string()));
-        assert_eq!(item.downstream.is_refined_by.len(), 1);
-        assert_eq!(item.downstream.is_refined_by[0].as_str(), "UC-001");
+        let is_refined_by: Vec<_> = item
+            .relationship_ids(RelationshipType::IsRefinedBy)
+            .collect();
+        assert_eq!(is_refined_by.len(), 1);
+        assert_eq!(is_refined_by[0].as_str(), "UC-001");
     }
 
     #[test]
@@ -305,8 +182,14 @@ is_satisfied_by:
             item.attributes.specification().map(String::as_str),
             Some("The system SHALL respond within 100ms.")
         );
-        assert_eq!(item.upstream.derives_from.len(), 1);
-        assert_eq!(item.downstream.is_satisfied_by.len(), 1);
+        let derives_from: Vec<_> = item
+            .relationship_ids(RelationshipType::DerivesFrom)
+            .collect();
+        let is_satisfied_by: Vec<_> = item
+            .relationship_ids(RelationshipType::IsSatisfiedBy)
+            .collect();
+        assert_eq!(derives_from.len(), 1);
+        assert_eq!(is_satisfied_by.len(), 1);
     }
 
     #[test]
@@ -390,23 +273,12 @@ Chosen option: Microservices, because it provides better scalability.
             Some("Decision to adopt microservices".to_string())
         );
 
-        // Check ADR-specific attributes
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
         assert_eq!(item.attributes.deciders().len(), 2);
-        assert!(
-            item.attributes
-                .deciders()
-                .contains(&"Alice Smith".to_string())
-        );
-        assert!(
-            item.attributes
-                .deciders()
-                .contains(&"Bob Jones".to_string())
-        );
-        // justifies is now in upstream refs
-        assert_eq!(item.upstream.justifies.len(), 2);
-        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
-        assert_eq!(item.upstream.justifies[1].as_str(), "SWDD-001");
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        assert_eq!(justifies.len(), 2);
+        assert_eq!(justifies[0].as_str(), "SYSARCH-001");
+        assert_eq!(justifies[1].as_str(), "SWDD-001");
         assert!(item.attributes.supersedes().is_empty());
     }
 
@@ -421,7 +293,6 @@ status: proposed
 "#;
         let result =
             parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
-        // Should fail because deciders is required for ADRs
         assert!(result.is_err());
     }
 
@@ -437,7 +308,6 @@ deciders:
 "#;
         let result =
             parse_markdown_file(content, &PathBuf::from("test.md"), &PathBuf::from("/repo"));
-        // Should fail because status is required for ADRs
         assert!(result.is_err());
     }
 
@@ -464,12 +334,23 @@ supersedes:
         )
         .unwrap();
 
-        // justifies is now in upstream refs
-        assert_eq!(item.upstream.justifies.len(), 1);
-        assert_eq!(item.upstream.justifies[0].as_str(), "SYSARCH-001");
-        // supersedes is still in attributes
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        assert_eq!(justifies.len(), 1);
+        assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         assert_eq!(item.attributes.supersedes().len(), 2);
         assert_eq!(item.attributes.supersedes()[0].as_str(), "ADR-001");
         assert_eq!(item.attributes.supersedes()[1].as_str(), "ADR-002");
+    }
+
+    #[test]
+    fn test_extract_name_from_content() {
+        let content = "# My Document\n\nSome content here.";
+        assert_eq!(
+            extract_name_from_content(content),
+            Some("My Document".to_string())
+        );
+
+        let content_no_heading = "No heading here";
+        assert_eq!(extract_name_from_content(content_no_heading), None);
     }
 }

@@ -1,7 +1,7 @@
 //! Orphan item detection validation rule.
 
 use crate::config::ValidationConfig;
-use crate::error::ValidationError;
+use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
 use crate::validation::rule::{Severity, ValidationRule};
 
@@ -15,11 +15,11 @@ use crate::validation::rule::{Severity, ValidationRule};
 pub struct OrphansRule;
 
 impl ValidationRule for OrphansRule {
-    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<ValidationError> {
+    fn validate(&self, graph: &KnowledgeGraph, _config: &ValidationConfig) -> Vec<SaraError> {
         graph
             .orphans()
             .into_iter()
-            .map(|item| ValidationError::OrphanItem {
+            .map(|item| SaraError::OrphanItem {
                 id: item.id.clone(),
                 item_type: item.item_type,
             })
@@ -35,8 +35,8 @@ impl ValidationRule for OrphansRule {
 mod tests {
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, UpstreamRefs};
-    use crate::test_utils::{create_test_item, create_test_item_with_upstream};
+    use crate::model::{ItemId, ItemType, Relationship, RelationshipType};
+    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_solution_not_orphan() {
@@ -64,7 +64,7 @@ mod tests {
         let errors = rule.validate(&graph, &ValidationConfig::default());
         assert_eq!(errors.len(), 1);
 
-        if let ValidationError::OrphanItem { id, item_type, .. } = &errors[0] {
+        if let SaraError::OrphanItem { id, item_type, .. } = &errors[0] {
             assert_eq!(id.as_str(), "UC-001");
             assert_eq!(*item_type, ItemType::UseCase);
         } else {
@@ -76,13 +76,13 @@ mod tests {
     fn test_linked_item_not_orphan() {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item_with_upstream(
+            .add_item(create_test_item_with_relationships(
                 "UC-001",
                 ItemType::UseCase,
-                UpstreamRefs {
-                    refines: vec![ItemId::new_unchecked("SOL-001")],
-                    ..Default::default()
-                },
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SOL-001"),
+                    RelationshipType::Refines,
+                )],
             ))
             .build()
             .unwrap();
