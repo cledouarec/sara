@@ -4,18 +4,10 @@ use std::path::Path;
 
 use crate::error::SaraError;
 
-/// Represents extracted frontmatter content.
-#[derive(Debug, Clone)]
-pub struct ExtractedFrontmatter {
-    /// The raw YAML content between the `---` delimiters.
-    pub yaml: String,
-    /// The remaining Markdown content after the frontmatter.
-    pub body: String,
-}
-
 /// Extracts YAML frontmatter from Markdown content.
 ///
 /// Frontmatter must be at the start of the file, enclosed by `---` delimiters.
+/// Returns the raw YAML string between the delimiters.
 ///
 /// # Example
 /// ```text
@@ -26,7 +18,7 @@ pub struct ExtractedFrontmatter {
 /// ---
 /// # Markdown content here
 /// ```
-pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontmatter, SaraError> {
+pub fn extract_frontmatter(content: &str, file: &Path) -> Result<String, SaraError> {
     let lines: Vec<&str> = content.lines().collect();
 
     if lines.is_empty() {
@@ -60,15 +52,7 @@ pub fn extract_frontmatter(content: &str, file: &Path) -> Result<ExtractedFrontm
     let yaml_lines: Vec<&str> = lines[1..end_idx].to_vec();
     let yaml = yaml_lines.join("\n");
 
-    // Extract body (everything after closing delimiter)
-    let body_lines: Vec<&str> = if end_idx + 1 < lines.len() {
-        lines[end_idx + 1..].to_vec()
-    } else {
-        Vec::new()
-    };
-    let body = body_lines.join("\n");
-
-    Ok(ExtractedFrontmatter { yaml, body })
+    Ok(yaml)
 }
 
 /// Checks if content has frontmatter (starts with `---`).
@@ -135,10 +119,9 @@ name: "Test"
 ---
 # Body content"#;
 
-        let result = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
-        assert!(result.yaml.contains("id: \"SOL-001\""));
-        assert!(result.yaml.contains("type: solution"));
-        assert_eq!(result.body.trim(), "# Body content");
+        let yaml = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
+        assert!(yaml.contains("id: \"SOL-001\""));
+        assert!(yaml.contains("type: solution"));
     }
 
     #[test]
@@ -147,9 +130,8 @@ name: "Test"
 id: "SOL-001"
 ---"#;
 
-        let result = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
-        assert!(result.yaml.contains("id: \"SOL-001\""));
-        assert!(result.body.is_empty());
+        let yaml = extract_frontmatter(content, &PathBuf::from("test.md")).unwrap();
+        assert!(yaml.contains("id: \"SOL-001\""));
     }
 
     #[test]
