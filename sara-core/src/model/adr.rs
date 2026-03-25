@@ -40,17 +40,6 @@ impl AdrStatus {
             Self::Superseded => "superseded",
         }
     }
-
-    /// Returns all possible ADR status values.
-    #[must_use]
-    pub const fn all() -> &'static [AdrStatus] {
-        &[
-            Self::Proposed,
-            Self::Accepted,
-            Self::Deprecated,
-            Self::Superseded,
-        ]
-    }
 }
 
 impl fmt::Display for AdrStatus {

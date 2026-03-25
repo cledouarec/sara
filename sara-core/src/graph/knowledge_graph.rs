@@ -166,11 +166,6 @@ impl KnowledgeGraph {
         self.index.get(id).copied()
     }
 
-    /// Checks if the graph has cycles.
-    pub fn has_cycles(&self) -> bool {
-        petgraph::algo::is_cyclic_directed(&self.graph)
-    }
-
     /// Returns all relationships in the graph.
     pub fn relationships(&self) -> Vec<(ItemId, ItemId, RelationshipType)> {
         self.graph

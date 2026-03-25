@@ -258,15 +258,6 @@ pub enum SaraError {
         path: PathBuf,
     },
 
-    /// Glob pattern is malformed.
-    #[error("Invalid glob pattern '{pattern}': {reason}")]
-    InvalidGlobPattern {
-        /// The invalid pattern string.
-        pattern: String,
-        /// Why the pattern is invalid.
-        reason: String,
-    },
-
     // ==================== Queries ====================
     /// No parent items exist for the given item type.
     #[error(
