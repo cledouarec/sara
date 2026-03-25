@@ -3,8 +3,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
 
-use crate::error::SaraError;
-
 /// Main configuration structure.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Config {
@@ -34,37 +32,6 @@ impl Config {
     /// Adds a repository path.
     pub fn add_repository(&mut self, path: impl Into<PathBuf>) {
         self.repositories.paths.push(path.into());
-    }
-
-    /// Expands all glob patterns in template paths.
-    pub fn expand_template_paths(&self) -> Result<Vec<PathBuf>, SaraError> {
-        let mut result = Vec::new();
-
-        for pattern in &self.templates.paths {
-            match glob::glob(pattern) {
-                Ok(paths) => {
-                    for entry in paths {
-                        match entry {
-                            Ok(path) => result.push(path),
-                            Err(e) => {
-                                return Err(SaraError::InvalidGlobPattern {
-                                    pattern: pattern.clone(),
-                                    reason: e.to_string(),
-                                });
-                            }
-                        }
-                    }
-                }
-                Err(e) => {
-                    return Err(SaraError::InvalidGlobPattern {
-                        pattern: pattern.clone(),
-                        reason: e.to_string(),
-                    });
-                }
-            }
-        }
-
-        Ok(result)
     }
 }
 
@@ -131,7 +98,7 @@ mod tests {
 
     #[test]
     fn test_default_config() {
-        let config = Config::default();
+        let config = Config::new();
         assert!(config.repositories.paths.is_empty());
         assert!(!config.validation.strict_mode);
         assert!(config.output.colors);
@@ -140,14 +107,14 @@ mod tests {
 
     #[test]
     fn test_add_repository() {
-        let mut config = Config::default();
+        let mut config = Config::new();
         config.add_repository("/path/to/repo");
         assert_eq!(config.repositories.paths.len(), 1);
     }
 
     #[test]
     fn test_config_serialization() {
-        let config = Config::default();
+        let config = Config::new();
         let toml_str = toml::to_string(&config).unwrap();
         assert!(toml_str.contains("[repositories]"));
     }

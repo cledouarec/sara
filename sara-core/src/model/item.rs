@@ -413,12 +413,6 @@ impl ItemId {
     pub fn as_str(&self) -> &str {
         &self.0
     }
-
-    /// Converts a slice of ItemIds to a Vec of &str references.
-    #[must_use]
-    pub fn slice_to_strs(ids: &[ItemId]) -> Vec<&str> {
-        ids.iter().map(|id| id.as_str()).collect()
-    }
 }
 
 impl fmt::Display for ItemId {
@@ -559,17 +553,6 @@ impl ItemAttributes {
             | Self::SoftwareRequirement { depends_on, .. }
             | Self::HardwareRequirement { depends_on, .. } => depends_on,
             _ => &[],
-        }
-    }
-
-    /// Returns the depends_on references as an Option for types that support it.
-    #[must_use]
-    pub fn depends_on_as_option(&self) -> Option<&[ItemId]> {
-        match self {
-            Self::SystemRequirement { depends_on, .. }
-            | Self::SoftwareRequirement { depends_on, .. }
-            | Self::HardwareRequirement { depends_on, .. } => Some(depends_on),
-            _ => None,
         }
     }
 
