@@ -1334,7 +1334,7 @@ dependencies = [
 
 [[package]]
 name = "sara-cli"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "assert_cmd",
  "clap",
@@ -1354,7 +1354,7 @@ dependencies = [
 
 [[package]]
 name = "sara-core"
-version = "0.6.0"
+version = "0.7.0"
 dependencies = [
  "git2",
  "petgraph",
