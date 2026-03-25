@@ -112,92 +112,52 @@ impl ItemType {
         format!("{}-{:03}", prefix, max_num + 1)
     }
 
-    /// Returns the item types that accept the refines field.
-    #[must_use]
-    pub const fn refines_types() -> &'static [ItemType] {
-        &[Self::UseCase, Self::Scenario]
-    }
-
     /// Returns true if this item type requires the refines field.
     #[must_use]
-    pub fn requires_refines(&self) -> bool {
-        Self::refines_types().contains(self)
-    }
-
-    /// Returns the item types that accept the derives_from field.
-    #[must_use]
-    pub const fn derives_from_types() -> &'static [ItemType] {
-        &[
-            Self::SystemRequirement,
-            Self::HardwareRequirement,
-            Self::SoftwareRequirement,
-        ]
+    pub const fn requires_refines(&self) -> bool {
+        matches!(self, Self::UseCase | Self::Scenario)
     }
 
     /// Returns true if this item type requires the derives_from field.
     #[must_use]
-    pub fn requires_derives_from(&self) -> bool {
-        Self::derives_from_types().contains(self)
-    }
-
-    /// Returns the item types that accept the satisfies field.
-    #[must_use]
-    pub const fn satisfies_types() -> &'static [ItemType] {
-        &[
-            Self::SystemArchitecture,
-            Self::HardwareDetailedDesign,
-            Self::SoftwareDetailedDesign,
-        ]
+    pub const fn requires_derives_from(&self) -> bool {
+        matches!(
+            self,
+            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement
+        )
     }
 
     /// Returns true if this item type requires the satisfies field.
     #[must_use]
-    pub fn requires_satisfies(&self) -> bool {
-        Self::satisfies_types().contains(self)
-    }
-
-    /// Returns the item types that accept the specification field.
-    #[must_use]
-    pub const fn specification_types() -> &'static [ItemType] {
-        &[
-            Self::SystemRequirement,
-            Self::HardwareRequirement,
-            Self::SoftwareRequirement,
-        ]
+    pub const fn requires_satisfies(&self) -> bool {
+        matches!(
+            self,
+            Self::SystemArchitecture | Self::HardwareDetailedDesign | Self::SoftwareDetailedDesign
+        )
     }
 
     /// Returns true if this item type requires/accepts a specification field.
     #[must_use]
-    pub fn requires_specification(&self) -> bool {
-        Self::specification_types().contains(self)
-    }
-
-    /// Returns the item types that accept the platform field.
-    #[must_use]
-    pub const fn platform_types() -> &'static [ItemType] {
-        &[Self::SystemArchitecture]
+    pub const fn requires_specification(&self) -> bool {
+        matches!(
+            self,
+            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement
+        )
     }
 
     /// Returns true if this item type accepts the platform field.
     #[must_use]
-    pub fn accepts_platform(&self) -> bool {
-        Self::platform_types().contains(self)
-    }
-
-    /// Returns the item types that accept the depends_on field (peer dependencies).
-    #[must_use]
-    pub const fn depends_on_types() -> &'static [ItemType] {
-        &[
-            Self::SystemRequirement,
-            Self::HardwareRequirement,
-            Self::SoftwareRequirement,
-        ]
+    pub const fn accepts_platform(&self) -> bool {
+        matches!(self, Self::SystemArchitecture)
     }
 
     /// Returns true if this item type accepts the depends_on field (peer dependencies).
     #[must_use]
-    pub fn supports_depends_on(&self) -> bool {
-        Self::depends_on_types().contains(self)
+    pub const fn supports_depends_on(&self) -> bool {
+        matches!(
+            self,
+            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement
+        )
     }
 
     /// Returns true if this is a root item type (Solution).
