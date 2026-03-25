@@ -247,25 +247,28 @@ mod tests {
 
     #[test]
     fn test_git_ref_parse_head() {
-        matches!(GitRef::parse("HEAD"), GitRef::Head);
-        matches!(GitRef::parse("head"), GitRef::Head);
+        assert!(matches!(GitRef::parse("HEAD"), GitRef::Head));
+        assert!(matches!(GitRef::parse("head"), GitRef::Head));
     }
 
     #[test]
     fn test_git_ref_parse_commit() {
-        matches!(GitRef::parse("abc1234"), GitRef::Commit(_));
-        matches!(GitRef::parse("abc123456789"), GitRef::Commit(_));
+        assert!(matches!(GitRef::parse("abc1234"), GitRef::Commit(_)));
+        assert!(matches!(GitRef::parse("abc123456789"), GitRef::Commit(_)));
     }
 
     #[test]
     fn test_git_ref_parse_branch() {
-        matches!(GitRef::parse("main"), GitRef::Branch(_));
-        matches!(GitRef::parse("refs/heads/main"), GitRef::Branch(_));
+        assert!(matches!(GitRef::parse("main"), GitRef::Branch(_)));
+        assert!(matches!(
+            GitRef::parse("refs/heads/main"),
+            GitRef::Branch(_)
+        ));
     }
 
     #[test]
     fn test_git_ref_parse_tag() {
-        matches!(GitRef::parse("refs/tags/v1.0"), GitRef::Tag(_));
+        assert!(matches!(GitRef::parse("refs/tags/v1.0"), GitRef::Tag(_)));
     }
 
     #[test]
