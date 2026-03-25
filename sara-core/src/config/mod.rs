@@ -33,7 +33,7 @@ pub fn load_or_default(path: Option<&Path>) -> Result<Config, SaraError> {
             if default_path.exists() {
                 load_config(default_path)
             } else {
-                Ok(Config::default())
+                Ok(Config::new())
             }
         }
     }

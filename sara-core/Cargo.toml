@@ -20,7 +20,6 @@ git2.workspace = true
 tracing.workspace = true
 thiserror.workspace = true
 rayon.workspace = true
-glob.workspace = true
 strsim.workspace = true
 tera.workspace = true
 
