@@ -7,7 +7,7 @@ use petgraph::graph::NodeIndex;
 use petgraph::visit::EdgeRef;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId, ItemType, RelationshipType};
+use crate::model::{ItemId, ItemType, RelationshipType};
 
 /// Result of a traversal operation.
 #[derive(Debug, Clone)]
@@ -205,108 +205,6 @@ fn traverse_graph(
     })
 }
 
-/// Gets the direct upstream items (parents) for an item.
-pub fn get_upstream_parents<'a>(graph: &'a KnowledgeGraph, id: &ItemId) -> Vec<&'a Item> {
-    graph.parents(id)
-}
-
-/// Gets the direct downstream items (children) for an item.
-pub fn get_downstream_children<'a>(graph: &'a KnowledgeGraph, id: &ItemId) -> Vec<&'a Item> {
-    graph.children(id)
-}
-
-/// Builds a tree representation of the traversal for display.
-#[derive(Debug, Clone)]
-pub struct TraversalTree {
-    /// Root item ID.
-    pub root: ItemId,
-    /// Children of this node.
-    pub children: Vec<TraversalTreeNode>,
-}
-
-/// A node in the traversal tree.
-#[derive(Debug, Clone)]
-pub struct TraversalTreeNode {
-    /// The item at this node.
-    pub item_id: ItemId,
-    /// Relationship from parent.
-    pub relationship: RelationshipType,
-    /// Children of this node.
-    pub children: Vec<TraversalTreeNode>,
-}
-
-impl TraversalResult {
-    /// Converts the traversal result to a tree structure for display.
-    pub fn to_tree(&self, _graph: &KnowledgeGraph) -> Option<TraversalTree> {
-        if self.items.is_empty() {
-            return None;
-        }
-
-        // Build parent -> children map
-        let mut children_map: std::collections::HashMap<Option<ItemId>, Vec<&TraversalNode>> =
-            std::collections::HashMap::new();
-
-        for node in &self.items {
-            children_map
-                .entry(node.parent.clone())
-                .or_default()
-                .push(node);
-        }
-
-        // Recursively build tree
-        fn build_children(
-            parent_id: &ItemId,
-            children_map: &std::collections::HashMap<Option<ItemId>, Vec<&TraversalNode>>,
-        ) -> Vec<TraversalTreeNode> {
-            let Some(children) = children_map.get(&Some(parent_id.clone())) else {
-                return Vec::new();
-            };
-
-            children
-                .iter()
-                .map(|node| TraversalTreeNode {
-                    item_id: node.item_id.clone(),
-                    relationship: node.relationship.unwrap_or(RelationshipType::Refines),
-                    children: build_children(&node.item_id, children_map),
-                })
-                .collect()
-        }
-
-        let root_children = children_map
-            .get(&None)
-            .map(|roots| {
-                if roots.is_empty() {
-                    Vec::new()
-                } else {
-                    // The first root is the origin, get its children
-                    build_children(&roots[0].item_id, &children_map)
-                }
-            })
-            .unwrap_or_default();
-
-        Some(TraversalTree {
-            root: self.origin.clone(),
-            children: root_children,
-        })
-    }
-
-    /// Returns only items matching the given types.
-    pub fn filter_by_type(
-        &self,
-        types: &[ItemType],
-        graph: &KnowledgeGraph,
-    ) -> Vec<&TraversalNode> {
-        self.items
-            .iter()
-            .filter(|node| {
-                graph
-                    .get(&node.item_id)
-                    .is_some_and(|item| types.contains(&item.item_type))
-            })
-            .collect()
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -449,8 +347,8 @@ mod tests {
 
         assert!(result.is_some());
         let result = result.unwrap();
-        // Filter should only include Solution type
-        let filtered = result.filter_by_type(&[ItemType::Solution], &graph);
-        assert_eq!(filtered.len(), 1);
+        // Only Solution items should be included
+        assert_eq!(result.items.len(), 1);
+        assert_eq!(result.items[0].item_id, ItemId::new_unchecked("SOL-001"));
     }
 }

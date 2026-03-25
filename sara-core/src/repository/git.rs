@@ -56,14 +56,14 @@ pub struct GitReader {
 impl GitReader {
     /// Opens a Git repository at the given path.
     pub fn open(path: &Path) -> Result<Self, SaraError> {
-        let repo = Repository::open(path).map_err(|e| SaraError::Git(e.to_string()))?;
+        let repo = Repository::open(path)?;
         let repo_path = path.to_path_buf();
         Ok(Self { repo, repo_path })
     }
 
     /// Discovers and opens the Git repository containing the given path.
     pub fn discover(path: &Path) -> Result<Self, SaraError> {
-        let repo = Repository::discover(path).map_err(|e| SaraError::Git(e.to_string()))?;
+        let repo = Repository::discover(path)?;
         let repo_path = repo
             .workdir()
             .ok_or_else(|| SaraError::Git("Bare repository not supported".to_string()))?
@@ -80,57 +80,31 @@ impl GitReader {
     pub fn resolve_ref(&self, git_ref: &GitRef) -> Result<Commit<'_>, SaraError> {
         match git_ref {
             GitRef::Head => {
-                let head = self
-                    .repo
-                    .head()
-                    .map_err(|e| SaraError::Git(e.to_string()))?;
-                head.peel_to_commit()
-                    .map_err(|e| SaraError::Git(e.to_string()))
+                let head = self.repo.head()?;
+                Ok(head.peel_to_commit()?)
             }
             GitRef::Commit(sha) => {
                 // Use revparse_single to handle abbreviated SHAs
-                let obj = self
-                    .repo
-                    .revparse_single(sha)
-                    .map_err(|e| SaraError::Git(e.to_string()))?;
-                obj.peel_to_commit()
-                    .map_err(|e| SaraError::Git(e.to_string()))
+                let obj = self.repo.revparse_single(sha)?;
+                Ok(obj.peel_to_commit()?)
             }
             GitRef::Branch(name) => {
-                let branch = self
-                    .repo
-                    .find_branch(name, git2::BranchType::Local)
-                    .map_err(|e| SaraError::Git(e.to_string()))?;
-                branch
-                    .get()
-                    .peel_to_commit()
-                    .map_err(|e| SaraError::Git(e.to_string()))
+                let branch = self.repo.find_branch(name, git2::BranchType::Local)?;
+                Ok(branch.get().peel_to_commit()?)
             }
             GitRef::Tag(name) => {
                 let tag_ref = format!("refs/tags/{}", name);
-                let obj = self
-                    .repo
-                    .revparse_single(&tag_ref)
-                    .map_err(|e| SaraError::Git(e.to_string()))?;
-                obj.peel_to_commit()
-                    .map_err(|e| SaraError::Git(e.to_string()))
+                let obj = self.repo.revparse_single(&tag_ref)?;
+                Ok(obj.peel_to_commit()?)
             }
         }
     }
 
     /// Reads a file from a specific commit.
     pub fn read_file(&self, commit: &Commit<'_>, path: &Path) -> Result<String, SaraError> {
-        let tree = commit.tree().map_err(|e| SaraError::Git(e.to_string()))?;
-
-        let entry = tree
-            .get_path(path)
-            .map_err(|e| SaraError::Git(e.to_string()))?;
-
-        let blob = entry
-            .to_object(&self.repo)
-            .map_err(|e| SaraError::Git(e.to_string()))?
-            .peel_to_blob()
-            .map_err(|e| SaraError::Git(e.to_string()))?;
+        let tree = commit.tree()?;
+        let entry = tree.get_path(path)?;
+        let blob = entry.to_object(&self.repo)?.peel_to_blob()?;
 
         String::from_utf8(blob.content().to_vec())
             .map_err(|e| SaraError::Git(format!("Invalid UTF-8 in file: {}", e)))
@@ -138,7 +112,7 @@ impl GitReader {
 
     /// Lists all Markdown files in a commit's tree.
     pub fn list_markdown_files(&self, commit: &Commit<'_>) -> Result<Vec<PathBuf>, SaraError> {
-        let tree = commit.tree().map_err(|e| SaraError::Git(e.to_string()))?;
+        let tree = commit.tree()?;
 
         let mut files = Vec::new();
         self.walk_tree(&tree, PathBuf::new(), &mut files)?;
@@ -172,11 +146,7 @@ impl GitReader {
                     }
                 }
                 Some(ObjectType::Tree) => {
-                    let subtree = entry
-                        .to_object(&self.repo)
-                        .map_err(|e| SaraError::Git(e.to_string()))?
-                        .peel_to_tree()
-                        .map_err(|e| SaraError::Git(e.to_string()))?;
+                    let subtree = entry.to_object(&self.repo)?.peel_to_tree()?;
                     self.walk_tree(&subtree, path, files)?;
                 }
                 _ => {}
@@ -247,25 +217,28 @@ mod tests {
 
     #[test]
     fn test_git_ref_parse_head() {
-        matches!(GitRef::parse("HEAD"), GitRef::Head);
-        matches!(GitRef::parse("head"), GitRef::Head);
+        assert!(matches!(GitRef::parse("HEAD"), GitRef::Head));
+        assert!(matches!(GitRef::parse("head"), GitRef::Head));
     }
 
     #[test]
     fn test_git_ref_parse_commit() {
-        matches!(GitRef::parse("abc1234"), GitRef::Commit(_));
-        matches!(GitRef::parse("abc123456789"), GitRef::Commit(_));
+        assert!(matches!(GitRef::parse("abc1234"), GitRef::Commit(_)));
+        assert!(matches!(GitRef::parse("abc123456789"), GitRef::Commit(_)));
     }
 
     #[test]
     fn test_git_ref_parse_branch() {
-        matches!(GitRef::parse("main"), GitRef::Branch(_));
-        matches!(GitRef::parse("refs/heads/main"), GitRef::Branch(_));
+        assert!(matches!(GitRef::parse("main"), GitRef::Branch(_)));
+        assert!(matches!(
+            GitRef::parse("refs/heads/main"),
+            GitRef::Branch(_)
+        ));
     }
 
     #[test]
     fn test_git_ref_parse_tag() {
-        matches!(GitRef::parse("refs/tags/v1.0"), GitRef::Tag(_));
+        assert!(matches!(GitRef::parse("refs/tags/v1.0"), GitRef::Tag(_)));
     }
 
     #[test]

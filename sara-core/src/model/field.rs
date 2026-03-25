@@ -42,32 +42,6 @@ pub enum FieldName {
 }
 
 impl FieldName {
-    /// Returns all known field names.
-    pub const fn all() -> &'static [FieldName] {
-        &[
-            Self::Id,
-            Self::Type,
-            Self::Name,
-            Self::Description,
-            Self::Refines,
-            Self::DerivesFrom,
-            Self::Satisfies,
-            Self::IsRefinedBy,
-            Self::Derives,
-            Self::IsSatisfiedBy,
-            Self::DependsOn,
-            Self::IsRequiredBy,
-            Self::Specification,
-            Self::Platform,
-            Self::JustifiedBy,
-            Self::Status,
-            Self::Deciders,
-            Self::Justifies,
-            Self::Supersedes,
-            Self::SupersededBy,
-        ]
-    }
-
     /// Returns the YAML field name (snake_case).
     ///
     /// Used for serialization, deserialization, and error messages.
@@ -186,17 +160,6 @@ mod tests {
         assert!(FieldName::Derives.is_downstream());
         assert!(FieldName::IsSatisfiedBy.is_downstream());
         assert!(!FieldName::Refines.is_downstream());
-    }
-
-    #[test]
-    fn test_field_name_all() {
-        let all = FieldName::all();
-        assert!(all.contains(&FieldName::Id));
-        assert!(all.contains(&FieldName::Refines));
-        assert!(all.contains(&FieldName::Specification));
-        assert!(all.contains(&FieldName::Status));
-        assert!(all.contains(&FieldName::Justifies));
-        assert_eq!(all.len(), 20);
     }
 
     #[test]

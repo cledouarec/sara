@@ -24,9 +24,8 @@ mod knowledge_graph;
 pub mod traversal;
 
 pub use diff::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
-pub use knowledge_graph::{KnowledgeGraph, KnowledgeGraphBuilder};
+pub use knowledge_graph::{KnowledgeGraph, KnowledgeGraphBuilder, LookupResult};
 pub use traversal::{
-    TraversalDirection, TraversalNode, TraversalOptions, TraversalResult, TraversalTree,
-    TraversalTreeNode, get_downstream_children, get_upstream_parents, traverse_downstream,
+    TraversalDirection, TraversalNode, TraversalOptions, TraversalResult, traverse_downstream,
     traverse_upstream,
 };

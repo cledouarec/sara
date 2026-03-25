@@ -4,10 +4,23 @@ use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
-use std::path::PathBuf;
+
+use strsim::levenshtein;
 
 use crate::error::SaraError;
 use crate::model::{Item, ItemId, ItemType, RelationshipType};
+
+/// Result of looking up an item.
+#[derive(Debug)]
+pub enum LookupResult<'a> {
+    /// Item found.
+    Found(&'a Item),
+    /// Item not found, but similar items exist.
+    NotFound {
+        /// Suggestions for similar item IDs.
+        suggestions: Vec<&'a ItemId>,
+    },
+}
 
 /// The main knowledge graph container.
 #[derive(Debug)]
@@ -153,11 +166,6 @@ impl KnowledgeGraph {
         self.index.get(id).copied()
     }
 
-    /// Checks if the graph has cycles.
-    pub fn has_cycles(&self) -> bool {
-        petgraph::algo::is_cyclic_directed(&self.graph)
-    }
-
     /// Returns all relationships in the graph.
     pub fn relationships(&self) -> Vec<(ItemId, ItemId, RelationshipType)> {
         self.graph
@@ -167,6 +175,99 @@ impl KnowledgeGraph {
                 let to = self.graph.node_weight(edge.target())?;
                 Some((from.id.clone(), to.id.clone(), *edge.weight()))
             })
+            .collect()
+    }
+
+    /// Looks up an item by ID.
+    ///
+    /// If the item is not found, returns suggestions for similar IDs.
+    pub fn lookup(&self, id: &str) -> LookupResult<'_> {
+        let item_id = ItemId::new_unchecked(id);
+
+        if let Some(item) = self.get(&item_id) {
+            return LookupResult::Found(item);
+        }
+
+        let suggestions = self
+            .find_similar_ids_scored(id, 5)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        LookupResult::NotFound { suggestions }
+    }
+
+    /// Looks up an item by ID, returning suggestions if not found.
+    ///
+    /// Returns a `SaraError::ItemNotFound` with similar ID suggestions
+    /// when the item is missing.
+    pub fn lookup_or_suggest(&self, id: &str) -> Result<&Item, SaraError> {
+        let item_id = ItemId::new_unchecked(id);
+
+        if let Some(item) = self.get(&item_id) {
+            return Ok(item);
+        }
+
+        let suggestions = self.find_similar_ids(id, 3);
+        Err(SaraError::ItemNotFound {
+            id: id.to_string(),
+            suggestions,
+        })
+    }
+
+    /// Finds item IDs similar to the given query string using Levenshtein distance.
+    ///
+    /// Returns up to `max_suggestions` similar item IDs, sorted by distance.
+    /// Only includes suggestions with a reasonable edit distance.
+    pub fn find_similar_ids(&self, query: &str, max_suggestions: usize) -> Vec<String> {
+        self.find_similar_ids_scored(query, max_suggestions)
+            .into_iter()
+            .map(|(id, _)| id.as_str().to_string())
+            .collect()
+    }
+
+    /// Checks if parent items exist for the given item type.
+    ///
+    /// Solution has no parent requirement and always returns Ok.
+    pub fn check_parent_exists(&self, item_type: ItemType) -> Result<(), SaraError> {
+        let Some(parent_type) = item_type.required_parent_type() else {
+            return Ok(());
+        };
+
+        let has_parents = self.items().any(|item| item.item_type == parent_type);
+
+        if has_parents {
+            Ok(())
+        } else {
+            Err(SaraError::MissingParent {
+                item_type: item_type.display_name().to_string(),
+                parent_type: parent_type.display_name().to_string(),
+            })
+        }
+    }
+
+    /// Core implementation for finding similar IDs with Levenshtein distance scoring.
+    fn find_similar_ids_scored(
+        &self,
+        query: &str,
+        max_suggestions: usize,
+    ) -> Vec<(&ItemId, usize)> {
+        let query_lower = query.to_lowercase();
+
+        let mut scored: Vec<_> = self
+            .item_ids()
+            .map(|id| {
+                let id_lower = id.as_str().to_lowercase();
+                let distance = levenshtein(&query_lower, &id_lower);
+                (id, distance)
+            })
+            .collect();
+
+        scored.sort_by_key(|(_, distance)| *distance);
+
+        scored
+            .into_iter()
+            .filter(|(_, distance)| *distance <= query.len().max(3))
+            .take(max_suggestions)
             .collect()
     }
 }
@@ -181,19 +282,12 @@ impl Default for KnowledgeGraph {
 #[derive(Debug, Default)]
 pub struct KnowledgeGraphBuilder {
     items: Vec<Item>,
-    repositories: Vec<PathBuf>,
 }
 
 impl KnowledgeGraphBuilder {
     /// Creates a new graph builder.
     pub fn new() -> Self {
         Self::default()
-    }
-
-    /// Adds a repository path.
-    pub fn add_repository(mut self, path: impl Into<PathBuf>) -> Self {
-        self.repositories.push(path.into());
-        self
     }
 
     /// Adds an item to the graph.
@@ -212,57 +306,67 @@ impl KnowledgeGraphBuilder {
     pub fn build(self) -> Result<KnowledgeGraph, SaraError> {
         let mut graph = KnowledgeGraph::new();
 
-        // First pass: add all items
-        for item in &self.items {
-            graph.add_item(item.clone());
+        // First pass: collect all relationship edges from items (before moving them)
+        let edges: Vec<_> = self.items.iter().flat_map(Self::collect_edges).collect();
+
+        // Second pass: move items into the graph (no clone needed)
+        for item in self.items {
+            graph.add_item(item);
         }
 
-        // Second pass: add relationships based on item references
-        for item in &self.items {
-            self.add_relationships_for_item(&mut graph, item);
+        // Third pass: add relationship edges
+        for (from, to, rel_type) in edges {
+            graph.add_relationship(&from, &to, rel_type);
         }
 
         Ok(graph)
     }
 
-    /// Adds relationships for an item based on its references.
-    fn add_relationships_for_item(&self, graph: &mut KnowledgeGraph, item: &Item) {
-        // Add all relationships from the item's relationships vec
+    /// Collects all relationship edges for an item as (from, to, type) tuples.
+    fn collect_edges(item: &Item) -> Vec<(ItemId, ItemId, RelationshipType)> {
+        let mut edges = Vec::new();
+
         for rel in &item.relationships {
-            graph.add_relationship(&item.id, &rel.to, rel.relationship_type);
+            edges.push((item.id.clone(), rel.to.clone(), rel.relationship_type));
 
             // For certain relationship types, add the inverse edge for bidirectional traversal
-            match rel.relationship_type {
-                RelationshipType::Justifies => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::IsJustifiedBy);
-                }
-                RelationshipType::IsRefinedBy => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Refines);
-                }
-                RelationshipType::Derives => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::DerivesFrom);
-                }
-                RelationshipType::IsSatisfiedBy => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Satisfies);
-                }
-                RelationshipType::IsJustifiedBy => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Justifies);
-                }
-                _ => {}
+            let inverse = match rel.relationship_type {
+                RelationshipType::Justifies => Some(RelationshipType::IsJustifiedBy),
+                RelationshipType::IsRefinedBy => Some(RelationshipType::Refines),
+                RelationshipType::Derives => Some(RelationshipType::DerivesFrom),
+                RelationshipType::IsSatisfiedBy => Some(RelationshipType::Satisfies),
+                RelationshipType::IsJustifiedBy => Some(RelationshipType::Justifies),
+                _ => None,
+            };
+            if let Some(inv_type) = inverse {
+                edges.push((rel.to.clone(), item.id.clone(), inv_type));
             }
         }
 
-        // Add peer dependencies (for requirement types, stored in attributes)
+        // Peer dependencies (for requirement types, stored in attributes)
         for target_id in item.attributes.depends_on() {
-            graph.add_relationship(&item.id, target_id, RelationshipType::DependsOn);
+            edges.push((
+                item.id.clone(),
+                target_id.clone(),
+                RelationshipType::DependsOn,
+            ));
         }
 
         // ADR supersession (peer relationships between ADRs, stored in attributes)
         for target_id in item.attributes.supersedes() {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Supersedes);
-            // Add inverse: target is superseded by this ADR
-            graph.add_relationship(target_id, &item.id, RelationshipType::IsSupersededBy);
+            edges.push((
+                item.id.clone(),
+                target_id.clone(),
+                RelationshipType::Supersedes,
+            ));
+            edges.push((
+                target_id.clone(),
+                item.id.clone(),
+                RelationshipType::IsSupersededBy,
+            ));
         }
+
+        edges
     }
 }
 
@@ -388,5 +492,41 @@ mod tests {
         // ADR-002 -> Supersedes -> ADR-001
         // ADR-001 -> IsSupersededBy -> ADR-002
         assert_eq!(graph.relationship_count(), 2);
+    }
+
+    #[test]
+    fn test_lookup_found() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .build()
+            .unwrap();
+
+        match graph.lookup("SOL-001") {
+            LookupResult::Found(item) => {
+                assert_eq!(item.id.as_str(), "SOL-001");
+            }
+            LookupResult::NotFound { .. } => panic!("Expected to find item"),
+        }
+    }
+
+    #[test]
+    fn test_lookup_not_found_with_suggestions() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-002", ItemType::Solution))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .build()
+            .unwrap();
+
+        match graph.lookup("SOL-003") {
+            LookupResult::Found(_) => panic!("Should not find item"),
+            LookupResult::NotFound { suggestions } => {
+                assert!(!suggestions.is_empty());
+                let suggestion_strs: Vec<_> = suggestions.iter().map(|id| id.as_str()).collect();
+                assert!(
+                    suggestion_strs.contains(&"SOL-001") || suggestion_strs.contains(&"SOL-002")
+                );
+            }
+        }
     }
 }
