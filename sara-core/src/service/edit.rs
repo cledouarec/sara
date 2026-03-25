@@ -13,7 +13,6 @@ use crate::model::{
     TraceabilityLinks,
 };
 use crate::parser::update_frontmatter;
-use crate::query::lookup_item_or_suggest;
 
 /// Options for editing an item.
 #[derive(Debug, Clone, Default)]
@@ -299,7 +298,7 @@ impl EditService {
         graph: &'a KnowledgeGraph,
         item_id: &str,
     ) -> Result<&'a Item, SaraError> {
-        lookup_item_or_suggest(graph, item_id)
+        graph.lookup_or_suggest(item_id)
     }
 
     /// Gets the context for an item.

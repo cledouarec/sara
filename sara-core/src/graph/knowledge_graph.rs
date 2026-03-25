@@ -5,8 +5,22 @@ use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 use std::collections::HashMap;
 
+use strsim::levenshtein;
+
 use crate::error::SaraError;
 use crate::model::{Item, ItemId, ItemType, RelationshipType};
+
+/// Result of looking up an item.
+#[derive(Debug)]
+pub enum LookupResult<'a> {
+    /// Item found.
+    Found(&'a Item),
+    /// Item not found, but similar items exist.
+    NotFound {
+        /// Suggestions for similar item IDs.
+        suggestions: Vec<&'a ItemId>,
+    },
+}
 
 /// The main knowledge graph container.
 #[derive(Debug)]
@@ -166,6 +180,99 @@ impl KnowledgeGraph {
                 let to = self.graph.node_weight(edge.target())?;
                 Some((from.id.clone(), to.id.clone(), *edge.weight()))
             })
+            .collect()
+    }
+
+    /// Looks up an item by ID.
+    ///
+    /// If the item is not found, returns suggestions for similar IDs.
+    pub fn lookup(&self, id: &str) -> LookupResult<'_> {
+        let item_id = ItemId::new_unchecked(id);
+
+        if let Some(item) = self.get(&item_id) {
+            return LookupResult::Found(item);
+        }
+
+        let suggestions = self
+            .find_similar_ids_scored(id, 5)
+            .into_iter()
+            .map(|(id, _)| id)
+            .collect();
+        LookupResult::NotFound { suggestions }
+    }
+
+    /// Looks up an item by ID, returning suggestions if not found.
+    ///
+    /// Returns a `SaraError::ItemNotFound` with similar ID suggestions
+    /// when the item is missing.
+    pub fn lookup_or_suggest(&self, id: &str) -> Result<&Item, SaraError> {
+        let item_id = ItemId::new_unchecked(id);
+
+        if let Some(item) = self.get(&item_id) {
+            return Ok(item);
+        }
+
+        let suggestions = self.find_similar_ids(id, 3);
+        Err(SaraError::ItemNotFound {
+            id: id.to_string(),
+            suggestions,
+        })
+    }
+
+    /// Finds item IDs similar to the given query string using Levenshtein distance.
+    ///
+    /// Returns up to `max_suggestions` similar item IDs, sorted by distance.
+    /// Only includes suggestions with a reasonable edit distance.
+    pub fn find_similar_ids(&self, query: &str, max_suggestions: usize) -> Vec<String> {
+        self.find_similar_ids_scored(query, max_suggestions)
+            .into_iter()
+            .map(|(id, _)| id.as_str().to_string())
+            .collect()
+    }
+
+    /// Checks if parent items exist for the given item type.
+    ///
+    /// Solution has no parent requirement and always returns Ok.
+    pub fn check_parent_exists(&self, item_type: ItemType) -> Result<(), SaraError> {
+        let Some(parent_type) = item_type.required_parent_type() else {
+            return Ok(());
+        };
+
+        let has_parents = self.items().any(|item| item.item_type == parent_type);
+
+        if has_parents {
+            Ok(())
+        } else {
+            Err(SaraError::MissingParent {
+                item_type: item_type.display_name().to_string(),
+                parent_type: parent_type.display_name().to_string(),
+            })
+        }
+    }
+
+    /// Core implementation for finding similar IDs with Levenshtein distance scoring.
+    fn find_similar_ids_scored(
+        &self,
+        query: &str,
+        max_suggestions: usize,
+    ) -> Vec<(&ItemId, usize)> {
+        let query_lower = query.to_lowercase();
+
+        let mut scored: Vec<_> = self
+            .item_ids()
+            .map(|id| {
+                let id_lower = id.as_str().to_lowercase();
+                let distance = levenshtein(&query_lower, &id_lower);
+                (id, distance)
+            })
+            .collect();
+
+        scored.sort_by_key(|(_, distance)| *distance);
+
+        scored
+            .into_iter()
+            .filter(|(_, distance)| *distance <= query.len().max(3))
+            .take(max_suggestions)
             .collect()
     }
 }
@@ -380,5 +487,41 @@ mod tests {
         // ADR-002 -> Supersedes -> ADR-001
         // ADR-001 -> IsSupersededBy -> ADR-002
         assert_eq!(graph.relationship_count(), 2);
+    }
+
+    #[test]
+    fn test_lookup_found() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .build()
+            .unwrap();
+
+        match graph.lookup("SOL-001") {
+            LookupResult::Found(item) => {
+                assert_eq!(item.id.as_str(), "SOL-001");
+            }
+            LookupResult::NotFound { .. } => panic!("Expected to find item"),
+        }
+    }
+
+    #[test]
+    fn test_lookup_not_found_with_suggestions() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-002", ItemType::Solution))
+            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .build()
+            .unwrap();
+
+        match graph.lookup("SOL-003") {
+            LookupResult::Found(_) => panic!("Should not find item"),
+            LookupResult::NotFound { suggestions } => {
+                assert!(!suggestions.is_empty());
+                let suggestion_strs: Vec<_> = suggestions.iter().map(|id| id.as_str()).collect();
+                assert!(
+                    suggestion_strs.contains(&"SOL-001") || suggestion_strs.contains(&"SOL-002")
+                );
+            }
+        }
     }
 }

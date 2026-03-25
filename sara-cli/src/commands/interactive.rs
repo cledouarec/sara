@@ -10,9 +10,9 @@ use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use thiserror::Error;
 
+use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
-use sara_core::query::{MissingParentError, check_parent_exists};
 use sara_core::repository::parse_repositories;
 
 use crate::output::{OutputConfig, print_error};
@@ -83,7 +83,7 @@ pub enum PromptError {
     NonInteractiveTerminal,
 
     #[error(transparent)]
-    MissingParent(#[from] MissingParentError),
+    MissingParent(#[from] SaraError),
 
     #[error("User cancelled")]
     Cancelled,
@@ -665,7 +665,9 @@ pub fn run_interactive_session(
     ensure_graph_loaded(session);
 
     let item_type = prompt_item_type(session.prefilled.item_type)?;
-    check_parent_exists(item_type, session.graph.as_ref())?;
+    if let Some(graph) = &session.graph {
+        graph.check_parent_exists(item_type)?;
+    }
 
     let input = collect_item_input(session, item_type)?;
     confirm_creation(&input)?;
@@ -796,9 +798,9 @@ pub fn handle_interactive_result(
             );
             Err(PromptError::NonInteractiveTerminal)
         }
-        Err(PromptError::MissingParent(ref err)) => {
+        Err(PromptError::MissingParent(err)) => {
             print_error(config, &err.to_string());
-            Err(PromptError::MissingParent(err.clone()))
+            Err(PromptError::MissingParent(err))
         }
         Err(e) => Err(e),
     }

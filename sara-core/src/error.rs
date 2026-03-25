@@ -268,6 +268,17 @@ pub enum SaraError {
     },
 
     // ==================== Queries ====================
+    /// No parent items exist for the given item type.
+    #[error(
+        "Cannot create {item_type}: no {parent_type} items exist. Create a {parent_type} first."
+    )]
+    MissingParent {
+        /// The item type that requires a parent.
+        item_type: String,
+        /// The parent type that is missing.
+        parent_type: String,
+    },
+
     /// Item was not found in the knowledge graph.
     #[error("Item not found: {id}")]
     ItemNotFound {
