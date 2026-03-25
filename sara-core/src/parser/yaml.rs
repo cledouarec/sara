@@ -95,6 +95,14 @@ pub struct RawFrontmatter {
     pub superseded_by: Option<String>,
 }
 
+/// Extends a relationship vector with relationships built from a slice of ID strings.
+fn extend_rels(rels: &mut Vec<Relationship>, ids: &[String], rel_type: RelationshipType) {
+    rels.extend(
+        ids.iter()
+            .map(|id| Relationship::new(ItemId::new_unchecked(id), rel_type)),
+    );
+}
+
 impl RawFrontmatter {
     /// Converts all relationship fields to a Vec of Relationships.
     #[must_use]
@@ -102,66 +110,29 @@ impl RawFrontmatter {
         let mut rels = Vec::new();
 
         // Upstream relationships
-        for id in &self.refines {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Refines,
-            ));
-        }
-        for id in &self.derives_from {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::DerivesFrom,
-            ));
-        }
-        for id in &self.satisfies {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Satisfies,
-            ));
-        }
-        for id in &self.justifies {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Justifies,
-            ));
-        }
+        extend_rels(&mut rels, &self.refines, RelationshipType::Refines);
+        extend_rels(&mut rels, &self.derives_from, RelationshipType::DerivesFrom);
+        extend_rels(&mut rels, &self.satisfies, RelationshipType::Satisfies);
+        extend_rels(&mut rels, &self.justifies, RelationshipType::Justifies);
 
         // Downstream relationships
-        for id in &self.is_refined_by {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::IsRefinedBy,
-            ));
-        }
-        for id in &self.derives {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Derives,
-            ));
-        }
-        for id in &self.is_satisfied_by {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::IsSatisfiedBy,
-            ));
-        }
+        extend_rels(
+            &mut rels,
+            &self.is_refined_by,
+            RelationshipType::IsRefinedBy,
+        );
+        extend_rels(&mut rels, &self.derives, RelationshipType::Derives);
+        extend_rels(
+            &mut rels,
+            &self.is_satisfied_by,
+            RelationshipType::IsSatisfiedBy,
+        );
         if let Some(justified_by) = &self.justified_by {
-            for id in justified_by {
-                rels.push(Relationship::new(
-                    ItemId::new_unchecked(id),
-                    RelationshipType::IsJustifiedBy,
-                ));
-            }
+            extend_rels(&mut rels, justified_by, RelationshipType::IsJustifiedBy);
         }
 
         // Peer relationships
-        for id in &self.supersedes {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::Supersedes,
-            ));
-        }
+        extend_rels(&mut rels, &self.supersedes, RelationshipType::Supersedes);
         if let Some(id) = &self.superseded_by {
             rels.push(Relationship::new(
                 ItemId::new_unchecked(id),
