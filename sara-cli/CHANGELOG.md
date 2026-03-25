@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.6.0...sara-cli-v0.7.0) - 2026-03-25
+
+### Changed
+
+- move query module into graph as KnowledgeGraph methods (by @cledouarec) - #61
+
+### Contributors
+
+* @cledouarec
+
 ## [0.6.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.5.4...sara-cli-v0.6.0) - 2026-03-24
 
 ### Changed
