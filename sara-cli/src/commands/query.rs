@@ -6,10 +6,10 @@ use std::process::ExitCode;
 use clap::Args;
 
 use sara_core::graph::{
-    KnowledgeGraph, KnowledgeGraphBuilder, TraversalNode, TraversalOptions, TraversalResult,
+    KnowledgeGraph, KnowledgeGraphBuilder, LookupResult, TraversalNode, TraversalOptions,
+    TraversalResult, traverse_downstream, traverse_upstream,
 };
 use sara_core::model::{Item, ItemId, ItemType};
-use sara_core::query::{LookupResult, QueryEngine};
 
 use super::CommandContext;
 use crate::output::{
@@ -56,10 +56,9 @@ pub struct QueryArgs {
 pub fn run(args: &QueryArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let items = ctx.parse_items(None)?;
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
-    let engine = QueryEngine::new(&graph);
 
-    match engine.lookup(&args.item_id) {
-        LookupResult::Found(item) => handle_found_item(args, ctx, item, &graph, &engine),
+    match graph.lookup(&args.item_id) {
+        LookupResult::Found(item) => handle_found_item(args, ctx, item, &graph),
         LookupResult::NotFound { suggestions } => handle_not_found(args, ctx, &suggestions),
     }
 }
@@ -70,14 +69,13 @@ fn handle_found_item(
     ctx: &CommandContext,
     item: &Item,
     graph: &KnowledgeGraph,
-    engine: &QueryEngine,
 ) -> Result<ExitCode, Box<dyn Error>> {
     let config = &ctx.output;
 
     print_item_info(config, item, graph);
 
     if args.upstream || args.downstream {
-        print_traceability(args, config, item, graph, engine);
+        print_traceability(args, config, item, graph);
     } else {
         print_direct_relationships(config, item, graph);
     }
@@ -91,14 +89,13 @@ fn print_traceability(
     config: &OutputConfig,
     item: &Item,
     graph: &KnowledgeGraph,
-    engine: &QueryEngine,
 ) {
     let traversal_opts = build_traversal_options(args);
 
     if args.upstream {
         println!();
         print_header(config, &format!("Upstream Traceability for {}", item.id));
-        if let Some(result) = engine.trace_upstream(&item.id, &traversal_opts) {
+        if let Some(result) = traverse_upstream(graph, &item.id, &traversal_opts) {
             print_traversal(config, &result, graph, args);
         }
     }
@@ -106,7 +103,7 @@ fn print_traceability(
     if args.downstream {
         println!();
         print_header(config, &format!("Downstream from {}", item.id));
-        if let Some(result) = engine.trace_downstream(&item.id, &traversal_opts) {
+        if let Some(result) = traverse_downstream(graph, &item.id, &traversal_opts) {
             print_traversal(config, &result, graph, args);
         }
     }
