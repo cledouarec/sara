@@ -306,57 +306,67 @@ impl KnowledgeGraphBuilder {
     pub fn build(self) -> Result<KnowledgeGraph, SaraError> {
         let mut graph = KnowledgeGraph::new();
 
-        // First pass: add all items
-        for item in &self.items {
-            graph.add_item(item.clone());
+        // First pass: collect all relationship edges from items (before moving them)
+        let edges: Vec<_> = self.items.iter().flat_map(Self::collect_edges).collect();
+
+        // Second pass: move items into the graph (no clone needed)
+        for item in self.items {
+            graph.add_item(item);
         }
 
-        // Second pass: add relationships based on item references
-        for item in &self.items {
-            self.add_relationships_for_item(&mut graph, item);
+        // Third pass: add relationship edges
+        for (from, to, rel_type) in edges {
+            graph.add_relationship(&from, &to, rel_type);
         }
 
         Ok(graph)
     }
 
-    /// Adds relationships for an item based on its references.
-    fn add_relationships_for_item(&self, graph: &mut KnowledgeGraph, item: &Item) {
-        // Add all relationships from the item's relationships vec
+    /// Collects all relationship edges for an item as (from, to, type) tuples.
+    fn collect_edges(item: &Item) -> Vec<(ItemId, ItemId, RelationshipType)> {
+        let mut edges = Vec::new();
+
         for rel in &item.relationships {
-            graph.add_relationship(&item.id, &rel.to, rel.relationship_type);
+            edges.push((item.id.clone(), rel.to.clone(), rel.relationship_type));
 
             // For certain relationship types, add the inverse edge for bidirectional traversal
-            match rel.relationship_type {
-                RelationshipType::Justifies => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::IsJustifiedBy);
-                }
-                RelationshipType::IsRefinedBy => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Refines);
-                }
-                RelationshipType::Derives => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::DerivesFrom);
-                }
-                RelationshipType::IsSatisfiedBy => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Satisfies);
-                }
-                RelationshipType::IsJustifiedBy => {
-                    graph.add_relationship(&rel.to, &item.id, RelationshipType::Justifies);
-                }
-                _ => {}
+            let inverse = match rel.relationship_type {
+                RelationshipType::Justifies => Some(RelationshipType::IsJustifiedBy),
+                RelationshipType::IsRefinedBy => Some(RelationshipType::Refines),
+                RelationshipType::Derives => Some(RelationshipType::DerivesFrom),
+                RelationshipType::IsSatisfiedBy => Some(RelationshipType::Satisfies),
+                RelationshipType::IsJustifiedBy => Some(RelationshipType::Justifies),
+                _ => None,
+            };
+            if let Some(inv_type) = inverse {
+                edges.push((rel.to.clone(), item.id.clone(), inv_type));
             }
         }
 
-        // Add peer dependencies (for requirement types, stored in attributes)
+        // Peer dependencies (for requirement types, stored in attributes)
         for target_id in item.attributes.depends_on() {
-            graph.add_relationship(&item.id, target_id, RelationshipType::DependsOn);
+            edges.push((
+                item.id.clone(),
+                target_id.clone(),
+                RelationshipType::DependsOn,
+            ));
         }
 
         // ADR supersession (peer relationships between ADRs, stored in attributes)
         for target_id in item.attributes.supersedes() {
-            graph.add_relationship(&item.id, target_id, RelationshipType::Supersedes);
-            // Add inverse: target is superseded by this ADR
-            graph.add_relationship(target_id, &item.id, RelationshipType::IsSupersededBy);
+            edges.push((
+                item.id.clone(),
+                target_id.clone(),
+                RelationshipType::Supersedes,
+            ));
+            edges.push((
+                target_id.clone(),
+                item.id.clone(),
+                RelationshipType::IsSupersededBy,
+            ));
         }
+
+        edges
     }
 }
 
