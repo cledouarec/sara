@@ -1,10 +1,10 @@
 //! Knowledge graph implementation using petgraph.
 
+use std::collections::HashMap;
+
 use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
-use std::collections::HashMap;
-
 use strsim::levenshtein;
 
 use crate::error::SaraError;

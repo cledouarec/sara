@@ -7,11 +7,10 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use clap::Args;
-use serde::Serialize;
-
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::ItemType;
 use sara_core::validation::{ValidationReport, pre_validate, validate};
+use serde::Serialize;
 
 use super::CommandContext;
 use crate::output::{OutputConfig, format_error, format_success, format_warning, print_warning};

@@ -107,8 +107,9 @@ pub fn update_frontmatter(content: &str, new_yaml: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     #[test]
     fn test_extract_frontmatter_valid() {

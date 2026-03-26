@@ -10,12 +10,12 @@ mod frontmatter;
 mod markdown;
 mod yaml;
 
+use std::path::Path;
+
 #[doc(inline)]
 pub use frontmatter::{has_frontmatter, update_frontmatter};
 #[doc(inline)]
 pub use markdown::extract_name_from_content;
-
-use std::path::Path;
 
 use crate::error::SaraError;
 use crate::model::Item;
@@ -47,9 +47,10 @@ pub fn parse_metadata(
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::model::{ItemType, RelationshipType};
-    use std::path::PathBuf;
 
     const SOLUTION_MD: &str = r#"---
 id: "SOL-001"

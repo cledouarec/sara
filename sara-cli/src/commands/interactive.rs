@@ -8,12 +8,11 @@ use std::path::PathBuf;
 
 use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
-use thiserror::Error;
-
 use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
 use sara_core::repository::parse_repositories;
+use thiserror::Error;
 
 use crate::output::{OutputConfig, print_error};
 

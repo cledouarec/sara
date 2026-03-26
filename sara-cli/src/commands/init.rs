@@ -5,7 +5,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
-
 use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
 
 use super::CommandContext;
@@ -309,8 +308,9 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
 
 /// Builds a TypeConfig from interactive session input.
 fn build_type_config_from_interactive(input: &super::interactive::InteractiveInput) -> TypeConfig {
-    use super::interactive::TypeSpecificInput;
     use sara_core::model::ItemType;
+
+    use super::interactive::TypeSpecificInput;
 
     match (&input.item_type, &input.type_specific) {
         (ItemType::Solution, _) => TypeConfig::Solution,
@@ -605,8 +605,9 @@ fn print_item_info(_config: &OutputConfig, result: &InitResult) {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use clap::CommandFactory;
+
+    use super::*;
 
     // Implement CommandFactory for InitArgs to enable testing
     impl CommandFactory for InitArgs {

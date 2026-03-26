@@ -638,8 +638,9 @@ pub fn parse_item_type(type_str: &str) -> Option<ItemType> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_parse_item_type() {

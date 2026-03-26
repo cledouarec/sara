@@ -4,7 +4,6 @@ use std::error::Error;
 use std::process::ExitCode;
 
 use clap::Args;
-
 use sara_core::graph::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
 use sara_core::service::{DiffOptions, DiffResult, DiffService};
 

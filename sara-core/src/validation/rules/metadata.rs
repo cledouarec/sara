@@ -89,10 +89,11 @@ fn contains_rfc2119_keyword(text: &str) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation};
-    use std::path::PathBuf;
 
     fn create_item_with_spec(id: &str, item_type: ItemType, spec: &str) -> crate::model::Item {
         let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
