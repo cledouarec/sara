@@ -26,6 +26,7 @@ commit_parsers = [
     { message = "^refactor", group = "Changed" },
     { message = "^test", group = "Testing" },
     { message = "^build", group = "Build" },
+    { message = "^style", group = "Styling" },
     { message = "^ci", group = "CI/CD" },
 
     # Catch-all for anything else

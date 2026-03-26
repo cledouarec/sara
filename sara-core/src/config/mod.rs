@@ -2,9 +2,9 @@
 
 mod settings;
 
-pub use settings::{Config, OutputConfig, RepositoryConfig, TemplatesConfig, ValidationConfig};
-
 use std::path::Path;
+
+pub use settings::{Config, OutputConfig, RepositoryConfig, TemplatesConfig, ValidationConfig};
 
 use crate::error::SaraError;
 

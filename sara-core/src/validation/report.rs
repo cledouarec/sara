@@ -4,10 +4,9 @@ use std::collections::HashMap;
 
 use serde::Serialize;
 
+use super::rule::Severity;
 use crate::error::SaraError;
 use crate::model::ItemType;
-
-use super::rule::Severity;
 
 /// A validation issue with its severity.
 #[derive(Debug, Serialize)]

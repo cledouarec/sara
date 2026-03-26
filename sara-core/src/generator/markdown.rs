@@ -296,10 +296,11 @@ fn escape_yaml_string(s: &str) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::model::SourceLocation;
     use crate::model::{AdrStatus, ItemBuilder, ItemId, Relationship, RelationshipType};
-    use std::path::PathBuf;
 
     fn test_source() -> SourceLocation {
         SourceLocation {

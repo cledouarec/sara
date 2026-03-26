@@ -7,7 +7,6 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Args, Subcommand};
-
 use sara_core::graph::KnowledgeGraphBuilder;
 use sara_core::report::{CoverageReport, TraceabilityMatrix};
 

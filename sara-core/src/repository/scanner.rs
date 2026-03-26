@@ -174,8 +174,9 @@ pub fn parse_repositories(paths: &[PathBuf]) -> Result<Vec<Item>, SaraError> {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::path::PathBuf;
+
+    use super::*;
 
     #[test]
     fn test_scan_fixtures() {

@@ -1,7 +1,8 @@
 //! Metadata structures for items and source tracking.
 
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
 
 /// Tracks the file origin of an item for error reporting.
 #[derive(Debug, Clone, Serialize, Deserialize)]

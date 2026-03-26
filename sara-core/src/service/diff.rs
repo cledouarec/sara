@@ -232,10 +232,12 @@ impl DiffService {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use std::fs;
     use std::path::Path;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     fn create_test_file(dir: &Path, name: &str, content: &str) {
         fs::write(dir.join(name), content).unwrap();

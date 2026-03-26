@@ -93,9 +93,10 @@ pub fn extract_name_from_content(content: &str) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::model::{AdrStatus, RelationshipType};
-    use std::path::PathBuf;
 
     const SOLUTION_MD: &str = r#"---
 id: "SOL-001"

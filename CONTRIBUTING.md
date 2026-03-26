@@ -83,6 +83,7 @@ We use [Conventional Commits](https://www.conventionalcommits.org/) format:
 | `refactor:` | Code refactoring |
 | `test:` | Test additions |
 | `build:` | Build system and dependencies |
+| `style:` | Code style and formatting |
 | `ci:` | CI/CD configuration changes |
 
 ## Code of Conduct

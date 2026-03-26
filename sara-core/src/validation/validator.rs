@@ -136,6 +136,8 @@ pub fn pre_validate(items: &[Item], strict: bool) -> ValidationReport {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::error::SaraError;
     use crate::graph::KnowledgeGraphBuilder;
@@ -144,7 +146,6 @@ mod tests {
         SourceLocation,
     };
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
-    use std::path::PathBuf;
 
     #[test]
     fn test_valid_graph() {

@@ -19,9 +19,7 @@ fn ids_to_relationships(ids: &[String], rel_type: RelationshipType) -> Vec<Relat
 
 // Diff service exports
 pub use diff::{DiffError, DiffOptions, DiffResult, DiffService};
-
 // Edit service exports
 pub use edit::{EditOptions, EditResult, EditService, EditedValues, ItemContext};
-
 // Init service exports
 pub use init::{InitError, InitOptions, InitResult, InitService, TypeConfig, parse_item_type};

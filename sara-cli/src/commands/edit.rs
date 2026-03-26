@@ -8,7 +8,6 @@ use std::process::ExitCode;
 
 use clap::Args;
 use inquire::{Confirm, InquireError};
-
 use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};

@@ -4,7 +4,6 @@ use std::error::Error;
 use std::process::ExitCode;
 
 use clap::Args;
-
 use sara_core::graph::{
     KnowledgeGraph, KnowledgeGraphBuilder, LookupResult, TraversalNode, TraversalOptions,
     TraversalResult, traverse_downstream, traverse_upstream,

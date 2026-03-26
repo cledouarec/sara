@@ -19,15 +19,14 @@ use sara_core::config::Config;
 use sara_core::model::Item;
 use sara_core::repository::{GitReader, GitRef, parse_repositories};
 
-use crate::Cli;
-use crate::output::OutputConfig;
-
 use self::check::CheckArgs;
 use self::diff::DiffArgs;
 use self::edit::EditArgs;
 use self::init::InitArgs;
 use self::query::QueryArgs;
 use self::report::ReportArgs;
+use crate::Cli;
+use crate::output::OutputConfig;
 
 /// Shared context for command execution.
 #[derive(Debug, Clone)]

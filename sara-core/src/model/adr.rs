@@ -1,8 +1,9 @@
 //! ADR (Architecture Decision Record) lifecycle types.
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::str::FromStr;
+
+use serde::{Deserialize, Serialize};
 
 /// Represents the lifecycle status of an ADR.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]

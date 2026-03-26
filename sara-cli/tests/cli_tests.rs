@@ -2,9 +2,10 @@
 //!
 //! These tests verify that CLI commands work correctly end-to-end.
 
+use std::path::PathBuf;
+
 use assert_cmd::Command;
 use predicates::prelude::*;
-use std::path::PathBuf;
 
 /// Get the path to the test fixtures directory (in workspace root).
 fn fixtures_path() -> PathBuf {
@@ -211,9 +212,11 @@ mod report_command {
 }
 
 mod init_command {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_init_new_file() {
@@ -373,8 +376,9 @@ mod cycles_detection {
 }
 
 mod csv_output {
-    use super::*;
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_report_csv_format() {
@@ -477,9 +481,11 @@ mod query_formats {
 }
 
 mod interactive_mode {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_init_without_subcommand_fails_in_non_tty() {
@@ -557,9 +563,11 @@ mod interactive_mode {
 }
 
 mod edit_command {
-    use super::*;
     use std::fs;
+
     use tempfile::TempDir;
+
+    use super::*;
 
     #[test]
     fn test_edit_help() {

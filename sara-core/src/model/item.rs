@@ -1,13 +1,13 @@
 //! Item types and structures for the knowledge graph.
 
-use serde::{Deserialize, Serialize};
 use std::fmt;
 
+use serde::{Deserialize, Serialize};
+
+use super::adr::AdrStatus;
 use crate::error::SaraError;
 use crate::model::FieldName;
 use crate::model::relationship::{Relationship, RelationshipType};
-
-use super::adr::AdrStatus;
 
 /// Represents the type of item in the knowledge graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
