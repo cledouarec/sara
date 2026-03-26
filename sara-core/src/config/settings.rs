@@ -1,7 +1,8 @@
 //! Configuration settings structures.
 
-use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
+
+use serde::{Deserialize, Serialize};
 
 /// Main configuration structure.
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

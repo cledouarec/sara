@@ -37,6 +37,7 @@
 //! ```
 
 use std::path::PathBuf;
+
 use thiserror::Error;
 
 use crate::model::{ItemId, ItemType, RelationshipType};

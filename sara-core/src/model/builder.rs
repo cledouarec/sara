@@ -2,12 +2,11 @@
 
 use std::path::PathBuf;
 
-use crate::error::SaraError;
-
 use super::adr::AdrStatus;
 use super::item::{Item, ItemAttributes, ItemId, ItemType};
 use super::metadata::SourceLocation;
 use super::relationship::Relationship;
+use crate::error::SaraError;
 
 /// Builder for constructing `Item` instances from parsed frontmatter.
 #[derive(Debug, Default)]

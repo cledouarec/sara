@@ -40,9 +40,10 @@ pub fn generate_metadata(item: &Item, format: OutputFormat) -> String {
 
 #[cfg(test)]
 mod tests {
+    use std::path::PathBuf;
+
     use super::*;
     use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation};
-    use std::path::PathBuf;
 
     fn test_source() -> SourceLocation {
         SourceLocation {
