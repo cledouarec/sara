@@ -6,8 +6,6 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "build"
-    labels:
-      - "dependencies"
     groups:
       all-dependencies:
         patterns:
@@ -20,8 +18,6 @@ updates:
       interval: "weekly"
     commit-message:
       prefix: "ci"
-    labels:
-      - "dependencies"
     groups:
       all-actions:
         patterns:
