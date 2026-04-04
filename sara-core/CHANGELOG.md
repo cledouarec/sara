@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.3](https://github.com/cledouarec/sara/compare/sara-core-v0.7.2...sara-core-v0.7.3) - 2026-04-04
+
+### Build
+
+- remove useless dependencies (by @cledouarec) - #71
+
+### Contributors
+
+* @cledouarec
+
 ## [0.7.2](https://github.com/cledouarec/sara/compare/sara-core-v0.7.1...sara-core-v0.7.2) - 2026-04-02
 
 ### Styling
