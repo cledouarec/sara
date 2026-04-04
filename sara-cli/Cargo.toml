@@ -24,7 +24,6 @@ serde.workspace = true
 serde_json.workspace = true
 inquire.workspace = true
 thiserror.workspace = true
-strsim.workspace = true
 
 [dev-dependencies]
 assert_cmd.workspace = true
