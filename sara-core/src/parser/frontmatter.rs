@@ -90,18 +90,16 @@ pub fn extract_body(content: &str) -> String {
 
 /// Updates the YAML frontmatter in content while preserving the body (FR-064).
 ///
-/// The new_yaml should NOT include the `---` delimiters.
+/// The `new_frontmatter` must include the `---` delimiters.
 /// Returns the updated content with new frontmatter and preserved body.
-pub fn update_frontmatter(content: &str, new_yaml: &str) -> String {
+pub fn update_frontmatter(content: &str, new_frontmatter: &str) -> String {
     let body = extract_body(content);
-
-    // Ensure trailing newline in YAML
-    let yaml_trimmed = new_yaml.trim_end();
+    let frontmatter_trimmed = new_frontmatter.trim_end();
 
     if body.is_empty() {
-        format!("---\n{}\n---\n", yaml_trimmed)
+        format!("{}\n", frontmatter_trimmed)
     } else {
-        format!("---\n{}\n---\n{}", yaml_trimmed, body)
+        format!("{}\n{}", frontmatter_trimmed, body)
     }
 }
 
@@ -205,11 +203,13 @@ name: "Old Name"
 
 Some markdown here."#;
 
-        let new_yaml = r#"id: "SOL-001"
+        let new_frontmatter = r#"---
+id: "SOL-001"
 type: solution
-name: "New Name""#;
+name: "New Name"
+---"#;
 
-        let updated = update_frontmatter(content, new_yaml);
+        let updated = update_frontmatter(content, new_frontmatter);
 
         assert!(updated.starts_with("---\n"));
         assert!(updated.contains("name: \"New Name\""));
@@ -220,9 +220,9 @@ name: "New Name""#;
     #[test]
     fn test_update_frontmatter_no_body() {
         let content = "---\nid: test\n---";
-        let new_yaml = "id: test\nname: Updated";
+        let new_frontmatter = "---\nid: test\nname: Updated\n---";
 
-        let updated = update_frontmatter(content, new_yaml);
+        let updated = update_frontmatter(content, new_frontmatter);
 
         assert_eq!(updated, "---\nid: test\nname: Updated\n---\n");
     }
