@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.4](https://github.com/cledouarec/sara/compare/sara-cli-v0.7.3...sara-cli-v0.7.4) - 2026-04-09
+
+### Fixed
+
+- use config file strict_mode for validation check command (by @cledouarec) - #73
+- export full Item in JSON check output instead of incomplete ItemExport (by @cledouarec) - #73
+
+### Contributors
+
+* @cledouarec
+
 ## [0.7.3](https://github.com/cledouarec/sara/compare/sara-cli-v0.7.2...sara-cli-v0.7.3) - 2026-04-04
 
 ### Build
