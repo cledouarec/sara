@@ -7,10 +7,9 @@ use clap::Args;
 use sara_core::graph::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
 use sara_core::service::{DiffOptions, DiffResult, DiffService};
 
-use super::CommandContext;
-use crate::output::{
-    Color, OutputConfig, Style, colorize, print_error, print_success, print_warning,
-};
+use sara_core::config::{Config, OutputConfig};
+
+use crate::output::{Color, Style, colorize, print_error, print_success, print_warning};
 
 /// Output format for diff command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -39,9 +38,9 @@ pub struct DiffArgs {
 }
 
 /// Runs the diff command.
-pub fn run(args: &DiffArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &DiffArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let opts = DiffOptions::new(&args.ref1, &args.ref2)
-        .with_repositories(ctx.repositories.clone())
+        .with_repositories(config.repositories.paths.clone())
         .with_stat(args.stat);
     let service = DiffService::new();
 
@@ -49,24 +48,24 @@ pub fn run(args: &DiffArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Er
         Ok(result) => {
             if !result.is_full_comparison {
                 print_warning(
-                    &ctx.output,
+                    &config.output,
                     "Git reference comparison is not fully implemented. Comparing current state with itself.",
                 );
             }
 
             match args.format {
-                DiffFormat::Text => print_diff_text(&result, &opts, &ctx.output),
+                DiffFormat::Text => print_diff_text(&result, &opts, &config.output),
                 DiffFormat::Json => print_diff_json(&result.diff),
             }
 
             if result.is_empty() {
-                print_success(&ctx.output, "No changes detected");
+                print_success(&config.output, "No changes detected");
             }
 
             Ok(ExitCode::SUCCESS)
         }
         Err(e) => {
-            print_error(&ctx.output, &e.to_string());
+            print_error(&config.output, &e.to_string());
             Ok(ExitCode::FAILURE)
         }
     }

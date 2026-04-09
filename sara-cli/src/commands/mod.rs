@@ -26,48 +26,40 @@ use self::init::InitArgs;
 use self::query::QueryArgs;
 use self::report::ReportArgs;
 use crate::Cli;
-use crate::output::OutputConfig;
 
-/// Shared context for command execution.
-#[derive(Debug, Clone)]
-pub struct CommandContext {
-    /// Output configuration (colors, emojis).
-    pub output: OutputConfig,
-    /// Repository paths to operate on.
-    pub repositories: Vec<PathBuf>,
+/// Returns the resolved repository paths, falling back to the current directory.
+fn resolve_repositories(config: &Config) -> Result<Vec<PathBuf>, io::Error> {
+    if config.repositories.paths.is_empty() {
+        Ok(vec![env::current_dir()?])
+    } else {
+        Ok(config.repositories.paths.clone())
+    }
 }
 
-impl CommandContext {
-    /// Parses items from the configured repositories.
-    ///
-    /// If `git_ref` is provided, reads from that git reference instead of the filesystem.
-    pub fn parse_items(&self, git_ref: Option<&str>) -> Result<Vec<Item>, Box<dyn Error>> {
-        let repos = if self.repositories.is_empty() {
-            vec![env::current_dir()?]
-        } else {
-            self.repositories.clone()
-        };
+/// Parses items from the configured repositories.
+fn parse_items(config: &Config) -> Result<Vec<Item>, Box<dyn Error>> {
+    let repos = resolve_repositories(config)?;
+    Ok(parse_repositories(&repos)?)
+}
 
-        if let Some(ref_str) = git_ref {
-            let git_ref = GitRef::parse(ref_str);
-            let mut all_items = Vec::new();
+/// Parses items from the configured repositories at a specific Git reference.
+fn parse_items_at(config: &Config, git_ref: &str) -> Result<Vec<Item>, Box<dyn Error>> {
+    let repos = resolve_repositories(config)?;
+    let git_ref = GitRef::parse(git_ref);
+    let mut all_items = Vec::new();
 
-            for repo_path in &repos {
-                if !repo_path.exists() {
-                    tracing::warn!("Repository path does not exist: {}", repo_path.display());
-                    continue;
-                }
-
-                let reader = GitReader::open(repo_path)?;
-                let items = reader.parse_commit(&git_ref)?;
-                all_items.extend(items);
-            }
-
-            Ok(all_items)
-        } else {
-            Ok(parse_repositories(&repos)?)
+    for repo_path in &repos {
+        if !repo_path.exists() {
+            tracing::warn!("Repository path does not exist: {}", repo_path.display());
+            continue;
         }
+
+        let reader = GitReader::open(repo_path)?;
+        let items = reader.parse_commit(&git_ref)?;
+        all_items.extend(items);
     }
+
+    Ok(all_items)
 }
 
 /// Available CLI commands.
@@ -127,22 +119,24 @@ fn get_repositories(cli: &Cli, file_config: Option<&Config>) -> Result<Vec<PathB
     }
 }
 
+/// Builds a merged [`Config`] from the file configuration and CLI overrides.
+fn build_config(cli: &Cli, file_config: Option<&Config>) -> Result<Config, io::Error> {
+    let mut config = file_config.cloned().unwrap_or_default();
+    config.repositories.paths = get_repositories(cli, file_config)?;
+    config.output = cli.output_config(file_config);
+    Ok(config)
+}
+
 /// Runs the appropriate command.
 pub fn run(cli: &Cli, file_config: Option<&Config>) -> Result<ExitCode, Box<dyn Error>> {
-    let output = cli.output_config(file_config);
-    let repositories = get_repositories(cli, file_config)?;
-
-    let ctx = CommandContext {
-        output: output.clone(),
-        repositories,
-    };
+    let config = build_config(cli, file_config)?;
 
     match &cli.command {
-        Commands::Check(args) => check::run(args, &ctx),
-        Commands::Diff(args) => diff::run(args, &ctx),
-        Commands::Edit(args) => edit::run(args, &ctx),
-        Commands::Init(args) => init::run(args, &ctx),
-        Commands::Query(args) => query::run(args, &ctx),
-        Commands::Report(args) => report::run(args, &ctx),
+        Commands::Check(args) => check::run(args, &config),
+        Commands::Diff(args) => diff::run(args, &config),
+        Commands::Edit(args) => edit::run(args, &config),
+        Commands::Init(args) => init::run(args, &config),
+        Commands::Query(args) => query::run(args, &config),
+        Commands::Report(args) => report::run(args, &config),
     }
 }

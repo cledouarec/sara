@@ -13,12 +13,13 @@ use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{EditSummary, FieldChange, ItemType, TraceabilityLinks};
 use sara_core::service::{EditOptions, EditService, EditedValues, ItemContext};
 
-use super::CommandContext;
+use sara_core::config::{Config, OutputConfig};
+
 use super::interactive::{
     PrefilledFields, PromptError, prompt_description, prompt_name, prompt_platform,
     prompt_specification, prompt_traceability,
 };
-use crate::output::{OutputConfig, print_error, print_success};
+use crate::output::{print_error, print_success};
 
 /// Arguments for the edit command.
 #[derive(Args, Debug)]
@@ -57,18 +58,18 @@ pub struct EditArgs {
 }
 
 /// Runs the edit command.
-pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &EditArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let service = EditService::new();
 
     // Build the knowledge graph
-    let items = ctx.parse_items(None)?;
+    let items = super::parse_items(config)?;
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
 
     // Look up the item (FR-054)
     let item = match service.lookup_item(&graph, &args.item_id) {
         Ok(item) => item,
         Err(e) => {
-            print_error(&ctx.output, &format!("{}", e));
+            print_error(&config.output, &format!("{}", e));
             if let Some(suggestions) = e.format_suggestions() {
                 println!("{}", suggestions);
             }
@@ -92,10 +93,10 @@ pub fn run(args: &EditArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Er
     // Check if interactive or non-interactive mode
     if opts.has_updates() {
         // Non-interactive mode (FR-057, FR-058)
-        run_non_interactive_edit(&service, &opts, &item_ctx, &ctx.output)
+        run_non_interactive_edit(&service, &opts, &item_ctx, &config.output)
     } else {
         // Interactive mode (FR-055, FR-056)
-        run_interactive_edit(&service, &graph, &item_ctx, &ctx.output)
+        run_interactive_edit(&service, &graph, &item_ctx, &config.output)
     }
 }
 

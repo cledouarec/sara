@@ -10,7 +10,7 @@ mod logging;
 mod output;
 
 use commands::Commands;
-use sara_core::config::load_config;
+use sara_core::config::{OutputConfig, load_config};
 
 /// Help heading for global options
 const GLOBAL_OPTIONS: &str = "Global Options";
@@ -74,10 +74,7 @@ impl Cli {
 
     /// Returns the output configuration, merging config file settings with CLI flags.
     /// CLI flags override config file settings.
-    pub fn output_config(
-        &self,
-        file_config: Option<&sara_core::config::Config>,
-    ) -> output::OutputConfig {
+    pub fn output_config(&self, file_config: Option<&sara_core::config::Config>) -> OutputConfig {
         // Check environment variables
         let env_no_color = std::env::var("NO_COLOR").is_ok();
 
@@ -91,7 +88,7 @@ impl Cli {
         let colors = config_colors && !self.no_color && !env_no_color;
         let emojis = config_emojis && !self.no_emoji;
 
-        output::OutputConfig { colors, emojis }
+        OutputConfig { colors, emojis }
     }
 
     /// Returns the config file path, checking SARA_CONFIG env var first.

@@ -8,12 +8,13 @@ use std::time::{Duration, Instant};
 
 use clap::Args;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
-use sara_core::model::ItemType;
+use sara_core::model::{Item, ItemType};
 use sara_core::validation::{ValidationReport, pre_validate, validate};
 use serde::Serialize;
 
-use super::CommandContext;
-use crate::output::{OutputConfig, format_error, format_success, format_warning, print_warning};
+use sara_core::config::{Config, OutputConfig};
+
+use crate::output::{format_error, format_success, format_warning, print_warning};
 
 /// Output format for check command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -65,50 +66,29 @@ struct CheckResult {
     /// Validation warnings encountered.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     warnings: Vec<String>,
-    /// The parsed graph (present only when validation passed).
+    /// The parsed items (present only when validation passed).
     #[serde(skip_serializing_if = "Option::is_none")]
-    graph: Option<GraphExport>,
-}
-
-/// Serializable representation of the parsed graph for JSON export.
-#[derive(Debug, Serialize)]
-struct GraphExport {
-    items: Vec<ItemExport>,
-    relationships: Vec<RelationshipExport>,
-}
-
-/// Serializable item for JSON export.
-#[derive(Debug, Serialize)]
-struct ItemExport {
-    id: String,
-    item_type: String,
-    name: String,
-    description: Option<String>,
-    specification: Option<String>,
-    file: String,
-}
-
-/// Serializable relationship for JSON export.
-#[derive(Debug, Serialize)]
-struct RelationshipExport {
-    from: String,
-    to: String,
-    relationship_type: String,
+    items: Option<Vec<Item>>,
 }
 
 /// Runs the check command.
-pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &CheckArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let start = Instant::now();
-    let output_config = &ctx.output;
+    let output_config = &config.output;
 
-    let items = ctx.parse_items(args.at.as_deref())?;
+    let items = match args.at.as_deref() {
+        Some(git_ref) => super::parse_items_at(config, git_ref)?,
+        None => super::parse_items(config)?,
+    };
 
     if items.is_empty() {
         print_warning(output_config, "No items found in repositories");
         return Ok(ExitCode::SUCCESS);
     }
 
-    let pre_report = pre_validate(&items, args.strict);
+    let strict = args.strict || config.validation.strict_mode;
+
+    let pre_report = pre_validate(&items, strict);
     if !pre_report.is_valid() {
         let parse_time = start.elapsed();
         return handle_output(args, None, &pre_report, &parse_time, output_config);
@@ -116,7 +96,7 @@ pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
 
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
 
-    let report = validate(&graph, args.strict);
+    let report = validate(&graph, strict);
     let report = consolidate_reports(report, pre_report);
     let parse_time = start.elapsed();
     handle_output(args, Some(&graph), &report, &parse_time, output_config)
@@ -166,7 +146,9 @@ fn build_check_result(
     let errors: Vec<String> = report.errors().iter().map(|e| e.to_string()).collect();
     let warnings: Vec<String> = report.warnings().iter().map(|w| w.to_string()).collect();
 
-    let graph_export = graph.filter(|_| report.is_valid()).map(build_graph_export);
+    let items = graph
+        .filter(|_| report.is_valid())
+        .map(|g| g.items().cloned().collect());
 
     CheckResult {
         valid: report.is_valid(),
@@ -176,33 +158,7 @@ fn build_check_result(
         parse_time_ms: parse_time.as_millis(),
         errors,
         warnings,
-        graph: graph_export,
-    }
-}
-
-/// Builds a graph export from the knowledge graph.
-fn build_graph_export(graph: &KnowledgeGraph) -> GraphExport {
-    GraphExport {
-        items: graph
-            .items()
-            .map(|item| ItemExport {
-                id: item.id.as_str().to_string(),
-                item_type: item.item_type.to_string(),
-                name: item.name.clone(),
-                description: None,
-                specification: item.attributes.specification().map(ToOwned::to_owned),
-                file: item.source.file_path.display().to_string(),
-            })
-            .collect(),
-        relationships: graph
-            .relationships()
-            .into_iter()
-            .map(|(from, to, rel_type)| RelationshipExport {
-                from: from.as_str().to_string(),
-                to: to.as_str().to_string(),
-                relationship_type: rel_type.to_string(),
-            })
-            .collect(),
+        items,
     }
 }
 

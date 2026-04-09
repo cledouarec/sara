@@ -7,12 +7,13 @@ use std::process::ExitCode;
 use clap::{Args, Subcommand};
 use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
 
-use super::CommandContext;
+use sara_core::config::{Config, OutputConfig};
+
 use super::interactive::{
     InteractiveSession, PrefilledFields, PromptError, handle_interactive_result,
     run_interactive_session,
 };
-use crate::output::{OutputConfig, print_error, print_success, print_warning};
+use crate::output::{print_error, print_success, print_warning};
 
 /// Common options shared by all init subcommands.
 #[derive(Args, Debug, Clone)]
@@ -254,14 +255,14 @@ const EXIT_INVALID_OPTION: u8 = 3;
 // =============================================================================
 
 /// Runs the init command.
-pub fn run(args: &InitArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &InitArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     match &args.command {
-        None => run_interactive(ctx),
-        Some(subcommand) => run_subcommand(subcommand, ctx),
+        None => run_interactive(config),
+        Some(subcommand) => run_subcommand(subcommand, config),
     }
 }
 
-fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+fn run_interactive(config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let prefilled = PrefilledFields {
         file: None,
         item_type: None,
@@ -281,12 +282,12 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
     let mut session = InteractiveSession {
         graph: None,
         prefilled,
-        repositories: &ctx.repositories,
-        output: &ctx.output,
+        repositories: &config.repositories.paths,
+        output: &config.output,
     };
 
     let result = run_interactive_session(&mut session);
-    match handle_interactive_result(result, &ctx.output) {
+    match handle_interactive_result(result, &config.output) {
         Ok(Some(input)) => {
             // Build TypeConfig from interactive input
             let type_config = build_type_config_from_interactive(&input);
@@ -297,7 +298,7 @@ fn run_interactive(ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
                 .maybe_description(input.description)
                 .with_force(false);
 
-            run_with_options(opts, ctx)
+            run_with_options(opts, config)
         }
         Ok(None) => Ok(ExitCode::from(130)),
         Err(PromptError::NonInteractiveTerminal) => Ok(ExitCode::from(1)),
@@ -394,7 +395,7 @@ fn build_type_config_from_interactive(input: &super::interactive::InteractiveInp
 
 fn run_subcommand(
     subcommand: &InitSubcommand,
-    ctx: &CommandContext,
+    config: &Config,
 ) -> Result<ExitCode, Box<dyn Error>> {
     let opts = match subcommand {
         InitSubcommand::Adr(args) => {
@@ -525,22 +526,22 @@ fn run_subcommand(
         }
     };
 
-    run_with_options(opts, ctx)
+    run_with_options(opts, config)
 }
 
-fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
-    let config = &ctx.output;
+fn run_with_options(opts: InitOptions, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
+    let output = &config.output;
 
     let service = InitService::new();
 
     match service.init(&opts) {
         Ok(result) => {
-            print_result(config, &result);
+            print_result(output, &result);
             Ok(ExitCode::SUCCESS)
         }
         Err(InitError::FrontmatterExists(path)) => {
             print_error(
-                config,
+                output,
                 &format!(
                     "File {} already has frontmatter. Use --force to overwrite.",
                     path.display()
@@ -549,11 +550,11 @@ fn run_with_options(opts: InitOptions, ctx: &CommandContext) -> Result<ExitCode,
             Ok(ExitCode::from(EXIT_FRONTMATTER_EXISTS))
         }
         Err(InitError::InvalidOption(msg)) => {
-            print_error(config, &msg);
+            print_error(output, &msg);
             Ok(ExitCode::from(EXIT_INVALID_OPTION))
         }
         Err(InitError::Io(e)) => {
-            print_error(config, &format!("IO error: {}", e));
+            print_error(output, &format!("IO error: {}", e));
             Ok(ExitCode::FAILURE)
         }
     }
