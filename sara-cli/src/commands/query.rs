@@ -10,10 +10,10 @@ use sara_core::graph::{
 };
 use sara_core::model::{Item, ItemId, ItemType};
 
-use super::CommandContext;
+use sara_core::config::{Config, OutputConfig};
+
 use crate::output::{
-    Color, EMOJI_ERROR, EMOJI_ITEM, OutputConfig, Style, colorize, format_tree_branch, get_emoji,
-    print_header,
+    Color, EMOJI_ERROR, EMOJI_ITEM, Style, colorize, format_tree_branch, get_emoji, print_header,
 };
 
 /// Output format for queries.
@@ -52,25 +52,25 @@ pub struct QueryArgs {
 }
 
 /// Runs the query command.
-pub fn run(args: &QueryArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
-    let items = ctx.parse_items(None)?;
+pub fn run(args: &QueryArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
+    let items = super::parse_items(config)?;
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
 
     match graph.lookup(&args.item_id) {
-        LookupResult::Found(item) => handle_found_item(args, ctx, item, &graph),
-        LookupResult::NotFound { suggestions } => handle_not_found(args, ctx, &suggestions),
+        LookupResult::Found(item) => handle_found_item(args, &config.output, item, &graph),
+        LookupResult::NotFound { suggestions } => {
+            handle_not_found(args, &config.output, &suggestions)
+        }
     }
 }
 
 /// Handles the case when an item is found.
 fn handle_found_item(
     args: &QueryArgs,
-    ctx: &CommandContext,
+    config: &OutputConfig,
     item: &Item,
     graph: &KnowledgeGraph,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let config = &ctx.output;
-
     print_item_info(config, item, graph);
 
     if args.upstream || args.downstream {
@@ -111,10 +111,9 @@ fn print_traceability(
 /// Handles the case when an item is not found.
 fn handle_not_found(
     args: &QueryArgs,
-    ctx: &CommandContext,
+    config: &OutputConfig,
     suggestions: &[&ItemId],
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let config = &ctx.output;
     let emoji = get_emoji(config, &EMOJI_ERROR);
     let id = colorize(config, &args.item_id, Color::Red, Style::None);
     println!("{} Item not found: {}", emoji, id);
