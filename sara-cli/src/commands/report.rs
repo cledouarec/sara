@@ -10,10 +10,9 @@ use clap::{Args, Subcommand};
 use sara_core::graph::KnowledgeGraphBuilder;
 use sara_core::report::{CoverageReport, TraceabilityMatrix};
 
-use super::CommandContext;
-use crate::output::{
-    Color, EMOJI_STATS, EMOJI_WARNING, OutputConfig, Style, colorize, get_emoji, print_success,
-};
+use sara_core::config::{Config, OutputConfig};
+
+use crate::output::{Color, EMOJI_STATS, EMOJI_WARNING, Style, colorize, get_emoji, print_success};
 
 /// Report output format.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -61,10 +60,10 @@ pub enum ReportType {
 }
 
 /// Runs the report command.
-pub fn run(args: &ReportArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &ReportArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     match &args.report_type {
-        ReportType::Coverage { format, output } => run_coverage(*format, output.clone(), ctx),
-        ReportType::Matrix { format, output } => run_matrix(*format, output.clone(), ctx),
+        ReportType::Coverage { format, output } => run_coverage(*format, output.clone(), config),
+        ReportType::Matrix { format, output } => run_matrix(*format, output.clone(), config),
     }
 }
 
@@ -92,40 +91,40 @@ fn write_report_output(
 fn run_coverage(
     format: ReportFormat,
     output_path: Option<PathBuf>,
-    ctx: &CommandContext,
+    config: &Config,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let items = ctx.parse_items(None)?;
+    let items = super::parse_items(config)?;
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
     let report = CoverageReport::generate(&graph);
 
     let output = match format {
-        ReportFormat::Text => format_coverage_text(&report, &ctx.output),
+        ReportFormat::Text => format_coverage_text(&report, &config.output),
         ReportFormat::Json => format_coverage_json(&report),
         ReportFormat::Csv => format_coverage_csv(&report),
         ReportFormat::Html => format_coverage_html(&report),
     };
 
-    write_report_output(&output, output_path, &ctx.output, "Coverage report")
+    write_report_output(&output, output_path, &config.output, "Coverage report")
 }
 
 /// Runs the matrix report command.
 fn run_matrix(
     format: ReportFormat,
     output_path: Option<PathBuf>,
-    ctx: &CommandContext,
+    config: &Config,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    let items = ctx.parse_items(None)?;
+    let items = super::parse_items(config)?;
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
     let matrix = TraceabilityMatrix::generate(&graph);
 
     let output = match format {
-        ReportFormat::Text => format_matrix_text(&matrix, &ctx.output),
+        ReportFormat::Text => format_matrix_text(&matrix, &config.output),
         ReportFormat::Json => format_matrix_json(&matrix),
         ReportFormat::Csv => matrix.to_csv(),
         ReportFormat::Html => format_matrix_html(&matrix),
     };
 
-    write_report_output(&output, output_path, &ctx.output, "Traceability matrix")
+    write_report_output(&output, output_path, &config.output, "Traceability matrix")
 }
 
 fn format_coverage_text(report: &CoverageReport, config: &OutputConfig) -> String {

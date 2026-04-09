@@ -19,29 +19,7 @@
 
 use colored::Colorize;
 use console::Emoji;
-
-/// Output configuration.
-#[derive(Debug, Clone)]
-pub struct OutputConfig {
-    pub colors: bool,
-    pub emojis: bool,
-}
-
-impl Default for OutputConfig {
-    fn default() -> Self {
-        Self {
-            colors: true,
-            emojis: true,
-        }
-    }
-}
-
-impl OutputConfig {
-    /// Creates a new output config.
-    pub fn new(colors: bool, emojis: bool) -> Self {
-        Self { colors, emojis }
-    }
-}
+use sara_core::config::OutputConfig;
 
 // Common emojis
 pub static EMOJI_SUCCESS: Emoji<'_, '_> = Emoji("✅", "[OK]");
