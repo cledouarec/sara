@@ -12,8 +12,9 @@ use sara_core::model::{Item, ItemType};
 use sara_core::validation::{ValidationReport, pre_validate, validate};
 use serde::Serialize;
 
-use super::CommandContext;
-use crate::output::{OutputConfig, format_error, format_success, format_warning, print_warning};
+use sara_core::config::{Config, OutputConfig};
+
+use crate::output::{format_error, format_success, format_warning, print_warning};
 
 /// Output format for check command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -71,18 +72,23 @@ struct CheckResult {
 }
 
 /// Runs the check command.
-pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn Error>> {
+pub fn run(args: &CheckArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let start = Instant::now();
-    let output_config = &ctx.output;
+    let output_config = &config.output;
 
-    let items = ctx.parse_items(args.at.as_deref())?;
+    let items = match args.at.as_deref() {
+        Some(git_ref) => super::parse_items_at(config, git_ref)?,
+        None => super::parse_items(config)?,
+    };
 
     if items.is_empty() {
         print_warning(output_config, "No items found in repositories");
         return Ok(ExitCode::SUCCESS);
     }
 
-    let pre_report = pre_validate(&items, args.strict);
+    let strict = args.strict || config.validation.strict_mode;
+
+    let pre_report = pre_validate(&items, strict);
     if !pre_report.is_valid() {
         let parse_time = start.elapsed();
         return handle_output(args, None, &pre_report, &parse_time, output_config);
@@ -90,7 +96,7 @@ pub fn run(args: &CheckArgs, ctx: &CommandContext) -> Result<ExitCode, Box<dyn E
 
     let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
 
-    let report = validate(&graph, args.strict);
+    let report = validate(&graph, strict);
     let report = consolidate_reports(report, pre_report);
     let parse_time = start.elapsed();
     handle_output(args, Some(&graph), &report, &parse_time, output_config)
