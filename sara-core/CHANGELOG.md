@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.7.6](https://github.com/cledouarec/sara/compare/sara-core-v0.7.5...sara-core-v0.7.6) - 2026-04-17
+
+### Fixed
+
+- fix clippy warnings (by @cledouarec) - #77
+
+### Contributors
+
+* @cledouarec
+
 ## [0.7.5](https://github.com/cledouarec/sara/compare/sara-core-v0.7.4...sara-core-v0.7.5) - 2026-04-15
 
 ### Other
