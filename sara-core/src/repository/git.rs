@@ -139,12 +139,11 @@ impl GitReader {
             let path = prefix.join(name);
 
             match entry.kind() {
-                Some(ObjectType::Blob) => {
+                Some(ObjectType::Blob)
                     // Check for Markdown extension
-                    if name.ends_with(".md") || name.ends_with(".markdown") {
+                    if (name.ends_with(".md") || name.ends_with(".markdown")) => {
                         files.push(path);
                     }
-                }
                 Some(ObjectType::Tree) => {
                     let subtree = entry.to_object(&self.repo)?.peel_to_tree()?;
                     self.walk_tree(&subtree, path, files)?;
