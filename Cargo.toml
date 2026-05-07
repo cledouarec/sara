@@ -56,3 +56,8 @@ inquire = "0.9.4"
 assert_cmd = "2.2.1"
 predicates = "3.1.4"
 tempfile = "3.27.0"
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
+strip = "symbols"
