@@ -26,8 +26,8 @@ serde_yaml = "0.9.34"
 serde_json = "1.0.149"
 toml = "1.1.2"
 
-# Git operations (vendored OpenSSL for cross-compilation support)
-git2 = { version = "0.20.4", features = ["vendored-openssl"] }
+# Git operations (pure Rust via gitoxide, read-only local access only)
+gix = { version = "0.83.0", default-features = false, features = ["max-performance-safe", "revision", "sha1", "zlib-rs"] }
 
 # Terminal output
 colored = "3.1.1"

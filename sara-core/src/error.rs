@@ -293,7 +293,7 @@ pub enum SaraError {
     GitOpenRepository {
         /// Path to the repository.
         path: PathBuf,
-        /// Error from git2.
+        /// Underlying git error message.
         reason: String,
     },
 
@@ -350,13 +350,13 @@ pub enum SaraError {
         std::io::Error,
     ),
 
-    /// Git2 library error.
+    /// Gitoxide (gix) library error.
+    ///
+    /// Boxed because gix exposes a distinct error type per operation; a single
+    /// boxed variant keeps the enum stable across gix minor bumps while still
+    /// preserving `Display` and `source()` for tracing and user reports.
     #[error("Git error: {0}")]
-    Git2(
-        #[serde(skip)]
-        #[from]
-        git2::Error,
-    ),
+    Gix(#[serde(skip)] Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl SaraError {
@@ -387,5 +387,3 @@ impl SaraError {
 /// }
 /// ```
 pub type Result<T> = std::result::Result<T, SaraError>;
-
-// Rust guideline compliant 2026-02-06

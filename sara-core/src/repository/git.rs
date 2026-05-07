@@ -1,12 +1,26 @@
-//! Git repository integration using git2.
+//! Git repository integration using gitoxide (`gix`).
+//!
+//! Provides read-only access to commits and tree contents for parsing
+//! Markdown items at arbitrary Git references. Pure Rust — no libgit2 or
+//! OpenSSL dependency.
 
 use std::path::{Path, PathBuf};
 
-use git2::{Commit, ObjectType, Repository};
+use gix::bstr::ByteSlice;
+use gix::object::tree::EntryKind;
+use gix::{Commit, Repository, Tree};
 
 use crate::error::SaraError;
 use crate::model::Item;
 use crate::parser::InputFormat;
+
+/// Wraps a gix error into [`SaraError::Gix`].
+fn gix_err<E>(e: E) -> SaraError
+where
+    E: std::error::Error + Send + Sync + 'static,
+{
+    SaraError::Gix(Box::new(e))
+}
 
 /// Represents a Git reference that can be used to read files.
 #[derive(Debug, Clone)]
@@ -55,15 +69,22 @@ pub struct GitReader {
 
 impl GitReader {
     /// Opens a Git repository at the given path.
+    ///
+    /// # Errors
+    /// Returns [`SaraError::Gix`] if the path is not a valid Git repository.
     pub fn open(path: &Path) -> Result<Self, SaraError> {
-        let repo = Repository::open(path)?;
+        let repo = gix::open(path).map_err(gix_err)?;
         let repo_path = path.to_path_buf();
         Ok(Self { repo, repo_path })
     }
 
     /// Discovers and opens the Git repository containing the given path.
+    ///
+    /// # Errors
+    /// Returns [`SaraError::Gix`] if no repository is found, or
+    /// [`SaraError::Git`] for bare repositories (no working directory).
     pub fn discover(path: &Path) -> Result<Self, SaraError> {
-        let repo = Repository::discover(path)?;
+        let repo = gix::discover(path).map_err(gix_err)?;
         let repo_path = repo
             .workdir()
             .ok_or_else(|| SaraError::Git("Bare repository not supported".to_string()))?
@@ -77,42 +98,65 @@ impl GitReader {
     }
 
     /// Resolves a Git reference to a commit.
+    ///
+    /// # Errors
+    /// Returns [`SaraError::Gix`] if the reference cannot be resolved or
+    /// does not point to a commit.
     pub fn resolve_ref(&self, git_ref: &GitRef) -> Result<Commit<'_>, SaraError> {
         match git_ref {
-            GitRef::Head => {
-                let head = self.repo.head()?;
-                Ok(head.peel_to_commit()?)
-            }
-            GitRef::Commit(sha) => {
-                // Use revparse_single to handle abbreviated SHAs
-                let obj = self.repo.revparse_single(sha)?;
-                Ok(obj.peel_to_commit()?)
-            }
+            GitRef::Head => self.repo.head_commit().map_err(gix_err),
+            GitRef::Commit(sha) => self.peel_spec_to_commit(sha.as_bytes()),
             GitRef::Branch(name) => {
-                let branch = self.repo.find_branch(name, git2::BranchType::Local)?;
-                Ok(branch.get().peel_to_commit()?)
+                let spec = format!("refs/heads/{name}");
+                self.peel_spec_to_commit(spec.as_bytes())
             }
             GitRef::Tag(name) => {
-                let tag_ref = format!("refs/tags/{}", name);
-                let obj = self.repo.revparse_single(&tag_ref)?;
-                Ok(obj.peel_to_commit()?)
+                let spec = format!("refs/tags/{name}");
+                self.peel_spec_to_commit(spec.as_bytes())
             }
         }
     }
 
-    /// Reads a file from a specific commit.
-    pub fn read_file(&self, commit: &Commit<'_>, path: &Path) -> Result<String, SaraError> {
-        let tree = commit.tree()?;
-        let entry = tree.get_path(path)?;
-        let blob = entry.to_object(&self.repo)?.peel_to_blob()?;
+    /// Parses a revspec and peels it to a commit.
+    fn peel_spec_to_commit(&self, spec: &[u8]) -> Result<Commit<'_>, SaraError> {
+        let id = self.repo.rev_parse_single(spec).map_err(gix_err)?;
+        let object = id.object().map_err(gix_err)?;
+        // `peel_to_kind` follows annotated tag chains until reaching a commit.
+        let commit_object = object
+            .peel_to_kind(gix::object::Kind::Commit)
+            .map_err(gix_err)?;
+        commit_object
+            .try_into_commit()
+            .map_err(|_| SaraError::Git("Reference does not resolve to a commit".to_string()))
+    }
 
-        String::from_utf8(blob.content().to_vec())
-            .map_err(|e| SaraError::Git(format!("Invalid UTF-8 in file: {}", e)))
+    /// Reads a file from a specific commit.
+    ///
+    /// # Errors
+    /// Returns [`SaraError::Gix`] for tree-lookup failures, or
+    /// [`SaraError::Git`] if the path is missing, not a blob, or invalid UTF-8.
+    pub fn read_file(&self, commit: &Commit<'_>, path: &Path) -> Result<String, SaraError> {
+        let tree = commit.tree().map_err(gix_err)?;
+        let entry = tree
+            .lookup_entry_by_path(path)
+            .map_err(gix_err)?
+            .ok_or_else(|| SaraError::Git(format!("Path not found in tree: {}", path.display())))?;
+        let object = entry.object().map_err(gix_err)?;
+        let mut blob = object
+            .try_into_blob()
+            .map_err(|_| SaraError::Git(format!("Path is not a blob: {}", path.display())))?;
+
+        String::from_utf8(std::mem::take(&mut blob.data))
+            .map_err(|e| SaraError::Git(format!("Invalid UTF-8 in file: {e}")))
     }
 
     /// Lists all Markdown files in a commit's tree.
+    ///
+    /// # Errors
+    /// Returns [`SaraError::Gix`] if tree traversal fails, or
+    /// [`SaraError::Git`] for non-UTF-8 file names.
     pub fn list_markdown_files(&self, commit: &Commit<'_>) -> Result<Vec<PathBuf>, SaraError> {
-        let tree = commit.tree()?;
+        let tree = commit.tree().map_err(gix_err)?;
 
         let mut files = Vec::new();
         self.walk_tree(&tree, PathBuf::new(), &mut files)?;
@@ -122,32 +166,38 @@ impl GitReader {
     /// Recursively walks a tree to find Markdown files.
     fn walk_tree(
         &self,
-        tree: &git2::Tree<'_>,
+        tree: &Tree<'_>,
         prefix: PathBuf,
         files: &mut Vec<PathBuf>,
     ) -> Result<(), SaraError> {
         for entry in tree.iter() {
+            let entry = entry.map_err(gix_err)?;
             let name = entry
-                .name()
-                .ok_or_else(|| SaraError::Git("Invalid file name".to_string()))?;
+                .filename()
+                .to_str()
+                .map_err(|_| SaraError::Git("Invalid file name".to_string()))?;
 
-            // Skip hidden files and directories
             if name.starts_with('.') {
                 continue;
             }
 
             let path = prefix.join(name);
 
-            match entry.kind() {
-                Some(ObjectType::Blob)
-                    // Check for Markdown extension
-                    if (name.ends_with(".md") || name.ends_with(".markdown")) => {
-                        files.push(path);
-                    }
-                Some(ObjectType::Tree) => {
-                    let subtree = entry.to_object(&self.repo)?.peel_to_tree()?;
+            match entry.mode().kind() {
+                EntryKind::Blob | EntryKind::BlobExecutable
+                    if name.ends_with(".md") || name.ends_with(".markdown") =>
+                {
+                    files.push(path);
+                }
+                EntryKind::Tree => {
+                    let object = entry.object().map_err(gix_err)?;
+                    let subtree = object
+                        .try_into_tree()
+                        .map_err(|_| SaraError::Git("Expected tree object".to_string()))?;
                     self.walk_tree(&subtree, path, files)?;
                 }
+                // EntryKind::Link (symlink) and EntryKind::Commit (submodule) are
+                // intentionally skipped, matching the prior git2 behavior.
                 _ => {}
             }
         }
@@ -155,6 +205,12 @@ impl GitReader {
     }
 
     /// Parses all Markdown files from a specific commit.
+    ///
+    /// # Errors
+    /// Propagates errors from [`Self::resolve_ref`]. Returns the first parse
+    /// error only when no items could be parsed at all; otherwise individual
+    /// parse failures are logged via `tracing` and the successful items are
+    /// returned.
     pub fn parse_commit(&self, git_ref: &GitRef) -> Result<Vec<Item>, SaraError> {
         let commit = self.resolve_ref(git_ref)?;
         let files = self.list_markdown_files(&commit)?;
@@ -200,12 +256,12 @@ impl GitReader {
 
 /// Checks if a path is inside a Git repository.
 pub fn is_git_repo(path: &Path) -> bool {
-    Repository::discover(path).is_ok()
+    gix::discover(path).is_ok()
 }
 
 /// Gets the root of the Git repository containing the given path.
 pub fn get_repo_root(path: &Path) -> Option<PathBuf> {
-    Repository::discover(path)
+    gix::discover(path)
         .ok()
         .and_then(|r| r.workdir().map(|p| p.to_path_buf()))
 }
