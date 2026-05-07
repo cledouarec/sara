@@ -7,6 +7,82 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.7.6...sara-cli-v0.8.0) - 2026-05-07
+
+### Added
+
+- add ADR (Architecture Decision Record) management (by @cledouarec)
+- add depends_on peer dependency support for requirements (by @cledouarec)
+- implement git reference comparison (by @cledouarec)
+
+### Build
+
+- remove useless dependencies (by @cledouarec)
+
+### Changed
+
+- move query module into graph as KnowledgeGraph methods (by @cledouarec)
+- consolidate diff, edit, init modules into service module (by @cledouarec)
+- replace upstream/downstream with relationships Vec on Item (by @cledouarec)
+- consolidate error types into a single SaraError enum (by @cledouarec)
+- use KnowledgeGraphBuilder and remove unused functions (by @cledouarec)
+- [**breaking**] consolidate parse and validate commands into check (by @cledouarec)
+- update validation rules to use ValidationRule trait (by @cledouarec)
+- consolidate test helpers and reduce code duplication (by @cledouarec)
+- *(cli)* restructure init command to use subcommands (by @cledouarec)
+- *(templates)* update templates and remove frontmatter.tera (by @cledouarec)
+- move Args and format enums to command modules (by @cledouarec)
+- consolidate field names into FieldName enum (by @cledouarec)
+- merge prompt_item_id into prompt_identifier (by @cledouarec)
+- remove progress indicators from CLI (by @cledouarec)
+
+### Documentation
+
+- add gifs in readme (by @cledouarec)
+- clean changelogs (by @cledouarec)
+- add readme for all crates (by @cledouarec)
+
+### Fixed
+
+- use config file strict_mode for validation check command (by @cledouarec)
+- export full Item in JSON check output instead of incomplete ItemExport (by @cledouarec)
+- *(cli)* change error output to stdout, summaries to stderr (by @cledouarec)
+- colorize text prefix when emojis are disabled (by @cledouarec)
+- apply config file output settings (by @cledouarec)
+
+### Other
+
+- release v0.7.6 (by @github-actions[bot])
+- release v0.7.5 (by @github-actions[bot])
+- release v0.7.4 (by @github-actions[bot])
+- release v0.7.3 (by @github-actions[bot])
+- release v0.7.2 (by @github-actions[bot])
+- release v0.7.1 (by @github-actions[bot])
+- release v0.7.0 (by @github-actions[bot])
+- release v0.6.0 (by @github-actions[bot])
+- release v0.5.4 (by @github-actions[bot])
+- release v0.5.3 (by @github-actions[bot])
+- release v0.5.2 (by @github-actions[bot])
+- release v0.5.1 (by @github-actions[bot])
+- release v0.5.0 (by @github-actions[bot])
+- release v0.4.0 (by @github-actions[bot])
+- release v0.3.3 (by @github-actions[bot])
+- release v0.3.2 (by @github-actions[bot])
+- release v0.3.1 (by @github-actions[bot])
+- release v0.3.0 (by @github-actions[bot])
+- release v0.2.0 (by @github-actions[bot])
+- release v0.1.3 (by @github-actions[bot])
+- release v0.1.2 (by @github-actions[bot])
+
+### Styling
+
+- reorder imports (by @cledouarec)
+
+### Contributors
+
+* @github-actions[bot]
+* @cledouarec
+
 ## [0.7.6](https://github.com/cledouarec/sara/compare/sara-cli-v0.7.5...sara-cli-v0.7.6) - 2026-04-17
 
 ### Other
