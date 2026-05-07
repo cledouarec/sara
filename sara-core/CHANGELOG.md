@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.8.0](https://github.com/cledouarec/sara/compare/sara-core-v0.7.6...sara-core-v0.8.0) - 2026-05-07
+
+### Changed
+
+- migrate to gix crate (by @cledouarec) - #92
+
+### Contributors
+
+* @cledouarec
+
 ## [0.7.6](https://github.com/cledouarec/sara/compare/sara-core-v0.7.5...sara-core-v0.7.6) - 2026-04-17
 
 ### Fixed
