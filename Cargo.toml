@@ -53,7 +53,7 @@ tera = "1.20.1"
 inquire = "0.9.4"
 
 # Testing
-assert_cmd = "2.2.1"
+assert_cmd = "2.2.2"
 predicates = "3.1.4"
 tempfile = "3.27.0"
 
