@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use super::field::FieldName;
 use super::item::{ItemId, ItemType};
+use crate::schema::{self, RelationDirection};
 
 /// Represents the type of relationship between items.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -36,6 +37,37 @@ pub enum RelationshipType {
 }
 
 impl RelationshipType {
+    /// Returns all relationship variants in declaration order.
+    #[must_use]
+    pub const fn all() -> &'static [RelationshipType] {
+        &[
+            Self::Refines,
+            Self::IsRefinedBy,
+            Self::Derives,
+            Self::DerivesFrom,
+            Self::Satisfies,
+            Self::IsSatisfiedBy,
+            Self::DependsOn,
+            Self::IsRequiredBy,
+            Self::Justifies,
+            Self::IsJustifiedBy,
+            Self::Supersedes,
+            Self::IsSupersededBy,
+        ]
+    }
+
+    /// Returns the variant matching the given schema relation id, if any.
+    ///
+    /// Inverse of [`RelationshipType::field_name`]: the schema relation id
+    /// matches `RelationshipType::field_name().as_str()`.
+    #[must_use]
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::all()
+            .iter()
+            .copied()
+            .find(|r| r.field_name().as_str() == id)
+    }
+
     /// Get the inverse relationship type.
     #[must_use]
     pub const fn inverse(&self) -> Self {
@@ -165,156 +197,134 @@ impl Relationship {
 }
 
 /// Valid relationship rules based on item types.
+///
+/// All checks delegate to the active [`crate::schema::Schema`], so custom
+/// schemas redefining the relationship matrix take effect transparently.
 pub struct RelationshipRules;
 
 impl RelationshipRules {
-    /// Returns the valid upstream relationship types for a given item type.
+    /// Returns the upstream relationship a type may establish and its allowed
+    /// targets.
+    ///
+    /// Built-in types have at most one upstream relation, but a custom schema
+    /// may declare several. Only the first upstream entry is returned, in
+    /// declaration order, to preserve the legacy single-relation API.
     #[must_use]
     pub fn valid_upstream_for(item_type: ItemType) -> Option<(RelationshipType, Vec<ItemType>)> {
-        match item_type {
-            ItemType::Solution => None,
-            ItemType::UseCase => Some((RelationshipType::Refines, vec![ItemType::Solution])),
-            ItemType::Scenario => Some((RelationshipType::Refines, vec![ItemType::UseCase])),
-            ItemType::SystemRequirement => {
-                Some((RelationshipType::DerivesFrom, vec![ItemType::Scenario]))
-            }
-            ItemType::SystemArchitecture => Some((
-                RelationshipType::Satisfies,
-                vec![ItemType::SystemRequirement],
-            )),
-            ItemType::HardwareRequirement => Some((
-                RelationshipType::DerivesFrom,
-                vec![ItemType::SystemArchitecture],
-            )),
-            ItemType::SoftwareRequirement => Some((
-                RelationshipType::DerivesFrom,
-                vec![ItemType::SystemArchitecture],
-            )),
-            ItemType::HardwareDetailedDesign => Some((
-                RelationshipType::Satisfies,
-                vec![ItemType::HardwareRequirement],
-            )),
-            ItemType::SoftwareDetailedDesign => Some((
-                RelationshipType::Satisfies,
-                vec![ItemType::SoftwareRequirement],
-            )),
-            ItemType::ArchitectureDecisionRecord => Some((
-                RelationshipType::Justifies,
-                vec![
-                    ItemType::SystemArchitecture,
-                    ItemType::SoftwareDetailedDesign,
-                    ItemType::HardwareDetailedDesign,
-                ],
-            )),
-        }
+        let def = schema::item_type_def(item_type.as_str())?;
+        def.allowed_targets
+            .iter()
+            .filter_map(|t| {
+                let rel = schema::relation_def(&t.relation)?;
+                if rel.direction != RelationDirection::Upstream {
+                    return None;
+                }
+                let rel_type = RelationshipType::from_id(&t.relation)?;
+                let targets: Vec<ItemType> = t
+                    .targets
+                    .iter()
+                    .filter_map(|id| ItemType::from_id(id))
+                    .collect();
+                Some((rel_type, targets))
+            })
+            .next()
     }
 
-    /// Returns the valid downstream relationship types for a given item type.
+    /// Returns the downstream relationship a type may receive and the source
+    /// types that may target it.
+    ///
+    /// Derived from every other type's upstream declarations: a type T is a
+    /// downstream target of type S when S declares an upstream relation
+    /// targeting T. The returned relation is the inverse of S's upstream
+    /// relation, matching the legacy single-entry API.
     #[must_use]
     pub fn valid_downstream_for(item_type: ItemType) -> Option<(RelationshipType, Vec<ItemType>)> {
-        match item_type {
-            ItemType::Solution => Some((RelationshipType::IsRefinedBy, vec![ItemType::UseCase])),
-            ItemType::UseCase => Some((RelationshipType::IsRefinedBy, vec![ItemType::Scenario])),
-            ItemType::Scenario => {
-                Some((RelationshipType::Derives, vec![ItemType::SystemRequirement]))
+        let active = schema::active();
+        let to_id = item_type.as_str();
+
+        // Collect (inverse_rel, source_type) pairs grouped by inverse relation,
+        // preserving the order types are declared in the schema.
+        let mut entries: Vec<(RelationshipType, Vec<ItemType>)> = Vec::new();
+        for src_def in &active.item_types {
+            let Some(src_type) = ItemType::from_id(&src_def.id) else {
+                continue;
+            };
+            for target in &src_def.allowed_targets {
+                let Some(rel) = schema::relation_def(&target.relation) else {
+                    continue;
+                };
+                if rel.direction != RelationDirection::Upstream {
+                    continue;
+                }
+                if !target.targets.iter().any(|t| t == to_id) {
+                    continue;
+                }
+                let Some(inverse) = RelationshipType::from_id(&rel.inverse) else {
+                    continue;
+                };
+                if let Some(entry) = entries.iter_mut().find(|(r, _)| *r == inverse) {
+                    if !entry.1.contains(&src_type) {
+                        entry.1.push(src_type);
+                    }
+                } else {
+                    entries.push((inverse, vec![src_type]));
+                }
             }
-            ItemType::SystemRequirement => Some((
-                RelationshipType::IsSatisfiedBy,
-                vec![ItemType::SystemArchitecture],
-            )),
-            ItemType::SystemArchitecture => Some((
-                RelationshipType::Derives,
-                vec![ItemType::HardwareRequirement, ItemType::SoftwareRequirement],
-            )),
-            ItemType::HardwareRequirement => Some((
-                RelationshipType::IsSatisfiedBy,
-                vec![ItemType::HardwareDetailedDesign],
-            )),
-            ItemType::SoftwareRequirement => Some((
-                RelationshipType::IsSatisfiedBy,
-                vec![ItemType::SoftwareDetailedDesign],
-            )),
-            ItemType::HardwareDetailedDesign | ItemType::SoftwareDetailedDesign => Some((
-                RelationshipType::IsJustifiedBy,
-                vec![ItemType::ArchitectureDecisionRecord],
-            )),
-            ItemType::ArchitectureDecisionRecord => None,
         }
+        entries.into_iter().next()
     }
 
-    /// Returns the valid peer dependency types for a given item type.
+    /// Returns the peer dependency target a type may declare, if any.
+    ///
+    /// Mirrors the legacy type-level peer rule: peer relations are valid
+    /// between any two items of a peer-capable type, regardless of the
+    /// specific peer relation.
     #[must_use]
-    pub const fn valid_peer_for(item_type: ItemType) -> Option<ItemType> {
-        match item_type {
-            ItemType::SystemRequirement => Some(ItemType::SystemRequirement),
-            ItemType::HardwareRequirement => Some(ItemType::HardwareRequirement),
-            ItemType::SoftwareRequirement => Some(ItemType::SoftwareRequirement),
-            ItemType::ArchitectureDecisionRecord => Some(ItemType::ArchitectureDecisionRecord),
-            _ => None,
-        }
+    pub fn valid_peer_for(item_type: ItemType) -> Option<ItemType> {
+        let def = schema::item_type_def(item_type.as_str())?;
+        def.allowed_targets
+            .iter()
+            .filter_map(|t| {
+                let rel = schema::relation_def(&t.relation)?;
+                if rel.direction != RelationDirection::Peer {
+                    return None;
+                }
+                t.targets.iter().find_map(|id| ItemType::from_id(id))
+            })
+            .next()
     }
 
     /// Returns the valid justification targets for ADRs.
+    ///
+    /// Derived from the ADR type's `justifies` upstream relation in the
+    /// active schema.
     #[must_use]
     pub fn valid_justification_targets() -> Vec<ItemType> {
-        vec![
-            ItemType::SystemArchitecture,
-            ItemType::SoftwareDetailedDesign,
-            ItemType::HardwareDetailedDesign,
-        ]
-    }
-
-    /// Checks if a justification relationship is valid (ADR -> design artifact).
-    #[must_use]
-    pub fn is_valid_justification(from_type: ItemType, to_type: ItemType) -> bool {
-        from_type == ItemType::ArchitectureDecisionRecord
-            && Self::valid_justification_targets().contains(&to_type)
-    }
-
-    /// Checks if a supersession relationship is valid (ADR -> ADR).
-    #[must_use]
-    pub const fn is_valid_supersession(from_type: ItemType, to_type: ItemType) -> bool {
-        matches!(from_type, ItemType::ArchitectureDecisionRecord)
-            && matches!(to_type, ItemType::ArchitectureDecisionRecord)
+        let Some(def) = schema::item_type_def(ItemType::ArchitectureDecisionRecord.as_str()) else {
+            return Vec::new();
+        };
+        def.allowed_targets
+            .iter()
+            .filter(|t| t.relation == "justifies")
+            .flat_map(|t| t.targets.iter().filter_map(|id| ItemType::from_id(id)))
+            .collect()
     }
 
     /// Checks if a relationship is valid between two item types.
+    ///
+    /// Delegates to [`crate::schema::Schema::is_valid_relationship`] on the
+    /// active schema; the per-relation/per-direction semantics live there.
     #[must_use]
     pub fn is_valid_relationship(
         from_type: ItemType,
         to_type: ItemType,
         rel_type: RelationshipType,
     ) -> bool {
-        match rel_type {
-            // Upstream relationships
-            RelationshipType::Refines
-            | RelationshipType::DerivesFrom
-            | RelationshipType::Satisfies
-            | RelationshipType::Justifies => {
-                if let Some((expected_rel, valid_targets)) = Self::valid_upstream_for(from_type) {
-                    expected_rel == rel_type && valid_targets.contains(&to_type)
-                } else {
-                    false
-                }
-            }
-            // Downstream relationships
-            RelationshipType::IsRefinedBy
-            | RelationshipType::Derives
-            | RelationshipType::IsSatisfiedBy => {
-                if let Some((expected_rel, valid_targets)) = Self::valid_downstream_for(from_type) {
-                    expected_rel == rel_type && valid_targets.contains(&to_type)
-                } else {
-                    false
-                }
-            }
-            // IsJustifiedBy needs special handling since design artifacts have multiple downstream types
-            RelationshipType::IsJustifiedBy => Self::is_valid_justification(to_type, from_type),
-            // Peer relationships (including ADR supersession)
-            RelationshipType::DependsOn
-            | RelationshipType::IsRequiredBy
-            | RelationshipType::Supersedes
-            | RelationshipType::IsSupersededBy => Self::valid_peer_for(from_type) == Some(to_type),
-        }
+        schema::active().is_valid_relationship(
+            from_type.as_str(),
+            to_type.as_str(),
+            rel_type.field_name().as_str(),
+        )
     }
 }
 
