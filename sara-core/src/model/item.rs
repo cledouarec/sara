@@ -8,6 +8,7 @@ use super::adr::AdrStatus;
 use crate::error::SaraError;
 use crate::model::FieldName;
 use crate::model::relationship::{Relationship, RelationshipType};
+use crate::schema::{self, RelationDirection};
 
 /// Represents the type of item in the knowledge graph.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -44,37 +45,25 @@ impl ItemType {
     }
 
     /// Returns the display name for this item type.
+    ///
+    /// Resolved from the active schema; falls back to the built-in default
+    /// when a custom schema does not redefine the type.
     #[must_use]
-    pub const fn display_name(&self) -> &'static str {
-        match self {
-            Self::Solution => "Solution",
-            Self::UseCase => "Use Case",
-            Self::Scenario => "Scenario",
-            Self::SystemRequirement => "System Requirement",
-            Self::SystemArchitecture => "System Architecture",
-            Self::HardwareRequirement => "Hardware Requirement",
-            Self::SoftwareRequirement => "Software Requirement",
-            Self::HardwareDetailedDesign => "Hardware Detailed Design",
-            Self::SoftwareDetailedDesign => "Software Detailed Design",
-            Self::ArchitectureDecisionRecord => "Architecture Decision Record",
-        }
+    pub fn display_name(&self) -> &'static str {
+        schema::item_type_def(self.as_str())
+            .map(|d| d.display_name.as_str())
+            .unwrap_or_default()
     }
 
     /// Returns the common ID prefix for this item type.
+    ///
+    /// Resolved from the active schema; falls back to the built-in default
+    /// when a custom schema does not redefine the type.
     #[must_use]
-    pub const fn prefix(&self) -> &'static str {
-        match self {
-            Self::Solution => "SOL",
-            Self::UseCase => "UC",
-            Self::Scenario => "SCEN",
-            Self::SystemRequirement => "SYSREQ",
-            Self::SystemArchitecture => "SYSARCH",
-            Self::HardwareRequirement => "HWREQ",
-            Self::SoftwareRequirement => "SWREQ",
-            Self::HardwareDetailedDesign => "HWDD",
-            Self::SoftwareDetailedDesign => "SWDD",
-            Self::ArchitectureDecisionRecord => "ADR",
-        }
+    pub fn prefix(&self) -> &'static str {
+        schema::item_type_def(self.as_str())
+            .map(|d| d.prefix.as_str())
+            .unwrap_or_default()
     }
 
     /// Generates a new ID for the given type with an optional sequence number.
@@ -186,21 +175,13 @@ impl ItemType {
 
     /// Returns the required parent item type for this type, if any.
     ///
-    /// Solution has no parent (root of the hierarchy).
+    /// Solution has no parent (root of the hierarchy). Resolved from the
+    /// first entry of the active schema's `parent_types` list.
     #[must_use]
-    pub const fn required_parent_type(&self) -> Option<ItemType> {
-        match self {
-            Self::Solution => None,
-            Self::UseCase => Some(Self::Solution),
-            Self::Scenario => Some(Self::UseCase),
-            Self::SystemRequirement => Some(Self::Scenario),
-            Self::SystemArchitecture => Some(Self::SystemRequirement),
-            Self::HardwareRequirement => Some(Self::SystemArchitecture),
-            Self::SoftwareRequirement => Some(Self::SystemArchitecture),
-            Self::HardwareDetailedDesign => Some(Self::HardwareRequirement),
-            Self::SoftwareDetailedDesign => Some(Self::SoftwareRequirement),
-            Self::ArchitectureDecisionRecord => None,
-        }
+    pub fn required_parent_type(&self) -> Option<ItemType> {
+        schema::item_type_def(self.as_str())
+            .and_then(|d| d.parent_types.first())
+            .and_then(|id| ItemType::from_id(id))
     }
 
     /// Returns the upstream traceability field for this item type.
@@ -236,80 +217,51 @@ impl ItemType {
         }
     }
 
+    /// Returns the variant matching the given schema id, if any.
+    ///
+    /// Inverse of [`ItemType::as_str`]. Used when mapping a schema definition
+    /// back to a concrete enum variant.
+    #[must_use]
+    pub fn from_id(id: &str) -> Option<Self> {
+        Self::all().iter().copied().find(|t| t.as_str() == id)
+    }
+
     /// Returns all traceability configurations for this item type.
     ///
-    /// Most item types have a single traceability link (e.g., refines, satisfies).
-    /// Requirement types have two: derives_from (hierarchical) and depends_on (peer).
-    /// Solution has no parent and returns an empty vec.
+    /// Most item types have a single traceability link (e.g., refines,
+    /// satisfies). Requirement types have two: derives_from (hierarchical) and
+    /// depends_on (peer). Roots (Solution) and ADR-like detached types may
+    /// have none.
+    ///
+    /// Derived from the active schema's `allowed_targets`, filtered to keep
+    /// upstream relations and the `depends_on` peer relation, mirroring the
+    /// legacy semantics. Targets that do not map to a known [`ItemType`]
+    /// variant are skipped (relevant once custom schemas introduce new types
+    /// in later phases).
     #[must_use]
     pub fn traceability_configs(&self) -> Vec<TraceabilityConfig> {
-        match self {
-            ItemType::Solution => vec![],
-            ItemType::UseCase => vec![TraceabilityConfig {
-                relationship_field: FieldName::Refines,
-                target_type: ItemType::Solution,
-            }],
-            ItemType::Scenario => vec![TraceabilityConfig {
-                relationship_field: FieldName::Refines,
-                target_type: ItemType::UseCase,
-            }],
-            ItemType::SystemRequirement => vec![
-                TraceabilityConfig {
-                    relationship_field: FieldName::DerivesFrom,
-                    target_type: ItemType::Scenario,
-                },
-                TraceabilityConfig {
-                    relationship_field: FieldName::DependsOn,
-                    target_type: ItemType::SystemRequirement,
-                },
-            ],
-            ItemType::SystemArchitecture => vec![TraceabilityConfig {
-                relationship_field: FieldName::Satisfies,
-                target_type: ItemType::SystemRequirement,
-            }],
-            ItemType::HardwareRequirement => vec![
-                TraceabilityConfig {
-                    relationship_field: FieldName::DerivesFrom,
-                    target_type: ItemType::SystemArchitecture,
-                },
-                TraceabilityConfig {
-                    relationship_field: FieldName::DependsOn,
-                    target_type: ItemType::HardwareRequirement,
-                },
-            ],
-            ItemType::SoftwareRequirement => vec![
-                TraceabilityConfig {
-                    relationship_field: FieldName::DerivesFrom,
-                    target_type: ItemType::SystemArchitecture,
-                },
-                TraceabilityConfig {
-                    relationship_field: FieldName::DependsOn,
-                    target_type: ItemType::SoftwareRequirement,
-                },
-            ],
-            ItemType::HardwareDetailedDesign => vec![TraceabilityConfig {
-                relationship_field: FieldName::Satisfies,
-                target_type: ItemType::HardwareRequirement,
-            }],
-            ItemType::SoftwareDetailedDesign => vec![TraceabilityConfig {
-                relationship_field: FieldName::Satisfies,
-                target_type: ItemType::SoftwareRequirement,
-            }],
-            ItemType::ArchitectureDecisionRecord => vec![
-                TraceabilityConfig {
-                    relationship_field: FieldName::Justifies,
-                    target_type: ItemType::SystemArchitecture,
-                },
-                TraceabilityConfig {
-                    relationship_field: FieldName::Justifies,
-                    target_type: ItemType::SoftwareDetailedDesign,
-                },
-                TraceabilityConfig {
-                    relationship_field: FieldName::Justifies,
-                    target_type: ItemType::HardwareDetailedDesign,
-                },
-            ],
-        }
+        let Some(def) = schema::item_type_def(self.as_str()) else {
+            return Vec::new();
+        };
+
+        def.allowed_targets
+            .iter()
+            .filter(|t| {
+                schema::relation_def(&t.relation).is_some_and(|r| {
+                    r.direction == RelationDirection::Upstream || t.relation == "depends_on"
+                })
+            })
+            .flat_map(|t| {
+                let field = RelationshipType::from_id(&t.relation).map(|r| r.field_name());
+                t.targets.iter().filter_map(move |target| {
+                    let target_type = ItemType::from_id(target)?;
+                    Some(TraceabilityConfig {
+                        relationship_field: field?,
+                        target_type,
+                    })
+                })
+            })
+            .collect()
     }
 }
 

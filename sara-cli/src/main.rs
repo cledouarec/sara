@@ -134,6 +134,22 @@ fn main() -> ExitCode {
         None
     };
 
+    // Install the active schema before any command runs so domain methods see
+    // the configured (or built-in) model. A failure to load the configured
+    // schema is non-fatal; we fall back to the built-in defaults.
+    if let Some(cfg) = file_config.as_ref() {
+        match cfg.load_schema() {
+            Ok(schema) => {
+                // Discard `Err`: another caller may have installed first
+                // (no-op for the CLI entry point but defensive).
+                let _ = sara_core::schema::install(schema);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load model schema: {}", e);
+            }
+        }
+    }
+
     // Run the command
     let result = commands::run(&cli, file_config.as_ref());
 

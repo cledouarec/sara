@@ -9,6 +9,7 @@
 //! Lives in the core with no dependency on `parser` or `generator`, preserving
 //! the hexagonal boundary.
 
+mod active;
 mod builtin;
 mod yaml;
 
@@ -16,6 +17,9 @@ mod yaml;
 mod parity_tests;
 
 use serde::{Deserialize, Serialize};
+
+pub use active::{active, install};
+pub(crate) use active::{item_type_def, relation_def};
 
 /// The direction of a relation relative to the model hierarchy.
 ///
