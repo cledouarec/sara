@@ -11,6 +11,7 @@ pub mod model;
 pub mod parser;
 pub mod report;
 pub mod repository;
+pub mod schema;
 pub mod service;
 pub mod validation;
 

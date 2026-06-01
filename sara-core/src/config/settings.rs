@@ -22,6 +22,10 @@ pub struct Config {
     /// Custom templates configuration.
     #[serde(default)]
     pub templates: TemplatesConfig,
+
+    /// Optional path to a YAML file defining the domain model schema.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub model_schema: Option<String>,
 }
 
 impl Config {
@@ -33,6 +37,24 @@ impl Config {
     /// Adds a repository path.
     pub fn add_repository(&mut self, path: impl Into<PathBuf>) {
         self.repositories.paths.push(path.into());
+    }
+
+    /// Loads the active domain model schema.
+    ///
+    /// Returns the schema referenced by [`Config::model_schema`] when set,
+    /// otherwise the built-in schema.
+    ///
+    /// # Errors
+    ///
+    /// Returns a [`SaraError`] if a configured schema file cannot be read or
+    /// is invalid.
+    ///
+    /// [`SaraError`]: crate::error::SaraError
+    pub fn load_schema(&self) -> Result<crate::schema::Schema, crate::error::SaraError> {
+        match &self.model_schema {
+            Some(path) => crate::schema::Schema::from_path(std::path::Path::new(path)),
+            None => Ok(crate::schema::Schema::builtin()),
+        }
     }
 }
 
