@@ -339,7 +339,28 @@ pub fn parse_item_types(types: &[String]) -> Vec<ItemType> {
             "software_detailed_design" | "softwaredetaileddesign" => {
                 Some(ItemType::SoftwareDetailedDesign)
             }
+            "architecture_decision_record" | "architecturedecisionrecord" => {
+                Some(ItemType::ArchitectureDecisionRecord)
+            }
             _ => None,
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_parse_item_types_covers_every_item_type() {
+        for item_type in ItemType::all() {
+            let parsed = parse_item_types(&[item_type.as_str().to_string()]);
+            assert_eq!(
+                parsed,
+                vec![*item_type],
+                "type id `{}` must be accepted by --type",
+                item_type.as_str()
+            );
+        }
+    }
 }
