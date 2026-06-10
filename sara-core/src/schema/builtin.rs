@@ -44,17 +44,6 @@ fn specification_field() -> FieldDef {
     }
 }
 
-/// Convenience constructor for a `depends_on` peer-reference list field.
-fn depends_on_field() -> FieldDef {
-    FieldDef {
-        name: "depends_on".to_string(),
-        display_name: "Depends on".to_string(),
-        field_type: FieldType::List(Box::new(FieldType::ItemRef)),
-        required: false,
-        placeholder: None,
-    }
-}
-
 impl Schema {
     /// Returns the default schema.
     ///
@@ -185,7 +174,7 @@ impl Schema {
                 prefix: "SYSREQ".to_string(),
                 id_format: "{prefix}-{seq:03}".to_string(),
                 parent_types: vec!["scenario".to_string()],
-                fields: vec![specification_field(), depends_on_field()],
+                fields: vec![specification_field()],
                 allowed_targets: vec![
                     allowed("derives_from", &["scenario"]),
                     allowed("depends_on", &["system_requirement"]),
@@ -212,7 +201,7 @@ impl Schema {
                 prefix: "HWREQ".to_string(),
                 id_format: "{prefix}-{seq:03}".to_string(),
                 parent_types: vec!["system_architecture".to_string()],
-                fields: vec![specification_field(), depends_on_field()],
+                fields: vec![specification_field()],
                 allowed_targets: vec![
                     allowed("derives_from", &["system_architecture"]),
                     allowed("depends_on", &["hardware_requirement"]),
@@ -224,7 +213,7 @@ impl Schema {
                 prefix: "SWREQ".to_string(),
                 id_format: "{prefix}-{seq:03}".to_string(),
                 parent_types: vec!["system_architecture".to_string()],
-                fields: vec![specification_field(), depends_on_field()],
+                fields: vec![specification_field()],
                 allowed_targets: vec![
                     allowed("derives_from", &["system_architecture"]),
                     allowed("depends_on", &["software_requirement"]),
@@ -275,13 +264,6 @@ impl Schema {
                         field_type: FieldType::List(Box::new(FieldType::Text)),
                         required: true,
                         placeholder: Some("TBD".to_string()),
-                    },
-                    FieldDef {
-                        name: "supersedes".to_string(),
-                        display_name: "Supersedes".to_string(),
-                        field_type: FieldType::List(Box::new(FieldType::ItemRef)),
-                        required: false,
-                        placeholder: None,
                     },
                 ],
                 allowed_targets: vec![

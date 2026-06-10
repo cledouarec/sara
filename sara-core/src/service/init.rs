@@ -332,25 +332,11 @@ impl InitService {
                 let Some(relation) = schema::relation_def(&target.relation) else {
                     continue;
                 };
-                match relation.direction {
-                    RelationDirection::Upstream => {
-                        if let Some(rel_type) = RelationshipType::from_id(&target.relation) {
-                            relationships.extend(super::ids_to_relationships(ids, rel_type));
-                        }
-                    }
-                    // Peer references live in the attribute map, like the
-                    // parsed form of the same frontmatter field.
-                    RelationDirection::Peer => {
-                        builder = builder.attribute(
-                            target.relation.clone(),
-                            FieldValue::List(
-                                ids.iter()
-                                    .map(|id| FieldValue::ItemRef(ItemId::new_unchecked(id)))
-                                    .collect(),
-                            ),
-                        );
-                    }
-                    RelationDirection::Downstream => {}
+                if relation.direction == RelationDirection::Downstream {
+                    continue;
+                }
+                if let Some(rel_type) = RelationshipType::from_id(&target.relation) {
+                    relationships.extend(super::ids_to_relationships(ids, rel_type));
                 }
             }
             builder = builder.relationships(relationships);

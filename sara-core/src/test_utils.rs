@@ -225,7 +225,10 @@ mod tests {
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
         let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 1);
-        assert_eq!(item.attributes.supersedes().len(), 1);
+        assert_eq!(
+            item.relationship_ids(RelationshipType::SUPERSEDES).count(),
+            1
+        );
     }
 
     #[test]

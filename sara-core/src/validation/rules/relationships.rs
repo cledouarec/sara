@@ -54,7 +54,6 @@ fn check_references<'a>(
 fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<SaraError> {
     let mut errors = Vec::new();
 
-    // Check all relationships from the item's relationships vec
     for rel in &item.relationships {
         check_references(
             item,
@@ -64,15 +63,6 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<SaraE
             &mut errors,
         );
     }
-
-    // Check peer dependencies (stored in attributes)
-    check_references(
-        item,
-        graph,
-        item.attributes.depends_on().iter(),
-        RelationshipType::DEPENDS_ON,
-        &mut errors,
-    );
 
     errors
 }

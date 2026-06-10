@@ -337,44 +337,31 @@ fn build_context(item: &Item) -> Context {
 
     let mut entries: Vec<FrontmatterEntry> = Vec::new();
 
-    // Declared fields first, except those backed by a peer relation: the
-    // frontmatter renders peer reference lists together with the relations.
+    // Declared fields first, then declared relations in declaration order.
     for field in &def.fields {
-        if is_peer_relation(&field.name) {
-            continue;
-        }
         if let Some(entry) = field_entry(item, field) {
             entries.push(entry);
         }
     }
 
-    // Declared relations next, in declaration order. Upstream relations read
-    // the item's relationships; peer relations read the matching attribute
-    // list. Downstream relations are derived and never declared as primary.
+    // Upstream and peer relations read the item's relationships; downstream
+    // relations are derived and never declared as primary.
     for target in &def.allowed_targets {
         let Some(rel) = schema::relation_def(&target.relation) else {
             continue;
         };
-        match rel.direction {
-            RelationDirection::Upstream => {
-                let Some(rel_type) = RelationshipType::from_id(&target.relation) else {
-                    continue;
-                };
-                let ids: Vec<String> = item
-                    .relationship_ids(rel_type)
-                    .map(|id| id.as_str().to_string())
-                    .collect();
-                if !ids.is_empty() {
-                    entries.push(FrontmatterEntry::list(&target.relation, ids));
-                }
-            }
-            RelationDirection::Peer => {
-                let peer_field = def.fields.iter().find(|f| f.name == target.relation);
-                if let Some(entry) = peer_field.and_then(|f| field_entry(item, f)) {
-                    entries.push(entry);
-                }
-            }
-            RelationDirection::Downstream => {}
+        if rel.direction == RelationDirection::Downstream {
+            continue;
+        }
+        let Some(rel_type) = RelationshipType::from_id(&target.relation) else {
+            continue;
+        };
+        let ids: Vec<String> = item
+            .relationship_ids(rel_type)
+            .map(|id| id.as_str().to_string())
+            .collect();
+        if !ids.is_empty() {
+            entries.push(FrontmatterEntry::list(&target.relation, ids));
         }
     }
 
@@ -388,11 +375,6 @@ fn build_context(item: &Item) -> Context {
     context.insert("entries", &entries);
 
     context
-}
-
-/// Returns true if the name matches a peer relation in the active schema.
-fn is_peer_relation(name: &str) -> bool {
-    schema::relation_def(name).is_some_and(|rel| rel.direction == RelationDirection::Peer)
 }
 
 /// Builds the frontmatter entry for one declared field, if the item holds a

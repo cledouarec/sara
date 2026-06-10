@@ -144,6 +144,113 @@ mod tests {
     }
 
     #[test]
+    fn test_peer_dependency_cycle_detected() {
+        let req1 = create_test_item_with_relationships(
+            "SYSREQ-001",
+            ItemType::SYSTEM_REQUIREMENT,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-002"),
+                RelationshipType::DEPENDS_ON,
+            )],
+        );
+        let req2 = create_test_item_with_relationships(
+            "SYSREQ-002",
+            ItemType::SYSTEM_REQUIREMENT,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-001"),
+                RelationshipType::DEPENDS_ON,
+            )],
+        );
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(req1)
+            .add_item(req2)
+            .build()
+            .unwrap();
+
+        let rule = CyclesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
+        assert!(!errors.is_empty(), "depends_on cycle should be detected");
+    }
+
+    #[test]
+    fn test_peer_dependency_without_cycle_is_valid() {
+        let req1 = create_test_item_with_relationships(
+            "SYSREQ-001",
+            ItemType::SYSTEM_REQUIREMENT,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-002"),
+                RelationshipType::DEPENDS_ON,
+            )],
+        );
+        let req2 = create_test_item("SYSREQ-002", ItemType::SYSTEM_REQUIREMENT);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(req1)
+            .add_item(req2)
+            .build()
+            .unwrap();
+
+        let rule = CyclesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
+        assert!(
+            errors.is_empty(),
+            "a one-way dependency must not be reported as a cycle: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn test_supersession_cycle_detected() {
+        let adr1 = create_test_item_with_relationships(
+            "ADR-001",
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            vec![Relationship::new(
+                ItemId::new_unchecked("ADR-002"),
+                RelationshipType::SUPERSEDES,
+            )],
+        );
+        let adr2 = create_test_item_with_relationships(
+            "ADR-002",
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            vec![Relationship::new(
+                ItemId::new_unchecked("ADR-001"),
+                RelationshipType::SUPERSEDES,
+            )],
+        );
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(adr1)
+            .add_item(adr2)
+            .build()
+            .unwrap();
+
+        let rule = CyclesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
+        assert!(!errors.is_empty(), "supersedes cycle should be detected");
+    }
+
+    #[test]
+    fn test_peer_self_reference_detected() {
+        let req = create_test_item_with_relationships(
+            "SYSREQ-001",
+            ItemType::SYSTEM_REQUIREMENT,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-001"),
+                RelationshipType::DEPENDS_ON,
+            )],
+        );
+
+        let graph = KnowledgeGraphBuilder::new().add_item(req).build().unwrap();
+
+        let rule = CyclesRule;
+        let errors = rule.validate(&graph, &ValidationConfig::default());
+        assert!(
+            !errors.is_empty(),
+            "a self-referencing dependency should be detected"
+        );
+    }
+
+    #[test]
     fn test_would_create_cycle() {
         let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(

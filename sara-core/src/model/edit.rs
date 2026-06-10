@@ -140,12 +140,7 @@ impl TraceabilityLinks {
             refines: collect_ids(RelationshipType::REFINES),
             derives_from: collect_ids(RelationshipType::DERIVES_FROM),
             satisfies: collect_ids(RelationshipType::SATISFIES),
-            depends_on: item
-                .attributes
-                .depends_on()
-                .iter()
-                .map(|id| id.as_str().to_string())
-                .collect(),
+            depends_on: collect_ids(RelationshipType::DEPENDS_ON),
             justifies: collect_ids(RelationshipType::JUSTIFIES),
         }
     }

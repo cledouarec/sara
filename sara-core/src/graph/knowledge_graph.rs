@@ -334,31 +334,16 @@ impl KnowledgeGraphBuilder {
         for rel in &item.relationships {
             edges.push((item.id.clone(), rel.to.clone(), rel.relationship_type));
 
-            // Downstream declarations (and upstream ones on detached types)
-            // get an inverse edge so traversal works from either side.
+            // Downstream declarations, primary peer declarations and
+            // upstream ones on detached types get an inverse edge so
+            // traversal works from either side.
             let rel_type = rel.relationship_type;
-            if rel_type.is_downstream() || (detached && rel_type.is_upstream()) {
+            if rel_type.is_downstream()
+                || (rel_type.is_peer() && rel_type.is_primary())
+                || (detached && rel_type.is_upstream())
+            {
                 edges.push((rel.to.clone(), item.id.clone(), rel_type.inverse()));
             }
-        }
-
-        // Peer dependencies (for requirement types, stored in attributes)
-        for target_id in item.attributes.depends_on() {
-            edges.push((item.id.clone(), target_id, RelationshipType::DEPENDS_ON));
-        }
-
-        // ADR supersession (peer relationships between ADRs, stored in attributes)
-        for target_id in item.attributes.supersedes() {
-            edges.push((
-                item.id.clone(),
-                target_id.clone(),
-                RelationshipType::SUPERSEDES,
-            ));
-            edges.push((
-                target_id,
-                item.id.clone(),
-                RelationshipType::IS_SUPERSEDED_BY,
-            ));
         }
 
         edges

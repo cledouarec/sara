@@ -6,7 +6,7 @@ use super::adr::AdrStatus;
 use super::field::FieldValue;
 use super::item::{Item, ItemAttributes, ItemId, ItemType};
 use super::metadata::SourceLocation;
-use super::relationship::Relationship;
+use super::relationship::{Relationship, RelationshipType};
 use crate::error::SaraError;
 use crate::schema;
 
@@ -18,10 +18,6 @@ const FIELD_PLATFORM: &str = "platform";
 const FIELD_STATUS: &str = "status";
 /// Field name used for the ADR deciders list.
 const FIELD_DECIDERS: &str = "deciders";
-/// Field name used for the peer-dependency list.
-const FIELD_DEPENDS_ON: &str = "depends_on";
-/// Field name used for the ADR supersession list.
-const FIELD_SUPERSEDES: &str = "supersedes";
 
 /// Builder for constructing `Item` instances from parsed frontmatter.
 ///
@@ -75,9 +71,9 @@ impl ItemBuilder {
         self
     }
 
-    /// Sets all relationships for this item.
+    /// Adds relationships for this item.
     pub fn relationships(mut self, relationships: Vec<Relationship>) -> Self {
-        self.relationships = relationships;
+        self.relationships.extend(relationships);
         self
     }
 
@@ -95,9 +91,10 @@ impl ItemBuilder {
         self
     }
 
-    /// Adds a dependency (for requirement types).
+    /// Adds a peer dependency relationship.
     pub fn depends_on(mut self, id: ItemId) -> Self {
-        push_item_ref(&mut self.attributes, FIELD_DEPENDS_ON, id);
+        self.relationships
+            .push(Relationship::new(id, RelationshipType::DEPENDS_ON));
         self
     }
 
@@ -123,17 +120,18 @@ impl ItemBuilder {
         self
     }
 
-    /// Adds a superseded ADR ID.
+    /// Adds a supersession relationship toward an older peer.
     pub fn supersedes(mut self, id: ItemId) -> Self {
-        push_item_ref(&mut self.attributes, FIELD_SUPERSEDES, id);
+        self.relationships
+            .push(Relationship::new(id, RelationshipType::SUPERSEDES));
         self
     }
 
-    /// Sets the supersedes references (for ADR).
+    /// Adds supersession relationships toward several older peers.
     pub fn supersedes_all(mut self, ids: Vec<ItemId>) -> Self {
-        self.attributes.insert(
-            FIELD_SUPERSEDES,
-            FieldValue::List(ids.into_iter().map(FieldValue::ItemRef).collect()),
+        self.relationships.extend(
+            ids.into_iter()
+                .map(|id| Relationship::new(id, RelationshipType::SUPERSEDES)),
         );
         self
     }
@@ -232,12 +230,6 @@ impl ItemBuilder {
             attributes: self.attributes,
         })
     }
-}
-
-/// Appends an `ItemRef` value to the list stored under `field`, creating the
-/// list entry if it does not yet exist.
-fn push_item_ref(attrs: &mut ItemAttributes, field: &str, id: ItemId) {
-    push_value(attrs, field, FieldValue::ItemRef(id));
 }
 
 /// Appends a `Text` value to the list stored under `field`, creating the
