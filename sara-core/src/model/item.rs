@@ -387,10 +387,6 @@ const FIELD_PLATFORM: &str = "platform";
 const FIELD_STATUS: &str = "status";
 /// Canonical field name for the ADR deciders list.
 const FIELD_DECIDERS: &str = "deciders";
-/// Canonical field name for the peer-dependency list.
-const FIELD_DEPENDS_ON: &str = "depends_on";
-/// Canonical field name for the ADR supersession list.
-const FIELD_SUPERSEDES: &str = "supersedes";
 
 /// Type-specific attributes for items, stored as an ordered field map.
 ///
@@ -464,12 +460,6 @@ impl ItemAttributes {
         self.get(FIELD_SPECIFICATION).and_then(FieldValue::as_text)
     }
 
-    /// Returns the depends_on references as owned [`ItemId`]s.
-    #[must_use]
-    pub fn depends_on(&self) -> Vec<ItemId> {
-        collect_item_refs(self.get(FIELD_DEPENDS_ON))
-    }
-
     /// Returns the platform text if a `platform` text field is set.
     #[must_use]
     pub fn platform(&self) -> Option<&String> {
@@ -497,25 +487,6 @@ impl ItemAttributes {
             })
             .unwrap_or_default()
     }
-
-    /// Returns the supersedes references as owned [`ItemId`]s.
-    #[must_use]
-    pub fn supersedes(&self) -> Vec<ItemId> {
-        collect_item_refs(self.get(FIELD_SUPERSEDES))
-    }
-}
-
-/// Extracts the inner [`ItemId`]s from a [`FieldValue::List`] of [`FieldValue::ItemRef`].
-fn collect_item_refs(value: Option<&FieldValue>) -> Vec<ItemId> {
-    value
-        .and_then(FieldValue::as_list)
-        .map(|list| {
-            list.iter()
-                .filter_map(FieldValue::as_item_ref)
-                .cloned()
-                .collect()
-        })
-        .unwrap_or_default()
 }
 
 use crate::model::metadata::SourceLocation;
@@ -575,17 +546,7 @@ impl Item {
 
     /// Returns an iterator over all referenced item IDs (relationships and peer refs from attributes).
     pub fn all_references(&self) -> impl Iterator<Item = &ItemId> {
-        let relationship_refs = self.relationships.iter().map(|r| &r.to);
-
-        // Peer references stored as item-ref lists in the attribute map
-        // (`depends_on` for requirements, `supersedes` for ADRs).
-        let peer_refs: Vec<&ItemId> = [FIELD_DEPENDS_ON, FIELD_SUPERSEDES]
-            .iter()
-            .filter_map(|name| self.attributes.get(name).and_then(FieldValue::as_list))
-            .flat_map(|list| list.iter().filter_map(FieldValue::as_item_ref))
-            .collect();
-
-        relationship_refs.chain(peer_refs)
+        self.relationships.iter().map(|r| &r.to)
     }
 }
 

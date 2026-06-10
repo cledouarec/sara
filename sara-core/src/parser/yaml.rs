@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::error::SaraError;
 use crate::model::{FieldValue, ItemId, ItemType, Relationship, RelationshipType};
-use crate::schema::{self, FieldDef, FieldType, RelationDirection};
+use crate::schema::{self, FieldDef, FieldType};
 
 /// Raw frontmatter structure for deserialization.
 ///
@@ -142,8 +142,6 @@ impl RawFrontmatter {
             "deciders" => Ok(non_empty_list(
                 self.deciders.iter().map(|s| FieldValue::Text(s.clone())),
             )),
-            "depends_on" => Ok(non_empty_list(item_ref_values(&self.depends_on))),
-            "supersedes" => Ok(non_empty_list(item_ref_values(&self.supersedes))),
             _ => self
                 .extra
                 .get(&field.name)
@@ -185,6 +183,7 @@ impl RawFrontmatter {
         }
 
         // Peer relationships
+        extend_rels(&mut rels, &self.depends_on, RelationshipType::DEPENDS_ON);
         extend_rels(&mut rels, &self.supersedes, RelationshipType::SUPERSEDES);
         if let Some(id) = &self.superseded_by {
             rels.push(Relationship::new(
@@ -194,12 +193,9 @@ impl RawFrontmatter {
         }
 
         // Relations declared only by a custom schema have no dedicated struct
-        // field; read them from the flattened remainder. Peer relations stay
-        // in the attribute map, like depends_on.
+        // field; read them from the flattened remainder.
         for def in schema::all_relation_defs() {
-            if TYPED_RELATION_IDS.contains(&def.id.as_str())
-                || def.direction == RelationDirection::Peer
-            {
+            if TYPED_RELATION_IDS.contains(&def.id.as_str()) {
                 continue;
             }
             let Some(value) = self.extra.get(&def.id) else {
@@ -248,12 +244,6 @@ pub fn parse_yaml_frontmatter(yaml: &str, file: &Path) -> Result<RawFrontmatter,
         file: file.to_path_buf(),
         reason: e.to_string(),
     })
-}
-
-/// Wraps the IDs of a string slice as item-reference field values.
-fn item_ref_values(ids: &[String]) -> impl Iterator<Item = FieldValue> + '_ {
-    ids.iter()
-        .map(|id| FieldValue::ItemRef(ItemId::new_unchecked(id)))
 }
 
 /// Collects values into a list field value, mapping an empty list to `None`.

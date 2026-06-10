@@ -226,7 +226,11 @@ Chosen option: Microservices, because it provides better scalability.
         assert_eq!(justifies.len(), 2);
         assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         assert_eq!(justifies[1].as_str(), "SWDD-001");
-        assert!(item.attributes.supersedes().is_empty());
+        assert!(
+            item.relationship_ids(RelationshipType::SUPERSEDES)
+                .next()
+                .is_none()
+        );
     }
 
     #[test]
@@ -284,9 +288,12 @@ supersedes:
         let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 1);
         assert_eq!(justifies[0].as_str(), "SYSARCH-001");
-        assert_eq!(item.attributes.supersedes().len(), 2);
-        assert_eq!(item.attributes.supersedes()[0].as_str(), "ADR-001");
-        assert_eq!(item.attributes.supersedes()[1].as_str(), "ADR-002");
+        let supersedes: Vec<_> = item
+            .relationship_ids(RelationshipType::SUPERSEDES)
+            .collect();
+        assert_eq!(supersedes.len(), 2);
+        assert_eq!(supersedes[0].as_str(), "ADR-001");
+        assert_eq!(supersedes[1].as_str(), "ADR-002");
     }
 
     #[test]
