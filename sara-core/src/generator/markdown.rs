@@ -235,15 +235,26 @@ pub fn generate_frontmatter(item: &Item) -> String {
         .expect("Failed to render frontmatter template")
 }
 
-/// One frontmatter line group prepared for the generic template.
+/// Rendering kind of a frontmatter entry.
 ///
-/// `kind` selects the rendering: `"scalar"` renders `name: "value"`, `"raw"`
-/// renders `name: value` (enum and date identifiers), and `"list"` renders a
-/// block sequence of quoted `values`.
+/// Serialized into the Tera context as its snake_case name, which the
+/// generic frontmatter template matches to pick the YAML layout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+enum EntryKind {
+    /// Rendered as `name: "value"`.
+    Scalar,
+    /// Rendered as `name: value` (enum and date identifiers).
+    Raw,
+    /// Rendered as a block sequence of quoted values.
+    List,
+}
+
+/// One frontmatter line group prepared for the generic template.
 #[derive(Debug, Serialize)]
 struct FrontmatterEntry {
     name: String,
-    kind: &'static str,
+    kind: EntryKind,
     value: String,
     values: Vec<String>,
 }
@@ -253,7 +264,7 @@ impl FrontmatterEntry {
     fn scalar(name: &str, value: String) -> Self {
         Self {
             name: name.to_string(),
-            kind: "scalar",
+            kind: EntryKind::Scalar,
             value,
             values: Vec::new(),
         }
@@ -263,7 +274,7 @@ impl FrontmatterEntry {
     fn raw(name: &str, value: String) -> Self {
         Self {
             name: name.to_string(),
-            kind: "raw",
+            kind: EntryKind::Raw,
             value,
             values: Vec::new(),
         }
@@ -273,7 +284,7 @@ impl FrontmatterEntry {
     fn list(name: &str, values: Vec<String>) -> Self {
         Self {
             name: name.to_string(),
-            kind: "list",
+            kind: EntryKind::List,
             value: String::new(),
             values,
         }
@@ -366,7 +377,7 @@ fn build_context(item: &Item) -> Context {
     }
 
     for entry in &entries {
-        if entry.kind == "list" {
+        if entry.kind == EntryKind::List {
             context.insert(&entry.name, &entry.values);
         } else {
             context.insert(&entry.name, &entry.value);
