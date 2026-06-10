@@ -194,7 +194,7 @@ impl RawFrontmatter {
 
         // Relations declared only by a custom schema have no dedicated struct
         // field; read them from the flattened remainder.
-        for def in schema::all_relation_defs() {
+        for def in &schema::active().relations {
             if TYPED_RELATION_IDS.contains(&def.id.as_str()) {
                 continue;
             }

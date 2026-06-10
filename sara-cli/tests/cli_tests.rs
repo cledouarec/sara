@@ -840,29 +840,39 @@ mod custom_schema {
 
     use super::*;
 
-    /// Writes a config and a schema declaring a type with no built-in
-    /// counterpart, and returns the config path.
-    fn write_custom_schema(temp_dir: &TempDir) -> std::path::PathBuf {
-        let schema_path = temp_dir.path().join("model.yaml");
-        fs::write(
-            &schema_path,
-            r#"item_types:
-- id: stakeholder_requirement
+    /// YAML appended to an exported built-in model to declare a new type.
+    const CUSTOM_TYPE_YAML: &str = r#"- id: stakeholder_requirement
   display_name: Stakeholder Requirement
   prefix: STKREQ
   id_format: "{prefix}-{seq:03}"
-  parent_types: []
+  parent_types:
+  - solution
   fields:
   - name: rationale
     display_name: Rationale
     field_type: text
     required: true
     placeholder: TBD
-  allowed_targets: []
-relations: []
-"#,
-        )
-        .unwrap();
+  allowed_targets:
+  - relation: refines
+    targets:
+    - solution
+"#;
+
+    /// Exports the built-in model, appends a custom type and returns the
+    /// config path referencing the extended schema.
+    fn write_extended_schema(temp_dir: &TempDir) -> std::path::PathBuf {
+        let schema_path = temp_dir.path().join("model.yaml");
+        sara()
+            .arg("schema")
+            .arg("-o")
+            .arg(&schema_path)
+            .assert()
+            .success();
+
+        let exported = fs::read_to_string(&schema_path).unwrap();
+        let extended = exported.replace("\nrelations:", &format!("\n{CUSTOM_TYPE_YAML}relations:"));
+        fs::write(&schema_path, extended).unwrap();
 
         let config_path = temp_dir.path().join("sara.toml");
         fs::write(
@@ -874,9 +884,44 @@ relations: []
     }
 
     #[test]
+    fn test_schema_exports_builtin_model() {
+        sara()
+            .arg("schema")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("item_types:"))
+            .stdout(predicate::str::contains("- id: solution"))
+            .stdout(predicate::str::contains("relations:"));
+    }
+
+    #[test]
+    fn test_schema_exports_the_configured_model() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_extended_schema(&temp_dir);
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("schema")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("stakeholder_requirement"));
+
+        // --builtin ignores the configured model.
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("schema")
+            .arg("--builtin")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("stakeholder_requirement").not());
+    }
+
+    #[test]
     fn test_init_subcommand_for_custom_type() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = write_custom_schema(&temp_dir);
+        let config_path = write_extended_schema(&temp_dir);
         let test_file = temp_dir.path().join("STKREQ-001.md");
 
         sara()
@@ -904,7 +949,7 @@ relations: []
     #[test]
     fn test_init_prefix_alias_for_custom_type() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = write_custom_schema(&temp_dir);
+        let config_path = write_extended_schema(&temp_dir);
         let test_file = temp_dir.path().join("STKREQ-002.md");
 
         sara()
@@ -922,23 +967,49 @@ relations: []
     }
 
     #[test]
-    fn test_builtin_types_still_available_with_custom_schema() {
+    fn test_custom_schema_replaces_the_builtin_model() {
         let temp_dir = TempDir::new().unwrap();
-        let config_path = write_custom_schema(&temp_dir);
-        let test_file = temp_dir.path().join("SOL-001.md");
+        let schema_path = temp_dir.path().join("model.yaml");
+        fs::write(
+            &schema_path,
+            r#"item_types:
+- id: note
+  display_name: Note
+  prefix: NOTE
+  id_format: "{prefix}-{seq:03}"
+  parent_types: []
+  fields: []
+  allowed_targets: []
+relations: []
+"#,
+        )
+        .unwrap();
+        let config_path = temp_dir.path().join("sara.toml");
+        fs::write(
+            &config_path,
+            format!("model_schema = \"{}\"\n", schema_path.display()),
+        )
+        .unwrap();
 
+        // The custom type exists...
+        let note_file = temp_dir.path().join("NOTE-001.md");
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("init")
+            .arg("note")
+            .arg(&note_file)
+            .assert()
+            .success();
+
+        // ...and the built-in types are gone.
         sara()
             .arg("--config")
             .arg(&config_path)
             .arg("init")
             .arg("solution")
-            .arg(&test_file)
-            .arg("--name")
-            .arg("Test Solution")
+            .arg(temp_dir.path().join("SOL-001.md"))
             .assert()
-            .success();
-
-        let content = fs::read_to_string(&test_file).unwrap();
-        assert!(content.contains("type: solution"));
+            .failure();
     }
 }

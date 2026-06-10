@@ -45,13 +45,11 @@ impl RelationshipType {
     /// Inverse of supersedes: an older ADR is superseded by a newer one.
     pub const IS_SUPERSEDED_BY: Self = Self("superseded_by");
 
-    /// Returns all relations known to the active schema, in catalog order.
-    ///
-    /// Includes built-in relations that a partial custom schema does not
-    /// redefine.
+    /// Returns all relations of the active schema, in catalog order.
     #[must_use]
     pub fn all() -> Vec<RelationshipType> {
-        schema::all_relation_defs()
+        schema::active()
+            .relations
             .iter()
             .map(|def| Self(def.id.as_str()))
             .collect()

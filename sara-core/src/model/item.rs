@@ -48,12 +48,11 @@ impl ItemType {
     /// The built-in architecture decision record type.
     pub const ARCHITECTURE_DECISION_RECORD: Self = Self("architecture_decision_record");
 
-    /// Returns all item types known to the active schema, in hierarchy order.
-    ///
-    /// Includes built-in types that a partial custom schema does not redefine.
+    /// Returns all item types of the active schema, in hierarchy order.
     #[must_use]
     pub fn all() -> Vec<ItemType> {
-        schema::all_item_type_defs()
+        schema::active()
+            .item_types
             .iter()
             .map(|def| Self(def.id.as_str()))
             .collect()

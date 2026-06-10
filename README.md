@@ -23,6 +23,7 @@ SARA is a command-line tool that manages Architecture documents and Requirements
 <details>
 <summary>Expand contents</summary>
 
+- [Table of Contents](#table-of-contents)
 - [Why SARA?](#why-sara)
   - [Alignment Across Teams](#alignment-across-teams)
   - [Markdown-First: A Radical Choice](#markdown-first-a-radical-choice)
@@ -32,6 +33,9 @@ SARA is a command-line tool that manages Architecture documents and Requirements
   - [From Source](#from-source)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
+  - [Output Formats](#output-formats)
+- [Configuration](#configuration)
+  - [Environment Variables](#environment-variables)
 - [Document Types](#document-types)
 - [Traceability Hierarchy](#traceability-hierarchy)
 - [Relationships: The Heart of SARA](#relationships-the-heart-of-sara)
@@ -43,9 +47,11 @@ SARA is a command-line tool that manages Architecture documents and Requirements
   - [Relationship Fields by Item Type](#relationship-fields-by-item-type)
   - [Querying Relationships](#querying-relationships)
   - [Validation Rules](#validation-rules)
-- [Configuration](#configuration)
-- [Output Formats](#output-formats)
-- [Environment Variables](#environment-variables)
+- [Custom Model Schema](#custom-model-schema)
+  - [Declaring Item Types](#declaring-item-types)
+  - [Field Types](#field-types)
+  - [Declaring Relations](#declaring-relations)
+  - [Custom Document Templates](#custom-document-templates)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -84,6 +90,7 @@ Your requirements are too important to be trapped in a proprietary system. And y
 - **Coverage Reports** - Generate traceability matrices and coverage reports in multiple formats
 - **Version Comparison** - Compare knowledge graphs between Git commits or branches
 - **Document Initialization** - Generate YAML frontmatter templates for new documents
+- **Custom Model Schema** - Define your own document types, fields and relations in YAML, without recompiling
 
 ## Installation
 
@@ -124,10 +131,58 @@ sara --version
 | `sara query <ID>` | Query items and traceability chains |
 | `sara report coverage` | Generate coverage report |
 | `sara report matrix` | Generate traceability matrix |
+| `sara schema` | Export the active model schema as YAML |
+
+### Output Formats
+
+Most commands support multiple output formats:
+
+```bash
+# Text output (default)
+sara report coverage
+
+# JSON output
+sara report coverage --format json
+
+# CSV output
+sara report matrix --format csv -o matrix.csv
+```
+
+## Configuration
+
+Sara uses a TOML configuration file (`sara.toml` by default):
+
+```toml
+# Optional: YAML file defining a custom domain model
+model_schema = "model.yaml"
+
+[repositories]
+paths = [
+    "./docs",
+    "../other-repo/specs"
+]
+
+[validation]
+strict_mode = false  # Enable strict validation (non-critical issues become errors)
+
+[output]
+colors = true
+emojis = true
+
+[templates]
+paths = ["./templates"]  # Custom template directories (.tera document overrides)
+```
+
+### Environment Variables
+
+| Variable | Description |
+|----------|-------------|
+| `SARA_CONFIG` | Path to configuration file |
+| `NO_COLOR` | Disable colored output when set |
 
 ## Document Types
 
-Sara recognizes 10 document types forming a requirements hierarchy:
+Out of the box, Sara recognizes 10 document types forming a requirements hierarchy. They are the built-in default of a fully data-driven model: you can extend or redefine them with a [custom model schema](#custom-model-schema).
 
 | Type | YAML Value | Description |
 |------|------------|-------------|
@@ -446,49 +501,179 @@ sara check --format json
 sara check -o results.json --format json
 ```
 
-## Configuration
+## Custom Model Schema
 
-Sara uses a TOML configuration file (`sara.toml` by default):
+The 10 built-in document types are only the default model. The whole domain model - item types, their typed fields, the relation catalog and the allowed links - can be defined in a YAML file loaded at runtime, with no recompilation.
 
-```toml
-[repositories]
-paths = [
-    "./docs",
-    "../other-repo/specs"
-]
-
-[validation]
-strict_mode = false  # Enable strict validation (non-critical issues become errors)
-
-[output]
-colors = true
-emojis = true
-
-[templates]
-paths = ["./templates"]  # Custom template directories
-```
-
-## Output Formats
-
-Most commands support multiple output formats:
+A custom schema **replaces the built-in model entirely**: only the types and relations it declares exist, and every reference inside the file must resolve within the file. The natural workflow is therefore to start from the built-in model and edit it:
 
 ```bash
-# Text output (default)
-sara report coverage
+# Export the active model (the built-in one when none is configured)
+sara schema -o model.yaml
 
-# JSON output
-sara report coverage --format json
-
-# CSV output
-sara report matrix --format csv -o matrix.csv
+# Always available, even when a custom schema is configured
+sara schema --builtin
 ```
 
-## Environment Variables
+Then point your configuration at the schema file:
 
-| Variable | Description |
-|----------|-------------|
-| `SARA_CONFIG` | Path to configuration file |
-| `NO_COLOR` | Disable colored output when set |
+```toml
+model_schema = "model.yaml"
+```
+
+### Declaring Item Types
+
+Add your types to the exported model (or trim it down to your own):
+
+```yaml
+item_types:
+- id: stakeholder_requirement
+  display_name: Stakeholder Requirement
+  prefix: STKREQ
+  id_format: "{prefix}-{seq:03}"
+  parent_types:
+  - solution
+  fields:
+  - name: rationale
+    display_name: Rationale
+    field_type: text
+    required: true
+    placeholder: Explain why the stakeholder needs this.
+  - name: review_date
+    display_name: Review date
+    field_type: date
+  allowed_targets:
+  - relation: refines
+    targets:
+    - solution
+```
+
+| Key | Required | Description |
+|-----|----------|-------------|
+| `id` | yes | Snake_case identifier, used as the `type:` value in frontmatter |
+| `display_name` | yes | Human-readable label used in reports and help texts |
+| `prefix` | yes | Identifier prefix (e.g. `STKREQ-001`); its lowercase form becomes the `sara init` alias |
+| `id_format` | yes | Identifier format template (reserved; identifiers currently render as `PREFIX-NNN`) |
+| `parent_types` | no | Types a parent must have; empty for hierarchy roots |
+| `fields` | no | Typed frontmatter fields (see below) |
+| `allowed_targets` | no | Relations this type may declare, with their valid target types |
+
+> **Note:** `id_format` uses Sara's own placeholder syntax, not [Tera](https://keats.github.io/tera/docs/): `{prefix}` is the type's `prefix` and `{seq:03}` is the per-type sequence number zero-padded to three digits (so the first stakeholder requirement is `STKREQ-001`). The key is reserved for future use — today identifiers always render as `PREFIX-NNN` regardless of its value.
+
+Each field declares `name`, `display_name`, a `field_type`, an optional `required` flag and an optional `placeholder` used when `sara init` runs without input for a required field.
+
+A custom type behaves exactly like a built-in one across the whole pipeline:
+
+```bash
+# A generated subcommand with flags derived from the declared fields...
+sara init stakeholder-requirement docs/STKREQ-001.md \
+  --name "Operator overview" \
+  --rationale "Operators need a single pane of glass."
+
+# ...including the prefix alias, validation, queries and reports
+sara init stkreq docs/STKREQ-002.md
+sara query STKREQ-001 --upstream
+sara query SOL-001 --type stakeholder_requirement --downstream
+```
+
+### Field Types
+
+| `field_type` | Frontmatter value |
+|--------------|-------------------|
+| `text` | Free-form string |
+| `!enum` with `values` | One value among a closed set (validated at parse time) |
+| `item_ref` | Reference to another item's identifier |
+| `!list <inner>` | Ordered list of an inner type (e.g. `!list text`, `!list item_ref`) |
+| `date` | ISO-8601 date |
+
+```yaml
+fields:
+- name: status
+  display_name: Status
+  field_type: !enum
+    values:
+    - draft
+    - approved
+  required: true
+  placeholder: draft
+- name: reviewers
+  display_name: Reviewers
+  field_type: !list text
+```
+
+### Declaring Relations
+
+Relations come in pairs with symmetric inverses and a direction. The validity matrix is **derived** from the `allowed_targets` each type declares - there is no separate matrix to maintain.
+
+```yaml
+# Added to a schema that also declares system_requirement and its relations
+item_types:
+- id: test_case
+  display_name: Test Case
+  prefix: TC
+  id_format: "{prefix}-{seq:03}"
+  parent_types:
+  - system_requirement
+  fields: []
+  allowed_targets:
+  - relation: verifies
+    targets:
+    - system_requirement
+relations:
+- id: verifies
+  display_name: Verifies
+  inverse: is_verified_by
+  direction: upstream
+  primary: true
+- id: is_verified_by
+  display_name: Is verified by
+  inverse: verifies
+  direction: downstream
+  primary: false
+```
+
+| Key | Description |
+|-----|-------------|
+| `id` | Snake_case identifier, used as the frontmatter field name |
+| `display_name` | Human-readable label |
+| `inverse` | Id of the inverse relation (`relation(inverse).inverse` must point back) |
+| `direction` | `upstream` (toward the root), `downstream`, or `peer` (between items of the same type) |
+| `primary` | `true` for the declared side of the pair; inverse edges are derived for traversal |
+
+A document of the type above can then use the relation like any built-in one:
+
+```yaml
+---
+id: "TC-001"
+type: test_case
+name: "Latency check"
+verifies:
+  - "SYSREQ-001"
+---
+```
+
+Peer relations (like the built-in `depends_on` and `supersedes`) are optional links between items of the same type; cycles across them are reported by `sara check` like any other circular dependency.
+
+### Custom Document Templates
+
+`sara init` renders new documents with a built-in body per type, and a generic body listing the declared fields for types that have none. You can override the body of any type with a [Tera](https://keats.github.io/tera/) template named after the type id, discovered through the `[templates]` configuration:
+
+```toml
+[templates]
+paths = ["./templates"]  # picks up ./templates/<type_id>.tera files
+```
+
+```jinja
+{% include "frontmatter.tera" %}
+
+# Stakeholder Requirement: {{ name }}
+
+## Rationale
+
+{{ rationale | default(value="[Why is this needed?]") }}
+```
+
+The `frontmatter.tera` partial renders the YAML header from the declared fields and relations; every declared field value is also available as a variable in the body.
 
 ## Contributing
 

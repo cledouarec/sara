@@ -14,6 +14,7 @@ This crate provides the business logic for managing architecture documents and r
 - **Reports** - Generate coverage reports and traceability matrices
 - **Version Comparison** - Compare knowledge graphs between Git commits or branches
 - **Templates** - Generate YAML frontmatter templates for new documents
+- **Custom Model Schema** - Define your own document types, fields and relations in YAML, loaded at runtime
 
 ## Usage
 
@@ -65,7 +66,7 @@ fn main() -> sara_core::Result<()> {
 
 ## Document Types
 
-The library supports 9 document types forming a requirements hierarchy:
+Out of the box, the library supports 10 document types forming a requirements hierarchy. They are the built-in default of a fully data-driven model: a custom schema loaded at runtime can extend or redefine them.
 
 | Type | Description |
 |------|-------------|
@@ -78,6 +79,7 @@ The library supports 9 document types forming a requirements hierarchy:
 | Software Requirement | Software-specific need |
 | HW Detailed Design | Hardware implementation |
 | SW Detailed Design | Software implementation |
+| Architecture Decision Record | Cross-cutting design decision |
 
 ## Traceability Hierarchy
 
