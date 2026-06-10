@@ -1,4 +1,4 @@
-{% include "scenario_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Scenario: {{ name }}
 

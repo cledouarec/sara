@@ -1,0 +1,20 @@
+---
+id: "{{ id }}"
+type: {{ type }}
+name: "{{ name }}"
+{%- if description %}
+description: "{{ description }}"
+{%- endif %}
+{%- for entry in entries %}
+{%- if entry.kind == "list" %}
+{{ entry.name }}:
+{%- for value in entry.values %}
+  - "{{ value }}"
+{%- endfor %}
+{%- elif entry.kind == "raw" %}
+{{ entry.name }}: {{ entry.value }}
+{%- else %}
+{{ entry.name }}: "{{ entry.value }}"
+{%- endif %}
+{%- endfor %}
+---

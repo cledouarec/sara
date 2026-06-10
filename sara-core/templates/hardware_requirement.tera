@@ -1,4 +1,4 @@
-{% include "hardware_requirement_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Hardware Requirement: {{ name }}
 

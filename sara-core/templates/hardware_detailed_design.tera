@@ -1,4 +1,4 @@
-{% include "hardware_detailed_design_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Hardware Design: {{ name }}
 
