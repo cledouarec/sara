@@ -7,6 +7,7 @@ mod init;
 mod interactive;
 mod query;
 mod report;
+mod schema;
 
 use std::env;
 use std::error::Error;
@@ -25,6 +26,7 @@ use self::edit::EditArgs;
 use self::init::InitArgs;
 use self::query::QueryArgs;
 use self::report::ReportArgs;
+use self::schema::SchemaArgs;
 use crate::Cli;
 
 /// Returns the resolved repository paths, falling back to the current directory.
@@ -102,6 +104,14 @@ pub enum Commands {
 
     /// Generate coverage and traceability reports
     Report(ReportArgs),
+
+    /// Export the active model schema as YAML
+    ///
+    /// Prints the schema in use (the configured model_schema file, or the
+    /// built-in default model when none is configured). Use it as the
+    /// starting point for a custom model:
+    ///   sara schema -o model.yaml
+    Schema(SchemaArgs),
 }
 
 /// Returns repositories: CLI args take precedence, then config file, then current directory.
@@ -138,5 +148,6 @@ pub fn run(cli: &Cli, file_config: Option<&Config>) -> Result<ExitCode, Box<dyn 
         Commands::Init(args) => init::run(args, &config),
         Commands::Query(args) => query::run(args, &config),
         Commands::Report(args) => report::run(args, &config),
+        Commands::Schema(args) => schema::run(args, &config),
     }
 }
