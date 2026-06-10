@@ -15,6 +15,18 @@ use sara_core::config::{OutputConfig, load_config};
 /// Help heading for global options
 const GLOBAL_OPTIONS: &str = "Global Options";
 
+/// Default configuration file, relative to the working directory.
+const DEFAULT_CONFIG_FILE: &str = "sara.toml";
+
+/// Environment variable overriding the configuration path.
+const CONFIG_ENV_VAR: &str = "SARA_CONFIG";
+
+/// Long form of the configuration flag, mirrored by the pre-parse scan.
+const CONFIG_FLAG_LONG: &str = "--config";
+
+/// Short form of the configuration flag, mirrored by the pre-parse scan.
+const CONFIG_FLAG_SHORT: &str = "-c";
+
 /// Sara - Requirements Knowledge Graph CLI
 ///
 /// Manages Architecture documents and Requirements as a unified interconnected knowledge graph.
@@ -22,7 +34,7 @@ const GLOBAL_OPTIONS: &str = "Global Options";
 #[command(name = "sara", version, about, long_about = None, disable_help_flag = true, disable_version_flag = true)]
 pub struct Cli {
     /// Path to configuration file
-    #[arg(short, long, global = true, default_value = "sara.toml", help_heading = GLOBAL_OPTIONS)]
+    #[arg(short, long, global = true, default_value = DEFAULT_CONFIG_FILE, help_heading = GLOBAL_OPTIONS)]
     pub config: PathBuf,
 
     /// Print help
@@ -93,7 +105,7 @@ impl Cli {
 
     /// Returns the config file path, checking SARA_CONFIG env var first.
     pub fn config_path(&self) -> PathBuf {
-        if let Ok(env_config) = std::env::var("SARA_CONFIG") {
+        if let Ok(env_config) = std::env::var(CONFIG_ENV_VAR) {
             PathBuf::from(env_config)
         } else {
             self.config.clone()
@@ -110,14 +122,48 @@ impl Cli {
     }
 }
 
+/// Returns the configuration path without parsing the full command line.
+///
+/// The `init` subcommands are built from the active schema, so the schema
+/// must be installed before clap sees the arguments. This lightweight scan
+/// mirrors [`Cli::config_path`]: `SARA_CONFIG`, then `-c`/`--config`, then
+/// the default `sara.toml`.
+fn early_config_path() -> PathBuf {
+    if let Ok(env_config) = std::env::var(CONFIG_ENV_VAR) {
+        return PathBuf::from(env_config);
+    }
+
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        if arg == CONFIG_FLAG_SHORT || arg == CONFIG_FLAG_LONG {
+            if let Some(value) = args.next() {
+                return PathBuf::from(value);
+            }
+        } else if let Some(value) = arg
+            .strip_prefix(CONFIG_FLAG_LONG)
+            .and_then(|v| v.strip_prefix('='))
+        {
+            return PathBuf::from(value);
+        } else if !arg.starts_with("--")
+            && let Some(value) = arg.strip_prefix(CONFIG_FLAG_SHORT)
+            && !value.is_empty()
+        {
+            return PathBuf::from(value.trim_start_matches('='));
+        }
+    }
+
+    PathBuf::from(DEFAULT_CONFIG_FILE)
+}
+
 fn main() -> ExitCode {
-    let cli = Cli::parse();
+    // Logging starts at the default verbosity so the preload steps below can
+    // report problems; the level is adjusted once the flags are parsed.
+    logging::init();
 
-    // Initialize logging
-    logging::init(cli.verbosity());
-
-    // Load config file (optional - use defaults if not found or error)
-    let config_path = cli.config_path();
+    // Load the config and install the active schema before parsing the
+    // command line: the init subcommands are derived from the schema.
+    // Failures are non-fatal; the built-in defaults apply.
+    let config_path = early_config_path();
     let file_config = if config_path.exists() {
         match load_config(&config_path) {
             Ok(config) => Some(config),
@@ -134,9 +180,6 @@ fn main() -> ExitCode {
         None
     };
 
-    // Install the active schema before any command runs so domain methods see
-    // the configured (or built-in) model. A failure to load the configured
-    // schema is non-fatal; we fall back to the built-in defaults.
     if let Some(cfg) = file_config.as_ref() {
         match cfg.load_schema() {
             Ok(schema) => {
@@ -150,8 +193,7 @@ fn main() -> ExitCode {
         }
 
         // Install document template overrides before the first generation so
-        // configured `.tera` templates take effect. Non-fatal on failure; we
-        // fall back to the embedded templates.
+        // configured `.tera` templates take effect.
         match sara_core::generator::discover_overrides(&cfg.templates) {
             Ok(overrides) => {
                 let _ = sara_core::generator::install_overrides(overrides);
@@ -161,6 +203,9 @@ fn main() -> ExitCode {
             }
         }
     }
+
+    let cli = Cli::parse();
+    logging::set_verbosity(cli.verbosity());
 
     // Run the command
     let result = commands::run(&cli, file_config.as_ref());

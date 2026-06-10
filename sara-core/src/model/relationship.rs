@@ -80,6 +80,15 @@ impl RelationshipType {
         schema::relation_def(self.0)
     }
 
+    /// Returns the display name for this relation.
+    ///
+    /// Resolved from the active schema; falls back to the built-in default
+    /// when a custom schema does not redefine the relation.
+    #[must_use]
+    pub fn display_name(&self) -> &'static str {
+        self.def().map_or("", |def| def.display_name.as_str())
+    }
+
     /// Get the inverse relationship type.
     ///
     /// Resolved from the schema's relation catalog; relations missing from

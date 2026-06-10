@@ -82,6 +82,18 @@ impl ItemType {
         self.def().map_or(&[], |def| def.fields.as_slice())
     }
 
+    /// Returns the relations this type declares toward targets, in
+    /// declaration order.
+    #[must_use]
+    pub fn declared_relations(&self) -> Vec<RelationshipType> {
+        self.def().map_or_else(Vec::new, |def| {
+            def.allowed_targets
+                .iter()
+                .filter_map(|t| RelationshipType::from_id(&t.relation))
+                .collect()
+        })
+    }
+
     /// Returns the display name for this item type.
     ///
     /// Resolved from the active schema; falls back to the built-in default

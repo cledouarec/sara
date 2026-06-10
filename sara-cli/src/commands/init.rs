@@ -1,11 +1,18 @@
-//! Init command implementation with type-specific subcommands.
+//! Init command implementation with schema-driven type subcommands.
+//!
+//! One subcommand is generated per item type of the active schema: its name
+//! is the kebab-case type id, its visible alias the lowercase id prefix, and
+//! its flags are derived from the declared fields and relations. Types added
+//! by a custom schema therefore get their `sara init <type>` command without
+//! recompiling.
 
 use std::error::Error;
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use clap::{Args, Subcommand};
+use clap::{Arg, ArgAction, ArgMatches, Args, Command, FromArgMatches, value_parser};
 use sara_core::model::ItemType;
+use sara_core::schema::FieldType;
 use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
 
 use sara_core::config::{Config, OutputConfig};
@@ -16,29 +23,6 @@ use super::interactive::{
 };
 use crate::output::{print_error, print_success, print_warning};
 
-/// Common options shared by all init subcommands.
-#[derive(Args, Debug, Clone)]
-pub struct CommonOptions {
-    /// Markdown file to initialize
-    pub file: PathBuf,
-
-    /// Item identifier (auto-generated if not provided)
-    #[arg(long)]
-    pub id: Option<String>,
-
-    /// Item name (extracted from title if not provided)
-    #[arg(long)]
-    pub name: Option<String>,
-
-    /// Item description
-    #[arg(short = 'd', long)]
-    pub description: Option<String>,
-
-    /// Overwrite existing frontmatter
-    #[arg(long)]
-    pub force: bool,
-}
-
 /// Arguments for the init command.
 #[derive(Args, Debug)]
 #[command(verbatim_doc_comment)]
@@ -47,198 +31,221 @@ pub struct InitArgs {
     pub command: Option<InitSubcommand>,
 }
 
-/// Item type subcommands for init.
-#[derive(Subcommand, Debug)]
-pub enum InitSubcommand {
-    /// Create an Architecture Decision Record
-    #[command(name = "architecture-decision-record", visible_alias = "adr")]
-    Adr(AdrArgs),
-
-    /// Create a Solution
-    #[command(name = "solution", visible_alias = "sol")]
-    Solution(SolutionArgs),
-
-    /// Create a Use Case
-    #[command(name = "use-case", visible_alias = "uc")]
-    UseCase(UseCaseArgs),
-
-    /// Create a Scenario
-    #[command(name = "scenario", visible_alias = "scen")]
-    Scenario(ScenarioArgs),
-
-    /// Create a System Requirement
-    #[command(name = "system-requirement", visible_alias = "sysreq")]
-    SystemRequirement(SystemRequirementArgs),
-
-    /// Create a System Architecture
-    #[command(name = "system-architecture", visible_alias = "sysarch")]
-    SystemArchitecture(SystemArchitectureArgs),
-
-    /// Create a Software Requirement
-    #[command(name = "software-requirement", visible_alias = "swreq")]
-    SoftwareRequirement(SoftwareRequirementArgs),
-
-    /// Create a Hardware Requirement
-    #[command(name = "hardware-requirement", visible_alias = "hwreq")]
-    HardwareRequirement(HardwareRequirementArgs),
-
-    /// Create a Software Detailed Design
-    #[command(name = "software-detailed-design", visible_alias = "swdd")]
-    SoftwareDetailedDesign(SoftwareDetailedDesignArgs),
-
-    /// Create a Hardware Detailed Design
-    #[command(name = "hardware-detailed-design", visible_alias = "hwdd")]
-    HardwareDetailedDesign(HardwareDetailedDesignArgs),
+/// Parsed `init <type>` subcommand, resolved against the active schema.
+#[derive(Debug)]
+pub struct InitSubcommand {
+    /// Markdown file to initialize.
+    file: PathBuf,
+    /// Item identifier (auto-generated if not provided).
+    id: Option<String>,
+    /// Item name (extracted from title if not provided).
+    name: Option<String>,
+    /// Item description.
+    description: Option<String>,
+    /// Overwrite existing frontmatter.
+    force: bool,
+    /// Field and relation inputs for the selected type.
+    type_config: TypeConfig,
 }
 
-// =============================================================================
-// Type-specific argument structs
-// =============================================================================
+/// Short flags preserved from the historical per-type commands.
+const SHORT_FLAGS: &[(&str, char)] = &[("status", 's'), ("justifies", 'j')];
 
-/// Arguments for creating an ADR.
-#[derive(Args, Debug)]
-pub struct AdrArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
+/// Initial letters whose display name takes the article "an" in help texts.
+const AN_ARTICLE_INITIALS: [char; 5] = ['A', 'E', 'I', 'O', 'U'];
 
-    /// ADR status (proposed, accepted, deprecated, superseded)
-    #[arg(long, short = 's')]
-    pub status: Option<String>,
-
-    /// ADR deciders
-    #[arg(long, num_args = 1..)]
-    pub deciders: Vec<String>,
-
-    /// Design artifacts this ADR justifies
-    #[arg(long, short = 'j', num_args = 1..)]
-    pub justifies: Vec<String>,
-
-    /// Older ADRs this decision supersedes
-    #[arg(long, num_args = 1..)]
-    pub supersedes: Vec<String>,
+/// Returns the CLI name of a type's init subcommand (kebab-case type id).
+fn subcommand_name(item_type: ItemType) -> String {
+    item_type.as_str().replace('_', "-")
 }
 
-/// Arguments for creating a Solution.
-#[derive(Args, Debug)]
-pub struct SolutionArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
+/// Returns the short flag historically attached to a field or relation.
+fn short_flag(name: &str) -> Option<char> {
+    SHORT_FLAGS
+        .iter()
+        .find(|(flag_name, _)| *flag_name == name)
+        .map(|(_, short)| *short)
 }
 
-/// Arguments for creating a Use Case.
-#[derive(Args, Debug)]
-pub struct UseCaseArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
+/// Builds the clap subcommand for one item type of the active schema.
+fn type_command(item_type: ItemType) -> Command {
+    let display_name = item_type.display_name();
+    let article = if display_name.starts_with(AN_ARTICLE_INITIALS) {
+        "an"
+    } else {
+        "a"
+    };
+    let mut command = Command::new(subcommand_name(item_type))
+        .about(format!("Create {article} {display_name}"))
+        .arg(
+            Arg::new("file")
+                .value_name("FILE")
+                .value_parser(value_parser!(PathBuf))
+                .required(true)
+                .help("Markdown file to initialize"),
+        )
+        .arg(
+            Arg::new("id")
+                .long("id")
+                .help("Item identifier (auto-generated if not provided)"),
+        )
+        .arg(
+            Arg::new("name")
+                .long("name")
+                .help("Item name (extracted from title if not provided)"),
+        )
+        .arg(
+            Arg::new("description")
+                .long("description")
+                .short('d')
+                .help("Item description"),
+        )
+        .arg(
+            Arg::new("force")
+                .long("force")
+                .action(ArgAction::SetTrue)
+                .help("Overwrite existing frontmatter"),
+        );
 
-    /// Solution this use case refines
-    #[arg(long, num_args = 1..)]
-    pub refines: Vec<String>,
+    let alias = item_type.prefix().to_lowercase();
+    if !alias.is_empty() && alias != command.get_name() {
+        command = command.visible_alias(alias);
+    }
+
+    for field in item_type.declared_fields() {
+        let mut arg = Arg::new(field.name.clone())
+            .long(field.name.replace('_', "-"))
+            .help(field_help(field));
+        if let Some(short) = short_flag(&field.name) {
+            arg = arg.short(short);
+        }
+        if matches!(field.field_type, FieldType::List(_)) {
+            arg = arg.num_args(1..).action(ArgAction::Append);
+        }
+        command = command.arg(arg);
+    }
+
+    for relation in item_type.declared_relations() {
+        let mut arg = Arg::new(relation.as_str())
+            .long(relation.as_str().replace('_', "-"))
+            .num_args(1..)
+            .action(ArgAction::Append)
+            .help(format!(
+                "Items this {} {}",
+                item_type.display_name().to_lowercase(),
+                relation.as_str().replace('_', " ")
+            ));
+        if let Some(short) = short_flag(relation.as_str()) {
+            arg = arg.short(short);
+        }
+        command = command.arg(arg);
+    }
+
+    command
 }
 
-/// Arguments for creating a Scenario.
-#[derive(Args, Debug)]
-pub struct ScenarioArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
-
-    /// Use case this scenario refines
-    #[arg(long, num_args = 1..)]
-    pub refines: Vec<String>,
+/// Returns the help text of a declared field, listing enum values when known.
+fn field_help(field: &sara_core::schema::FieldDef) -> String {
+    match &field.field_type {
+        FieldType::Enum { values } => {
+            format!("{} ({})", field.display_name, values.join(", "))
+        }
+        _ => field.display_name.clone(),
+    }
 }
 
-/// Arguments for creating a System Requirement.
-#[derive(Args, Debug)]
-pub struct SystemRequirementArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
+impl InitSubcommand {
+    /// Resolves the parsed matches of one type subcommand.
+    fn from_type_matches(name: &str, matches: &ArgMatches) -> Result<Self, clap::Error> {
+        let item_type = ItemType::all()
+            .into_iter()
+            .find(|t| subcommand_name(*t) == name)
+            .ok_or_else(|| {
+                clap::Error::raw(
+                    clap::error::ErrorKind::InvalidSubcommand,
+                    format!("unknown item type subcommand `{name}`"),
+                )
+            })?;
 
-    /// Specification statement
-    #[arg(long)]
-    pub specification: Option<String>,
+        let mut type_config = TypeConfig::new(item_type);
+        for field in item_type.declared_fields() {
+            if matches!(field.field_type, FieldType::List(_)) {
+                let values: Vec<String> = matches
+                    .get_many::<String>(&field.name)
+                    .map(|v| v.cloned().collect())
+                    .unwrap_or_default();
+                type_config = type_config.list_field(&field.name, values);
+            } else {
+                type_config = type_config
+                    .maybe_text_field(&field.name, matches.get_one::<String>(&field.name).cloned());
+            }
+        }
+        for relation in item_type.declared_relations() {
+            let targets: Vec<String> = matches
+                .get_many::<String>(relation.as_str())
+                .map(|v| v.cloned().collect())
+                .unwrap_or_default();
+            type_config = type_config.relation(relation.as_str(), targets);
+        }
 
-    /// Upstream references (scenarios this requirement derives from)
-    #[arg(long, num_args = 1..)]
-    pub derives_from: Vec<String>,
+        Ok(Self {
+            file: matches
+                .get_one::<PathBuf>("file")
+                .cloned()
+                .unwrap_or_default(),
+            id: matches.get_one::<String>("id").cloned(),
+            name: matches.get_one::<String>("name").cloned(),
+            description: matches.get_one::<String>("description").cloned(),
+            force: matches.get_flag("force"),
+            type_config,
+        })
+    }
 
-    /// Peer dependencies
-    #[arg(long, num_args = 1..)]
-    pub depends_on: Vec<String>,
+    /// Converts the parsed subcommand into init service options.
+    fn to_init_options(&self) -> InitOptions {
+        InitOptions::new(self.file.clone(), self.type_config.clone())
+            .maybe_id(self.id.clone())
+            .maybe_name(self.name.clone())
+            .maybe_description(self.description.clone())
+            .with_force(self.force)
+    }
 }
 
-/// Arguments for creating a System Architecture.
-#[derive(Args, Debug)]
-pub struct SystemArchitectureArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
+impl FromArgMatches for InitSubcommand {
+    fn from_arg_matches(matches: &ArgMatches) -> Result<Self, clap::Error> {
+        let (name, sub_matches) = matches.subcommand().ok_or_else(|| {
+            clap::Error::raw(
+                clap::error::ErrorKind::MissingSubcommand,
+                "an item type subcommand is required",
+            )
+        })?;
+        Self::from_type_matches(name, sub_matches)
+    }
 
-    /// Target platform
-    #[arg(long)]
-    pub platform: Option<String>,
-
-    /// System requirements this architecture satisfies
-    #[arg(long, num_args = 1..)]
-    pub satisfies: Vec<String>,
+    fn update_from_arg_matches(&mut self, matches: &ArgMatches) -> Result<(), clap::Error> {
+        *self = Self::from_arg_matches(matches)?;
+        Ok(())
+    }
 }
 
-/// Arguments for creating a Software Requirement.
-#[derive(Args, Debug)]
-pub struct SoftwareRequirementArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
+impl clap::Subcommand for InitSubcommand {
+    fn augment_subcommands(command: Command) -> Command {
+        ItemType::all()
+            .into_iter()
+            .fold(command, |command, item_type| {
+                command.subcommand(type_command(item_type))
+            })
+    }
 
-    /// Specification statement
-    #[arg(long)]
-    pub specification: Option<String>,
+    fn augment_subcommands_for_update(command: Command) -> Command {
+        Self::augment_subcommands(command)
+    }
 
-    /// Upstream references (system requirements this derives from)
-    #[arg(long, num_args = 1..)]
-    pub derives_from: Vec<String>,
-
-    /// Peer dependencies
-    #[arg(long, num_args = 1..)]
-    pub depends_on: Vec<String>,
-}
-
-/// Arguments for creating a Hardware Requirement.
-#[derive(Args, Debug)]
-pub struct HardwareRequirementArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
-
-    /// Specification statement
-    #[arg(long)]
-    pub specification: Option<String>,
-
-    /// Upstream references (system requirements this derives from)
-    #[arg(long, num_args = 1..)]
-    pub derives_from: Vec<String>,
-
-    /// Peer dependencies
-    #[arg(long, num_args = 1..)]
-    pub depends_on: Vec<String>,
-}
-
-/// Arguments for creating a Software Detailed Design.
-#[derive(Args, Debug)]
-pub struct SoftwareDetailedDesignArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
-
-    /// Software requirements this design satisfies
-    #[arg(long, num_args = 1..)]
-    pub satisfies: Vec<String>,
-}
-
-/// Arguments for creating a Hardware Detailed Design.
-#[derive(Args, Debug)]
-pub struct HardwareDetailedDesignArgs {
-    #[command(flatten)]
-    pub common: CommonOptions,
-
-    /// Hardware requirements this design satisfies
-    #[arg(long, num_args = 1..)]
-    pub satisfies: Vec<String>,
+    fn has_subcommand(name: &str) -> bool {
+        ItemType::all()
+            .into_iter()
+            .any(|t| subcommand_name(t) == name || t.prefix().to_lowercase() == name)
+    }
 }
 
 // =============================================================================
@@ -259,7 +266,7 @@ const EXIT_INVALID_OPTION: u8 = 3;
 pub fn run(args: &InitArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     match &args.command {
         None => run_interactive(config),
-        Some(subcommand) => run_subcommand(subcommand, config),
+        Some(subcommand) => run_with_options(subcommand.to_init_options(), config),
     }
 }
 
@@ -320,76 +327,6 @@ fn build_type_config_from_interactive(input: &super::interactive::InteractiveInp
         .relation("satisfies", input.traceability.satisfies.clone())
         .relation("depends_on", input.traceability.depends_on.clone())
         .relation("justifies", input.traceability.justifies.clone())
-}
-
-fn run_subcommand(
-    subcommand: &InitSubcommand,
-    config: &Config,
-) -> Result<ExitCode, Box<dyn Error>> {
-    let (common, type_config) = match subcommand {
-        InitSubcommand::Adr(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::ARCHITECTURE_DECISION_RECORD)
-                .maybe_text_field("status", args.status.clone())
-                .list_field("deciders", args.deciders.clone())
-                .relation("justifies", args.justifies.clone())
-                .relation("supersedes", args.supersedes.clone()),
-        ),
-        InitSubcommand::Solution(args) => (&args.common, TypeConfig::new(ItemType::SOLUTION)),
-        InitSubcommand::UseCase(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::USE_CASE).relation("refines", args.refines.clone()),
-        ),
-        InitSubcommand::Scenario(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::SCENARIO).relation("refines", args.refines.clone()),
-        ),
-        InitSubcommand::SystemRequirement(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::SYSTEM_REQUIREMENT)
-                .maybe_text_field("specification", args.specification.clone())
-                .relation("derives_from", args.derives_from.clone())
-                .relation("depends_on", args.depends_on.clone()),
-        ),
-        InitSubcommand::SystemArchitecture(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::SYSTEM_ARCHITECTURE)
-                .maybe_text_field("platform", args.platform.clone())
-                .relation("satisfies", args.satisfies.clone()),
-        ),
-        InitSubcommand::SoftwareRequirement(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::SOFTWARE_REQUIREMENT)
-                .maybe_text_field("specification", args.specification.clone())
-                .relation("derives_from", args.derives_from.clone())
-                .relation("depends_on", args.depends_on.clone()),
-        ),
-        InitSubcommand::HardwareRequirement(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::HARDWARE_REQUIREMENT)
-                .maybe_text_field("specification", args.specification.clone())
-                .relation("derives_from", args.derives_from.clone())
-                .relation("depends_on", args.depends_on.clone()),
-        ),
-        InitSubcommand::SoftwareDetailedDesign(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::SOFTWARE_DETAILED_DESIGN)
-                .relation("satisfies", args.satisfies.clone()),
-        ),
-        InitSubcommand::HardwareDetailedDesign(args) => (
-            &args.common,
-            TypeConfig::new(ItemType::HARDWARE_DETAILED_DESIGN)
-                .relation("satisfies", args.satisfies.clone()),
-        ),
-    };
-
-    let opts = InitOptions::new(common.file.clone(), type_config)
-        .maybe_id(common.id.clone())
-        .maybe_name(common.name.clone())
-        .maybe_description(common.description.clone())
-        .with_force(common.force);
-
-    run_with_options(opts, config)
 }
 
 fn run_with_options(opts: InitOptions, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
