@@ -86,7 +86,7 @@ mod tests {
             ItemType::SYSTEM_ARCHITECTURE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::Satisfies,
+                RelationshipType::SATISFIES,
             )],
         );
 
@@ -109,7 +109,7 @@ mod tests {
             ItemType::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SARCH-001"),
-                RelationshipType::IsSatisfiedBy,
+                RelationshipType::IS_SATISFIED_BY,
             )],
         );
         let sarch = create_test_item_with_relationships(
@@ -117,7 +117,7 @@ mod tests {
             ItemType::SYSTEM_ARCHITECTURE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::Satisfies,
+                RelationshipType::SATISFIES,
             )],
         );
 

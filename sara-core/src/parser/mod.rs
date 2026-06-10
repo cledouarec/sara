@@ -79,7 +79,7 @@ Body content.
         assert_eq!(item.item_type, ItemType::SOLUTION);
         assert_eq!(item.name, "Test Solution");
         let is_refined_by: Vec<_> = item
-            .relationship_ids(RelationshipType::IsRefinedBy)
+            .relationship_ids(RelationshipType::IS_REFINED_BY)
             .collect();
         assert_eq!(is_refined_by.len(), 1);
         assert_eq!(is_refined_by[0].as_str(), "UC-001");

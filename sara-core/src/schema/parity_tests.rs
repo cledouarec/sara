@@ -7,18 +7,18 @@ use crate::model::{ItemType, RelationshipRules, RelationshipType};
 
 /// All relationship types (no `all()` exists on the legacy enum).
 const ALL_RELATIONSHIPS: &[RelationshipType] = &[
-    RelationshipType::Refines,
-    RelationshipType::IsRefinedBy,
-    RelationshipType::Derives,
-    RelationshipType::DerivesFrom,
-    RelationshipType::Satisfies,
-    RelationshipType::IsSatisfiedBy,
-    RelationshipType::DependsOn,
-    RelationshipType::IsRequiredBy,
-    RelationshipType::Justifies,
-    RelationshipType::IsJustifiedBy,
-    RelationshipType::Supersedes,
-    RelationshipType::IsSupersededBy,
+    RelationshipType::REFINES,
+    RelationshipType::IS_REFINED_BY,
+    RelationshipType::DERIVES,
+    RelationshipType::DERIVES_FROM,
+    RelationshipType::SATISFIES,
+    RelationshipType::IS_SATISFIED_BY,
+    RelationshipType::DEPENDS_ON,
+    RelationshipType::IS_REQUIRED_BY,
+    RelationshipType::JUSTIFIES,
+    RelationshipType::IS_JUSTIFIED_BY,
+    RelationshipType::SUPERSEDES,
+    RelationshipType::IS_SUPERSEDED_BY,
 ];
 
 #[test]
@@ -95,7 +95,7 @@ fn traceability_configs_parity() {
             .iter()
             .map(|c| {
                 (
-                    c.relationship_field.as_str().to_string(),
+                    c.relationship.as_str().to_string(),
                     c.target_type.as_str().to_string(),
                 )
             })
@@ -112,7 +112,7 @@ fn relationship_matrix_parity() {
         for to in ItemType::all() {
             for rel in ALL_RELATIONSHIPS {
                 let legacy = RelationshipRules::is_valid_relationship(from, to, *rel);
-                let relation_id = rel.field_name().as_str();
+                let relation_id = rel.as_str();
                 let derived = schema.is_valid_relationship(from.as_str(), to.as_str(), relation_id);
                 assert_eq!(
                     legacy, derived,

@@ -487,7 +487,7 @@ mod tests {
             .source(test_source())
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )])
             .build()
             .unwrap();
@@ -510,7 +510,7 @@ mod tests {
             .platform("AWS Lambda")
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::Satisfies,
+                RelationshipType::SATISFIES,
             )])
             .build()
             .unwrap();
@@ -536,7 +536,7 @@ mod tests {
             .deciders(vec!["Alice Smith".to_string(), "Bob Jones".to_string()])
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SYSARCH-001"),
-                RelationshipType::Justifies,
+                RelationshipType::JUSTIFIES,
             )])
             .build()
             .unwrap();
@@ -587,7 +587,7 @@ mod tests {
             .specification("The system SHALL respond within 200ms.")
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-001"),
-                RelationshipType::DerivesFrom,
+                RelationshipType::DERIVES_FROM,
             )])
             .build()
             .unwrap();
@@ -612,7 +612,7 @@ mod tests {
             .depends_on(ItemId::new_unchecked("SYSREQ-001"))
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-001"),
-                RelationshipType::DerivesFrom,
+                RelationshipType::DERIVES_FROM,
             )])
             .build()
             .unwrap();

@@ -11,7 +11,7 @@ use serde::Deserialize;
 
 use crate::error::SaraError;
 use crate::model::{FieldValue, ItemId, ItemType, Relationship, RelationshipType};
-use crate::schema::{FieldDef, FieldType};
+use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
 /// Raw frontmatter structure for deserialization.
 ///
@@ -159,39 +159,88 @@ impl RawFrontmatter {
         let mut rels = Vec::new();
 
         // Upstream relationships
-        extend_rels(&mut rels, &self.refines, RelationshipType::Refines);
-        extend_rels(&mut rels, &self.derives_from, RelationshipType::DerivesFrom);
-        extend_rels(&mut rels, &self.satisfies, RelationshipType::Satisfies);
-        extend_rels(&mut rels, &self.justifies, RelationshipType::Justifies);
+        extend_rels(&mut rels, &self.refines, RelationshipType::REFINES);
+        extend_rels(
+            &mut rels,
+            &self.derives_from,
+            RelationshipType::DERIVES_FROM,
+        );
+        extend_rels(&mut rels, &self.satisfies, RelationshipType::SATISFIES);
+        extend_rels(&mut rels, &self.justifies, RelationshipType::JUSTIFIES);
 
         // Downstream relationships
         extend_rels(
             &mut rels,
             &self.is_refined_by,
-            RelationshipType::IsRefinedBy,
+            RelationshipType::IS_REFINED_BY,
         );
-        extend_rels(&mut rels, &self.derives, RelationshipType::Derives);
+        extend_rels(&mut rels, &self.derives, RelationshipType::DERIVES);
         extend_rels(
             &mut rels,
             &self.is_satisfied_by,
-            RelationshipType::IsSatisfiedBy,
+            RelationshipType::IS_SATISFIED_BY,
         );
         if let Some(justified_by) = &self.justified_by {
-            extend_rels(&mut rels, justified_by, RelationshipType::IsJustifiedBy);
+            extend_rels(&mut rels, justified_by, RelationshipType::IS_JUSTIFIED_BY);
         }
 
         // Peer relationships
-        extend_rels(&mut rels, &self.supersedes, RelationshipType::Supersedes);
+        extend_rels(&mut rels, &self.supersedes, RelationshipType::SUPERSEDES);
         if let Some(id) = &self.superseded_by {
             rels.push(Relationship::new(
                 ItemId::new_unchecked(id),
-                RelationshipType::IsSupersededBy,
+                RelationshipType::IS_SUPERSEDED_BY,
             ));
+        }
+
+        // Relations declared only by a custom schema have no dedicated struct
+        // field; read them from the flattened remainder. Peer relations stay
+        // in the attribute map, like depends_on.
+        for def in schema::all_relation_defs() {
+            if TYPED_RELATION_IDS.contains(&def.id.as_str())
+                || def.direction == RelationDirection::Peer
+            {
+                continue;
+            }
+            let Some(value) = self.extra.get(&def.id) else {
+                continue;
+            };
+            let Some(rel_type) = RelationshipType::from_id(&def.id) else {
+                continue;
+            };
+            match value {
+                serde_yaml::Value::String(id) => {
+                    rels.push(Relationship::new(ItemId::new_unchecked(id), rel_type));
+                }
+                serde_yaml::Value::Sequence(ids) => {
+                    rels.extend(ids.iter().filter_map(|entry| {
+                        let id = entry.as_str()?;
+                        Some(Relationship::new(ItemId::new_unchecked(id), rel_type))
+                    }));
+                }
+                _ => {}
+            }
         }
 
         rels
     }
 }
+
+/// Relation ids carried by a dedicated [`RawFrontmatter`] struct field.
+const TYPED_RELATION_IDS: &[&str] = &[
+    "refines",
+    "is_refined_by",
+    "derives",
+    "derives_from",
+    "satisfies",
+    "is_satisfied_by",
+    "depends_on",
+    "is_required_by",
+    "justifies",
+    "justified_by",
+    "supersedes",
+    "superseded_by",
+];
 
 /// Parses a raw YAML string into a `RawFrontmatter`.
 pub fn parse_yaml_frontmatter(yaml: &str, file: &Path) -> Result<RawFrontmatter, SaraError> {
@@ -287,7 +336,7 @@ refines:
         let rels = fm.to_relationships();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].to.as_str(), "SOL-001");
-        assert_eq!(rels[0].relationship_type, RelationshipType::Refines);
+        assert_eq!(rels[0].relationship_type, RelationshipType::REFINES);
     }
 
     #[test]
@@ -319,7 +368,7 @@ supersedes:
 
         let rels = fm.to_relationships();
         assert_eq!(rels.len(), 2);
-        assert_eq!(rels[0].relationship_type, RelationshipType::Justifies);
-        assert_eq!(rels[1].relationship_type, RelationshipType::Supersedes);
+        assert_eq!(rels[0].relationship_type, RelationshipType::JUSTIFIES);
+        assert_eq!(rels[1].relationship_type, RelationshipType::SUPERSEDES);
     }
 }

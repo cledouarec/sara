@@ -78,7 +78,7 @@ pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> 
 /// let use_case = create_test_item_with_relationships(
 ///     "UC-001",
 ///     ItemType::USE_CASE,
-///     vec![Relationship::new(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
+///     vec![Relationship::new(ItemId::new_unchecked("SOL-001"), RelationshipType::REFINES)],
 /// );
 /// ```
 #[must_use]
@@ -126,7 +126,7 @@ pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Ite
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
     let relationships: Vec<Relationship> = justifies
         .iter()
-        .map(|s| Relationship::new(ItemId::new_unchecked(*s), RelationshipType::Justifies))
+        .map(|s| Relationship::new(ItemId::new_unchecked(*s), RelationshipType::JUSTIFIES))
         .collect();
 
     ItemBuilder::new()
@@ -186,7 +186,7 @@ pub fn create_simple_hierarchy() -> Vec<Item> {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         ),
         create_test_item_with_relationships(
@@ -194,7 +194,7 @@ pub fn create_simple_hierarchy() -> Vec<Item> {
             ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         ),
     ]
@@ -223,7 +223,7 @@ mod tests {
         let item = create_test_adr("ADR-001", &["SYSARCH-001"], &["ADR-000"]);
         assert_eq!(item.id.as_str(), "ADR-001");
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
-        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 1);
         assert_eq!(item.attributes.supersedes().len(), 1);
     }

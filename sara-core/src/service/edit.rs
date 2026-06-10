@@ -495,18 +495,18 @@ impl EditService {
 
         // Build relationships from traceability links
         let mut rels =
-            super::ids_to_relationships(&values.traceability.refines, RelationshipType::Refines);
+            super::ids_to_relationships(&values.traceability.refines, RelationshipType::REFINES);
         rels.extend(super::ids_to_relationships(
             &values.traceability.derives_from,
-            RelationshipType::DerivesFrom,
+            RelationshipType::DERIVES_FROM,
         ));
         rels.extend(super::ids_to_relationships(
             &values.traceability.satisfies,
-            RelationshipType::Satisfies,
+            RelationshipType::SATISFIES,
         ));
         rels.extend(super::ids_to_relationships(
             &values.traceability.justifies,
-            RelationshipType::Justifies,
+            RelationshipType::JUSTIFIES,
         ));
         builder = builder.relationships(rels);
 

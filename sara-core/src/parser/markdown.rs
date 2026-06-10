@@ -121,7 +121,7 @@ is_satisfied_by:
         assert_eq!(item.name, "Test Solution");
         assert_eq!(item.description, Some("A test solution".to_string()));
         let is_refined_by: Vec<_> = item
-            .relationship_ids(RelationshipType::IsRefinedBy)
+            .relationship_ids(RelationshipType::IS_REFINED_BY)
             .collect();
         assert_eq!(is_refined_by.len(), 1);
         assert_eq!(is_refined_by[0].as_str(), "UC-001");
@@ -143,10 +143,10 @@ is_satisfied_by:
             Some("The system SHALL respond within 100ms.")
         );
         let derives_from: Vec<_> = item
-            .relationship_ids(RelationshipType::DerivesFrom)
+            .relationship_ids(RelationshipType::DERIVES_FROM)
             .collect();
         let is_satisfied_by: Vec<_> = item
-            .relationship_ids(RelationshipType::IsSatisfiedBy)
+            .relationship_ids(RelationshipType::IS_SATISFIED_BY)
             .collect();
         assert_eq!(derives_from.len(), 1);
         assert_eq!(is_satisfied_by.len(), 1);
@@ -222,7 +222,7 @@ Chosen option: Microservices, because it provides better scalability.
 
         assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
         assert_eq!(item.attributes.deciders().len(), 2);
-        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 2);
         assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         assert_eq!(justifies[1].as_str(), "SWDD-001");
@@ -281,7 +281,7 @@ supersedes:
         )
         .unwrap();
 
-        let justifies: Vec<_> = item.relationship_ids(RelationshipType::Justifies).collect();
+        let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 1);
         assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         assert_eq!(item.attributes.supersedes().len(), 2);

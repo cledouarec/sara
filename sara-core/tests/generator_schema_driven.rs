@@ -92,7 +92,7 @@ fn generation_follows_active_schema_and_overrides() {
         .source(test_source())
         .relationships(vec![Relationship::new(
             ItemId::new_unchecked("SOL-001"),
-            RelationshipType::Refines,
+            RelationshipType::REFINES,
         )])
         .build()
         .expect("build use case");

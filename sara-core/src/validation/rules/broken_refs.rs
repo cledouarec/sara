@@ -46,7 +46,7 @@ mod tests {
                 ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::Refines,
+                    RelationshipType::REFINES,
                 )],
             ))
             .build()
@@ -65,7 +65,7 @@ mod tests {
                 ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-MISSING"),
-                    RelationshipType::Refines,
+                    RelationshipType::REFINES,
                 )],
             ))
             .build()

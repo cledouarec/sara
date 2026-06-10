@@ -304,12 +304,12 @@ mod tests {
             .source(source)
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )])
             .build()
             .unwrap();
 
-        let refines: Vec<_> = item.relationship_ids(RelationshipType::Refines).collect();
+        let refines: Vec<_> = item.relationship_ids(RelationshipType::REFINES).collect();
         assert_eq!(refines.len(), 1);
         assert_eq!(refines[0].as_str(), "SOL-001");
     }

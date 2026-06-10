@@ -326,26 +326,25 @@ impl KnowledgeGraphBuilder {
     fn collect_edges(item: &Item) -> Vec<(ItemId, ItemId, RelationshipType)> {
         let mut edges = Vec::new();
 
+        // A detached item type (no required parent, like ADRs) links into the
+        // hierarchy only through its upstream relations, so those also need
+        // the inverse edge for bidirectional traversal.
+        let detached = item.item_type.required_parent_type().is_none();
+
         for rel in &item.relationships {
             edges.push((item.id.clone(), rel.to.clone(), rel.relationship_type));
 
-            // For certain relationship types, add the inverse edge for bidirectional traversal
-            let inverse = match rel.relationship_type {
-                RelationshipType::Justifies => Some(RelationshipType::IsJustifiedBy),
-                RelationshipType::IsRefinedBy => Some(RelationshipType::Refines),
-                RelationshipType::Derives => Some(RelationshipType::DerivesFrom),
-                RelationshipType::IsSatisfiedBy => Some(RelationshipType::Satisfies),
-                RelationshipType::IsJustifiedBy => Some(RelationshipType::Justifies),
-                _ => None,
-            };
-            if let Some(inv_type) = inverse {
-                edges.push((rel.to.clone(), item.id.clone(), inv_type));
+            // Downstream declarations (and upstream ones on detached types)
+            // get an inverse edge so traversal works from either side.
+            let rel_type = rel.relationship_type;
+            if rel_type.is_downstream() || (detached && rel_type.is_upstream()) {
+                edges.push((rel.to.clone(), item.id.clone(), rel_type.inverse()));
             }
         }
 
         // Peer dependencies (for requirement types, stored in attributes)
         for target_id in item.attributes.depends_on() {
-            edges.push((item.id.clone(), target_id, RelationshipType::DependsOn));
+            edges.push((item.id.clone(), target_id, RelationshipType::DEPENDS_ON));
         }
 
         // ADR supersession (peer relationships between ADRs, stored in attributes)
@@ -353,9 +352,13 @@ impl KnowledgeGraphBuilder {
             edges.push((
                 item.id.clone(),
                 target_id.clone(),
-                RelationshipType::Supersedes,
+                RelationshipType::SUPERSEDES,
             ));
-            edges.push((target_id, item.id.clone(), RelationshipType::IsSupersededBy));
+            edges.push((
+                target_id,
+                item.id.clone(),
+                RelationshipType::IS_SUPERSEDED_BY,
+            ));
         }
 
         edges
@@ -435,7 +438,7 @@ mod tests {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
 
