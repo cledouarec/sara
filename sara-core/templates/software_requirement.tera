@@ -1,4 +1,4 @@
-{% include "software_requirement_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Software Requirement: {{ name }}
 

@@ -1,4 +1,4 @@
-{% include "system_architecture_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Architecture: {{ name }}
 

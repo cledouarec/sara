@@ -11,6 +11,9 @@ mod markdown;
 
 use crate::model::Item;
 
+#[doc(inline)]
+pub use markdown::{TemplateOverride, discover_overrides, install_overrides};
+
 /// Supported output formats for document generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputFormat {

@@ -1,4 +1,4 @@
-{% include "use_case_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Use Case: {{ name }}
 

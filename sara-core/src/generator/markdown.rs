@@ -1,155 +1,211 @@
 //! Markdown document generation using Tera templates.
 //!
-//! Renders full Markdown documents (frontmatter + body) from core `Item`
-//! structures. Each [`ItemType`] maps to a [`TemplateEntry`] that pairs a
-//! frontmatter partial with a full document template. Both are embedded at
-//! compile time from `sara-core/templates/*.tera`.
+//! Rendering is driven by the active [`crate::schema::Schema`]: a single
+//! generic frontmatter template renders the fields and relations declared
+//! for the item's type, in declaration order, and the document body is
+//! looked up by type id. Bodies for the built-in types are embedded at
+//! compile time; types without a dedicated body fall back to a generic
+//! body listing the declared text fields. Projects can override a type's
+//! body (or supply one for a new type) with `.tera` files discovered from
+//! [`TemplatesConfig::paths`] and installed via [`install_overrides`].
 
 use std::collections::HashMap;
+use std::fs;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 
+use serde::Serialize;
 use tera::{Context, Tera};
 
-use crate::model::{FieldName, Item, ItemId, ItemType, RelationshipType};
+use crate::config::TemplatesConfig;
+use crate::error::SaraError;
+use crate::model::{FieldName, FieldValue, Item, RelationshipType};
+use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
-/// Pairs a frontmatter partial with its full document template.
-#[derive(Debug)]
-struct TemplateEntry {
-    /// Tera registration name for the frontmatter partial (e.g., `"adr_frontmatter.tera"`).
-    frontmatter_name: &'static str,
-    /// Tera registration name for the full document (e.g., `"adr.tera"`).
-    document_name: &'static str,
-    /// Embedded frontmatter template source.
-    frontmatter: &'static str,
-    /// Embedded full document template source.
-    document: &'static str,
-}
+/// Tera registration name of the generic frontmatter partial.
+const FRONTMATTER_TEMPLATE: &str = "frontmatter.tera";
 
-/// Compile-time list of all template definitions, one per [`ItemType`].
-const TEMPLATE_DEFS: &[(ItemType, TemplateEntry)] = &[
+/// Tera registration name of the generic document body fallback.
+const GENERIC_TEMPLATE: &str = "generic.tera";
+
+/// Embedded generic frontmatter template, included by all document templates.
+const FRONTMATTER_SOURCE: &str = include_str!("../../templates/frontmatter.tera");
+
+/// Embedded generic document template for types without a dedicated body.
+const GENERIC_SOURCE: &str = include_str!("../../templates/generic.tera");
+
+/// Embedded document bodies for the built-in item types, keyed by type id.
+const BUILTIN_DOCUMENTS: &[(&str, &str)] = &[
+    ("solution", include_str!("../../templates/solution.tera")),
+    ("use_case", include_str!("../../templates/use_case.tera")),
+    ("scenario", include_str!("../../templates/scenario.tera")),
     (
-        ItemType::Solution,
-        TemplateEntry {
-            frontmatter_name: "solution_frontmatter.tera",
-            document_name: "solution.tera",
-            frontmatter: include_str!("../../templates/solution_frontmatter.tera"),
-            document: include_str!("../../templates/solution.tera"),
-        },
+        "system_requirement",
+        include_str!("../../templates/system_requirement.tera"),
     ),
     (
-        ItemType::UseCase,
-        TemplateEntry {
-            frontmatter_name: "use_case_frontmatter.tera",
-            document_name: "use_case.tera",
-            frontmatter: include_str!("../../templates/use_case_frontmatter.tera"),
-            document: include_str!("../../templates/use_case.tera"),
-        },
+        "hardware_requirement",
+        include_str!("../../templates/hardware_requirement.tera"),
     ),
     (
-        ItemType::Scenario,
-        TemplateEntry {
-            frontmatter_name: "scenario_frontmatter.tera",
-            document_name: "scenario.tera",
-            frontmatter: include_str!("../../templates/scenario_frontmatter.tera"),
-            document: include_str!("../../templates/scenario.tera"),
-        },
+        "software_requirement",
+        include_str!("../../templates/software_requirement.tera"),
     ),
     (
-        ItemType::SystemRequirement,
-        TemplateEntry {
-            frontmatter_name: "system_requirement_frontmatter.tera",
-            document_name: "system_requirement.tera",
-            frontmatter: include_str!("../../templates/system_requirement_frontmatter.tera"),
-            document: include_str!("../../templates/system_requirement.tera"),
-        },
+        "system_architecture",
+        include_str!("../../templates/system_architecture.tera"),
     ),
     (
-        ItemType::HardwareRequirement,
-        TemplateEntry {
-            frontmatter_name: "hardware_requirement_frontmatter.tera",
-            document_name: "hardware_requirement.tera",
-            frontmatter: include_str!("../../templates/hardware_requirement_frontmatter.tera"),
-            document: include_str!("../../templates/hardware_requirement.tera"),
-        },
+        "hardware_detailed_design",
+        include_str!("../../templates/hardware_detailed_design.tera"),
     ),
     (
-        ItemType::SoftwareRequirement,
-        TemplateEntry {
-            frontmatter_name: "software_requirement_frontmatter.tera",
-            document_name: "software_requirement.tera",
-            frontmatter: include_str!("../../templates/software_requirement_frontmatter.tera"),
-            document: include_str!("../../templates/software_requirement.tera"),
-        },
+        "software_detailed_design",
+        include_str!("../../templates/software_detailed_design.tera"),
     ),
     (
-        ItemType::SystemArchitecture,
-        TemplateEntry {
-            frontmatter_name: "system_architecture_frontmatter.tera",
-            document_name: "system_architecture.tera",
-            frontmatter: include_str!("../../templates/system_architecture_frontmatter.tera"),
-            document: include_str!("../../templates/system_architecture.tera"),
-        },
-    ),
-    (
-        ItemType::HardwareDetailedDesign,
-        TemplateEntry {
-            frontmatter_name: "hardware_detailed_design_frontmatter.tera",
-            document_name: "hardware_detailed_design.tera",
-            frontmatter: include_str!("../../templates/hardware_detailed_design_frontmatter.tera"),
-            document: include_str!("../../templates/hardware_detailed_design.tera"),
-        },
-    ),
-    (
-        ItemType::SoftwareDetailedDesign,
-        TemplateEntry {
-            frontmatter_name: "software_detailed_design_frontmatter.tera",
-            document_name: "software_detailed_design.tera",
-            frontmatter: include_str!("../../templates/software_detailed_design_frontmatter.tera"),
-            document: include_str!("../../templates/software_detailed_design.tera"),
-        },
-    ),
-    (
-        ItemType::ArchitectureDecisionRecord,
-        TemplateEntry {
-            frontmatter_name: "adr_frontmatter.tera",
-            document_name: "adr.tera",
-            frontmatter: include_str!("../../templates/adr_frontmatter.tera"),
-            document: include_str!("../../templates/adr.tera"),
-        },
+        "architecture_decision_record",
+        include_str!("../../templates/adr.tera"),
     ),
 ];
 
-/// Holds the Tera engine and the template lookup map.
+/// A runtime-discovered Tera document template for one item type.
+#[derive(Debug, Clone)]
+pub struct TemplateOverride {
+    /// Id of the item type whose document this template renders.
+    pub type_id: String,
+    /// Tera template source. May include `frontmatter.tera`.
+    pub source: String,
+}
+
+/// Holds the installed template overrides, if any.
+static OVERRIDES: OnceLock<Vec<TemplateOverride>> = OnceLock::new();
+
+/// Installs runtime document template overrides.
+///
+/// Intended to be called once at startup, before the first document is
+/// generated; overrides installed after a document has been rendered have no
+/// effect. Sources must be valid Tera templates ([`discover_overrides`]
+/// validates them), otherwise the first generation panics.
+///
+/// # Errors
+///
+/// Returns the supplied overrides unchanged if overrides are already
+/// installed, mirroring the underlying [`OnceLock::set`] semantics.
+pub fn install_overrides(overrides: Vec<TemplateOverride>) -> Result<(), Vec<TemplateOverride>> {
+    OVERRIDES.set(overrides)
+}
+
+/// Discovers `.tera` document templates referenced by a templates config.
+///
+/// Each entry of [`TemplatesConfig::paths`] may be a `.tera` file or a
+/// directory scanned (non-recursively, in name order) for `.tera` files. The
+/// file stem names the item type the template renders (e.g. `use_case.tera`).
+/// Entries that do not exist or do not end in `.tera` are skipped, so the
+/// same configuration can also carry Markdown templates consumed elsewhere.
+/// Every discovered source is compiled eagerly so that a broken template
+/// surfaces here as a configuration error instead of a render panic.
+///
+/// # Errors
+///
+/// Returns [`SaraError::InvalidConfig`] if a discovered file cannot be read
+/// or is not a valid Tera template.
+pub fn discover_overrides(config: &TemplatesConfig) -> Result<Vec<TemplateOverride>, SaraError> {
+    let mut overrides = Vec::new();
+    for raw in &config.paths {
+        let path = Path::new(raw);
+        if path.is_dir() {
+            let mut files: Vec<PathBuf> = fs::read_dir(path)
+                .map_err(|e| invalid_config(path, &e.to_string()))?
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .filter(|p| is_tera_file(p) && p.is_file())
+                .collect();
+            files.sort();
+            for file in files {
+                overrides.push(load_override(&file)?);
+            }
+        } else if is_tera_file(path) && path.is_file() {
+            overrides.push(load_override(path)?);
+        }
+    }
+    Ok(overrides)
+}
+
+/// Returns true if the path has a `.tera` extension.
+fn is_tera_file(path: &Path) -> bool {
+    path.extension().is_some_and(|ext| ext == "tera")
+}
+
+/// Builds an [`SaraError::InvalidConfig`] for a template path.
+fn invalid_config(path: &Path, reason: &str) -> SaraError {
+    SaraError::InvalidConfig {
+        path: path.to_path_buf(),
+        reason: reason.to_string(),
+    }
+}
+
+/// Reads and validates one override template from disk.
+fn load_override(path: &Path) -> Result<TemplateOverride, SaraError> {
+    let type_id = path
+        .file_stem()
+        .and_then(|stem| stem.to_str())
+        .ok_or_else(|| invalid_config(path, "file name is not valid UTF-8"))?
+        .to_string();
+    let source = fs::read_to_string(path).map_err(|e| invalid_config(path, &e.to_string()))?;
+
+    // Compile against a probe engine so syntax errors carry the file path.
+    let mut probe = Tera::default();
+    probe
+        .add_raw_template(FRONTMATTER_TEMPLATE, FRONTMATTER_SOURCE)
+        .expect("Failed to load embedded frontmatter template");
+    probe
+        .add_raw_template(&format!("{type_id}.tera"), &source)
+        .map_err(|e| invalid_config(path, &e.to_string()))?;
+
+    Ok(TemplateOverride { type_id, source })
+}
+
+/// Holds the Tera engine and the type id to document template lookup map.
 struct TemplateRegistry {
     tera: Tera,
-    entries: HashMap<ItemType, &'static TemplateEntry>,
+    documents: HashMap<String, String>,
 }
 
 /// Global template registry, lazily initialized.
 static REGISTRY: OnceLock<TemplateRegistry> = OnceLock::new();
 
 /// Returns the global template registry, initializing on first call.
+///
+/// Built-in document bodies are registered first, then installed overrides,
+/// so an override replaces the built-in body for the same type id.
 fn get_registry() -> &'static TemplateRegistry {
     REGISTRY.get_or_init(|| {
         let mut tera = Tera::default();
-        let raw: Vec<(&str, &str)> = TEMPLATE_DEFS
-            .iter()
-            .flat_map(|(_, e)| {
-                [
-                    (e.frontmatter_name, e.frontmatter),
-                    (e.document_name, e.document),
-                ]
-            })
-            .collect();
-        tera.add_raw_templates(raw)
-            .expect("Failed to load embedded templates");
+        let mut documents = HashMap::new();
 
-        let entries: HashMap<ItemType, &'static TemplateEntry> = TEMPLATE_DEFS
-            .iter()
-            .map(|(item_type, entry)| (*item_type, entry))
-            .collect();
+        tera.add_raw_template(FRONTMATTER_TEMPLATE, FRONTMATTER_SOURCE)
+            .expect("Failed to load embedded frontmatter template");
+        tera.add_raw_template(GENERIC_TEMPLATE, GENERIC_SOURCE)
+            .expect("Failed to load embedded generic template");
 
-        TemplateRegistry { tera, entries }
+        let builtin = BUILTIN_DOCUMENTS
+            .iter()
+            .map(|(type_id, source)| ((*type_id).to_string(), (*source).to_string()));
+        let overridden = OVERRIDES
+            .get()
+            .into_iter()
+            .flatten()
+            .map(|o| (o.type_id.clone(), o.source.clone()));
+
+        for (type_id, source) in builtin.chain(overridden) {
+            let name = format!("{type_id}.tera");
+            tera.add_raw_template(&name, &source)
+                .expect("Failed to load document template");
+            documents.insert(type_id, name);
+        }
+
+        TemplateRegistry { tera, documents }
     })
 }
 
@@ -158,10 +214,13 @@ fn get_registry() -> &'static TemplateRegistry {
 pub fn generate_document(item: &Item) -> String {
     let registry = get_registry();
     let context = build_context(item);
-    let entry = &registry.entries[&item.item_type];
+    let template = registry
+        .documents
+        .get(item.item_type.as_str())
+        .map_or(GENERIC_TEMPLATE, String::as_str);
     registry
         .tera
-        .render(entry.document_name, &context)
+        .render(template, &context)
         .expect("Failed to render document template")
 }
 
@@ -170,100 +229,212 @@ pub fn generate_document(item: &Item) -> String {
 pub fn generate_frontmatter(item: &Item) -> String {
     let registry = get_registry();
     let context = build_context(item);
-    let entry = &registry.entries[&item.item_type];
     registry
         .tera
-        .render(entry.frontmatter_name, &context)
+        .render(FRONTMATTER_TEMPLATE, &context)
         .expect("Failed to render frontmatter template")
 }
 
-/// Builds a Tera context from an `Item`, populating all fields the templates expect.
+/// One frontmatter line group prepared for the generic template.
+///
+/// `kind` selects the rendering: `"scalar"` renders `name: "value"`, `"raw"`
+/// renders `name: value` (enum and date identifiers), and `"list"` renders a
+/// block sequence of quoted `values`.
+#[derive(Debug, Serialize)]
+struct FrontmatterEntry {
+    name: String,
+    kind: &'static str,
+    value: String,
+    values: Vec<String>,
+}
+
+impl FrontmatterEntry {
+    /// Creates a quoted scalar entry.
+    fn scalar(name: &str, value: String) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: "scalar",
+            value,
+            values: Vec::new(),
+        }
+    }
+
+    /// Creates an unquoted scalar entry.
+    fn raw(name: &str, value: String) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: "raw",
+            value,
+            values: Vec::new(),
+        }
+    }
+
+    /// Creates a block sequence entry.
+    fn list(name: &str, values: Vec<String>) -> Self {
+        Self {
+            name: name.to_string(),
+            kind: "list",
+            value: String::new(),
+            values,
+        }
+    }
+}
+
+/// Field metadata exposed to document templates as `fields`.
+#[derive(Debug, Serialize)]
+struct FieldMeta {
+    name: String,
+    display_name: String,
+    kind: &'static str,
+    required: bool,
+}
+
+/// Returns the template-facing kind identifier for a field type.
+fn field_kind(field_type: &FieldType) -> &'static str {
+    match field_type {
+        FieldType::Text => "text",
+        FieldType::Enum { .. } => "enum",
+        FieldType::ItemRef => "item_ref",
+        FieldType::List(_) => "list",
+        FieldType::Date => "date",
+    }
+}
+
+/// Builds a Tera context from an `Item`, driven by the active schema.
+///
+/// Inserts the core fields (`id`, `type`, `name`, `description`), then one
+/// value per declared field or relation of the item's type — both at the top
+/// level under its own name (for document bodies) and in the ordered
+/// `entries` sequence consumed by the generic frontmatter template. Also
+/// exposes `display_name` and the `fields` metadata used by the generic body.
 fn build_context(item: &Item) -> Context {
     let mut context = Context::new();
+    let type_id = item.item_type.as_str();
 
-    // Required fields
     context.insert(FieldName::Id.as_str(), item.id.as_str());
-    context.insert(FieldName::Type.as_str(), item.item_type.as_str());
+    context.insert(FieldName::Type.as_str(), type_id);
     context.insert(FieldName::Name.as_str(), &escape_yaml_string(&item.name));
-
     if let Some(ref desc) = item.description {
         context.insert(FieldName::Description.as_str(), &escape_yaml_string(desc));
     }
 
-    // Relationship-based fields
-    insert_relationship_ids(
-        &mut context,
-        item,
-        RelationshipType::Refines,
-        FieldName::Refines,
-    );
-    insert_relationship_ids(
-        &mut context,
-        item,
-        RelationshipType::DerivesFrom,
-        FieldName::DerivesFrom,
-    );
-    insert_relationship_ids(
-        &mut context,
-        item,
-        RelationshipType::Satisfies,
-        FieldName::Satisfies,
-    );
-    insert_relationship_ids(
-        &mut context,
-        item,
-        RelationshipType::Justifies,
-        FieldName::Justifies,
-    );
+    let Some(def) = schema::item_type_def(type_id) else {
+        return context;
+    };
 
-    // Type-specific attributes (read through the shim accessors so that
-    // generator output stays stable as the underlying map representation
-    // evolves).
-    if let Some(spec) = item.attributes.specification() {
-        context.insert(FieldName::Specification.as_str(), &escape_yaml_string(spec));
+    context.insert("display_name", def.display_name.as_str());
+    let field_meta: Vec<FieldMeta> = def
+        .fields
+        .iter()
+        .map(|f| FieldMeta {
+            name: f.name.clone(),
+            display_name: f.display_name.clone(),
+            kind: field_kind(&f.field_type),
+            required: f.required,
+        })
+        .collect();
+    context.insert("fields", &field_meta);
+
+    let mut entries: Vec<FrontmatterEntry> = Vec::new();
+
+    // Declared fields first, except those backed by a peer relation: the
+    // frontmatter renders peer reference lists together with the relations.
+    for field in &def.fields {
+        if is_peer_relation(&field.name) {
+            continue;
+        }
+        if let Some(entry) = field_entry(item, field) {
+            entries.push(entry);
+        }
     }
 
-    if let Some(plat) = item.attributes.platform() {
-        context.insert(FieldName::Platform.as_str(), &escape_yaml_string(plat));
+    // Declared relations next, in declaration order. Upstream relations read
+    // the item's relationships; peer relations read the matching attribute
+    // list. Downstream relations are derived and never declared as primary.
+    for target in &def.allowed_targets {
+        let Some(rel) = schema::relation_def(&target.relation) else {
+            continue;
+        };
+        match rel.direction {
+            RelationDirection::Upstream => {
+                let Some(rel_type) = RelationshipType::from_id(&target.relation) else {
+                    continue;
+                };
+                let ids: Vec<String> = item
+                    .relationship_ids(rel_type)
+                    .map(|id| id.as_str().to_string())
+                    .collect();
+                if !ids.is_empty() {
+                    entries.push(FrontmatterEntry::list(&target.relation, ids));
+                }
+            }
+            RelationDirection::Peer => {
+                let peer_field = def.fields.iter().find(|f| f.name == target.relation);
+                if let Some(entry) = peer_field.and_then(|f| field_entry(item, f)) {
+                    entries.push(entry);
+                }
+            }
+            RelationDirection::Downstream => {}
+        }
     }
 
-    let depends_on = item.attributes.depends_on();
-    if !depends_on.is_empty() {
-        let ids: Vec<&str> = depends_on.iter().map(ItemId::as_str).collect();
-        context.insert(FieldName::DependsOn.as_str(), &ids);
+    for entry in &entries {
+        if entry.kind == "list" {
+            context.insert(&entry.name, &entry.values);
+        } else {
+            context.insert(&entry.name, &entry.value);
+        }
     }
-
-    if let Some(status) = item.attributes.status() {
-        context.insert(FieldName::Status.as_str(), status.as_str());
-    }
-
-    let deciders = item.attributes.deciders();
-    if !deciders.is_empty() {
-        context.insert(FieldName::Deciders.as_str(), &deciders);
-    }
-
-    let supersedes = item.attributes.supersedes();
-    if !supersedes.is_empty() {
-        let ids: Vec<&str> = supersedes.iter().map(ItemId::as_str).collect();
-        context.insert(FieldName::Supersedes.as_str(), &ids);
-    }
+    context.insert("entries", &entries);
 
     context
 }
 
-/// Inserts relationship target IDs into the Tera context if any exist.
-fn insert_relationship_ids(
-    context: &mut Context,
-    item: &Item,
-    rel_type: RelationshipType,
-    field: FieldName,
-) {
-    let ids: Vec<&str> = item
-        .relationship_ids(rel_type)
-        .map(|id| id.as_str())
-        .collect();
-    if !ids.is_empty() {
-        context.insert(field.as_str(), &ids);
+/// Returns true if the name matches a peer relation in the active schema.
+fn is_peer_relation(name: &str) -> bool {
+    schema::relation_def(name).is_some_and(|rel| rel.direction == RelationDirection::Peer)
+}
+
+/// Builds the frontmatter entry for one declared field, if the item holds a
+/// renderable value for it. Empty lists are omitted.
+fn field_entry(item: &Item, field: &FieldDef) -> Option<FrontmatterEntry> {
+    let value = item.attributes.get(&field.name)?;
+    match &field.field_type {
+        FieldType::Text => value
+            .as_text()
+            .map(|s| FrontmatterEntry::scalar(&field.name, escape_yaml_string(s))),
+        FieldType::Enum { .. } => value
+            .as_enum()
+            .map(|s| FrontmatterEntry::raw(&field.name, s.clone())),
+        FieldType::Date => value
+            .as_date()
+            .map(|s| FrontmatterEntry::raw(&field.name, s.clone())),
+        FieldType::ItemRef => value
+            .as_item_ref()
+            .map(|id| FrontmatterEntry::scalar(&field.name, id.as_str().to_string())),
+        FieldType::List(_) => {
+            let values: Vec<String> = value
+                .as_list()?
+                .iter()
+                .filter_map(list_item_string)
+                .collect();
+            if values.is_empty() {
+                None
+            } else {
+                Some(FrontmatterEntry::list(&field.name, values))
+            }
+        }
+    }
+}
+
+/// Renders one list element as its YAML string form. Nested lists are not
+/// representable in frontmatter and yield `None`.
+fn list_item_string(value: &FieldValue) -> Option<String> {
+    match value {
+        FieldValue::Text(s) => Some(escape_yaml_string(s)),
+        FieldValue::Enum(s) | FieldValue::Date(s) => Some(s.clone()),
+        FieldValue::ItemRef(id) => Some(id.as_str().to_string()),
+        FieldValue::List(_) => None,
     }
 }
 
@@ -280,7 +451,7 @@ mod tests {
 
     use super::*;
     use crate::model::SourceLocation;
-    use crate::model::{AdrStatus, ItemBuilder, ItemId, Relationship, RelationshipType};
+    use crate::model::{AdrStatus, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType};
 
     fn test_source() -> SourceLocation {
         SourceLocation {
@@ -428,5 +599,104 @@ mod tests {
         assert!(doc.contains("specification:"));
         assert!(doc.contains("derives_from:"));
         assert!(doc.contains("SCEN-001"));
+    }
+
+    #[test]
+    fn test_frontmatter_entry_order_matches_legacy_layout() {
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SYSREQ-002"))
+            .item_type(ItemType::SystemRequirement)
+            .name("Ordered")
+            .source(test_source())
+            .specification("Spec.")
+            .depends_on(ItemId::new_unchecked("SYSREQ-001"))
+            .relationships(vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-001"),
+                RelationshipType::DerivesFrom,
+            )])
+            .build()
+            .unwrap();
+
+        let fm = generate_frontmatter(&item);
+
+        let spec = fm.find("specification:").unwrap();
+        let derives = fm.find("derives_from:").unwrap();
+        let depends = fm.find("depends_on:").unwrap();
+        assert!(spec < derives && derives < depends);
+    }
+
+    #[test]
+    fn test_generic_body_renders_declared_text_fields() {
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SYSREQ-003"))
+            .item_type(ItemType::SystemRequirement)
+            .name("Fallback")
+            .source(test_source())
+            .specification("Spec.")
+            .build()
+            .unwrap();
+
+        let registry = get_registry();
+        let doc = registry
+            .tera
+            .render(GENERIC_TEMPLATE, &build_context(&item))
+            .unwrap();
+
+        assert!(doc.contains("# System Requirement: Fallback"));
+        assert!(doc.contains("## Overview"));
+        assert!(doc.contains("## Specification"));
+        assert!(doc.contains("specification: \"Spec.\""));
+    }
+
+    #[test]
+    fn test_discover_overrides_from_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(
+            dir.path().join("use_case.tera"),
+            "{% include \"frontmatter.tera\" %}\n\n# Custom: {{ name }}",
+        )
+        .unwrap();
+        std::fs::write(dir.path().join("notes.md"), "not a template").unwrap();
+
+        let config = TemplatesConfig {
+            paths: vec![dir.path().to_string_lossy().into_owned()],
+        };
+        let overrides = discover_overrides(&config).unwrap();
+
+        assert_eq!(overrides.len(), 1);
+        assert_eq!(overrides[0].type_id, "use_case");
+        assert!(overrides[0].source.contains("# Custom:"));
+    }
+
+    #[test]
+    fn test_discover_overrides_direct_file_and_missing_paths() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("scenario.tera");
+        std::fs::write(&file, "# {{ name }}").unwrap();
+
+        let config = TemplatesConfig {
+            paths: vec![
+                file.to_string_lossy().into_owned(),
+                "does/not/exist.tera".to_string(),
+                "*.md".to_string(),
+            ],
+        };
+        let overrides = discover_overrides(&config).unwrap();
+
+        assert_eq!(overrides.len(), 1);
+        assert_eq!(overrides[0].type_id, "scenario");
+    }
+
+    #[test]
+    fn test_discover_overrides_rejects_invalid_template() {
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("broken.tera");
+        std::fs::write(&file, "{% if %}").unwrap();
+
+        let config = TemplatesConfig {
+            paths: vec![file.to_string_lossy().into_owned()],
+        };
+
+        assert!(discover_overrides(&config).is_err());
     }
 }

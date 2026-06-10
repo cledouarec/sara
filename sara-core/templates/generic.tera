@@ -1,0 +1,15 @@
+{% include "frontmatter.tera" %}
+
+# {{ display_name }}: {{ name }}
+
+## Overview
+
+[High-level description of this {{ display_name | lower }}]
+{%- for field in fields %}
+{%- if field.kind == "text" %}
+
+## {{ field.display_name }}
+
+[{{ field.display_name }} for this {{ display_name | lower }}]
+{%- endif %}
+{%- endfor %}

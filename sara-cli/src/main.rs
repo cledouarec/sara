@@ -148,6 +148,18 @@ fn main() -> ExitCode {
                 tracing::warn!("Failed to load model schema: {}", e);
             }
         }
+
+        // Install document template overrides before the first generation so
+        // configured `.tera` templates take effect. Non-fatal on failure; we
+        // fall back to the embedded templates.
+        match sara_core::generator::discover_overrides(&cfg.templates) {
+            Ok(overrides) => {
+                let _ = sara_core::generator::install_overrides(overrides);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to load template overrides: {}", e);
+            }
+        }
     }
 
     // Run the command

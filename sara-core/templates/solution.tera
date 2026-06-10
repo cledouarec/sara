@@ -1,4 +1,4 @@
-{% include "solution_frontmatter.tera" %}
+{% include "frontmatter.tera" %}
 
 # Solution: {{ name }}
 
