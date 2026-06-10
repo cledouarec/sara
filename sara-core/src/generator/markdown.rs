@@ -465,7 +465,7 @@ mod tests {
     fn test_generate_document_solution() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::Solution)
+            .item_type(ItemType::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()
@@ -482,7 +482,7 @@ mod tests {
     fn test_generate_document_use_case_with_refines() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("UC-001"))
-            .item_type(ItemType::UseCase)
+            .item_type(ItemType::USE_CASE)
             .name("Test Use Case")
             .source(test_source())
             .relationships(vec![Relationship::new(
@@ -504,7 +504,7 @@ mod tests {
     fn test_generate_document_system_architecture_with_platform() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSARCH-001"))
-            .item_type(ItemType::SystemArchitecture)
+            .item_type(ItemType::SYSTEM_ARCHITECTURE)
             .name("Web Platform Architecture")
             .source(test_source())
             .platform("AWS Lambda")
@@ -528,7 +528,7 @@ mod tests {
     fn test_generate_document_adr() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("ADR-001"))
-            .item_type(ItemType::ArchitectureDecisionRecord)
+            .item_type(ItemType::ARCHITECTURE_DECISION_RECORD)
             .name("Use Microservices Architecture")
             .description("Decision to adopt microservices")
             .source(test_source())
@@ -561,7 +561,7 @@ mod tests {
     fn test_generate_frontmatter_solution() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::Solution)
+            .item_type(ItemType::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()
@@ -581,7 +581,7 @@ mod tests {
     fn test_generate_document_system_requirement() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-001"))
-            .item_type(ItemType::SystemRequirement)
+            .item_type(ItemType::SYSTEM_REQUIREMENT)
             .name("Performance Requirement")
             .source(test_source())
             .specification("The system SHALL respond within 200ms.")
@@ -605,7 +605,7 @@ mod tests {
     fn test_frontmatter_entry_order_matches_legacy_layout() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-002"))
-            .item_type(ItemType::SystemRequirement)
+            .item_type(ItemType::SYSTEM_REQUIREMENT)
             .name("Ordered")
             .source(test_source())
             .specification("Spec.")
@@ -629,7 +629,7 @@ mod tests {
     fn test_generic_body_renders_declared_text_fields() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-003"))
-            .item_type(ItemType::SystemRequirement)
+            .item_type(ItemType::SYSTEM_REQUIREMENT)
             .name("Fallback")
             .source(test_source())
             .specification("Spec.")

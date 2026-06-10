@@ -319,7 +319,7 @@ impl EditService {
             )));
         }
 
-        if opts.platform.is_some() && item_type != ItemType::SystemArchitecture {
+        if opts.platform.is_some() && item_type != ItemType::SYSTEM_ARCHITECTURE {
             return Err(SaraError::EditFailed(
                 "--platform is only valid for System Architecture items".to_string(),
             ));
@@ -524,7 +524,7 @@ impl EditService {
         // ADR types need status and deciders to build successfully.
         // For edits, provide defaults since those fields are not
         // part of EditedValues (they are preserved from the original).
-        if item_type == ItemType::ArchitectureDecisionRecord {
+        if item_type == ItemType::ARCHITECTURE_DECISION_RECORD {
             builder = builder
                 .status(crate::model::AdrStatus::Proposed)
                 .decider("TBD");
@@ -588,12 +588,12 @@ mod tests {
 
     #[test]
     fn test_item_context_from_item() {
-        let item = create_test_item_with_name("SOL-001", ItemType::Solution, "Test Solution");
+        let item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "Test Solution");
         let ctx = ItemContext::from_item(&item);
 
         assert_eq!(ctx.id, "SOL-001");
         assert_eq!(ctx.name, "Test Solution");
-        assert_eq!(ctx.item_type, ItemType::Solution);
+        assert_eq!(ctx.item_type, ItemType::SOLUTION);
     }
 
     #[test]
@@ -604,13 +604,13 @@ mod tests {
         let opts = EditOptions::new("SYSREQ-001").with_specification("new spec");
         assert!(
             service
-                .validate_options(&opts, ItemType::SystemRequirement)
+                .validate_options(&opts, ItemType::SYSTEM_REQUIREMENT)
                 .is_ok()
         );
 
         // Invalid: specification on solution type
         let opts = EditOptions::new("SOL-001").with_specification("new spec");
-        assert!(service.validate_options(&opts, ItemType::Solution).is_err());
+        assert!(service.validate_options(&opts, ItemType::SOLUTION).is_err());
     }
 
     #[test]
@@ -621,13 +621,13 @@ mod tests {
         let opts = EditOptions::new("SYSARCH-001").with_platform("AWS");
         assert!(
             service
-                .validate_options(&opts, ItemType::SystemArchitecture)
+                .validate_options(&opts, ItemType::SYSTEM_ARCHITECTURE)
                 .is_ok()
         );
 
         // Invalid: platform on solution
         let opts = EditOptions::new("SOL-001").with_platform("AWS");
-        assert!(service.validate_options(&opts, ItemType::Solution).is_err());
+        assert!(service.validate_options(&opts, ItemType::SOLUTION).is_err());
     }
 
     #[test]
@@ -636,7 +636,7 @@ mod tests {
 
         let current = ItemContext {
             id: "SOL-001".to_string(),
-            item_type: ItemType::Solution,
+            item_type: ItemType::SOLUTION,
             name: "Old Name".to_string(),
             description: Some("Old Description".to_string()),
             specification: None,
@@ -659,7 +659,7 @@ mod tests {
 
         let old = ItemContext {
             id: "SOL-001".to_string(),
-            item_type: ItemType::Solution,
+            item_type: ItemType::SOLUTION,
             name: "Old Name".to_string(),
             description: None,
             specification: None,
@@ -685,7 +685,7 @@ mod tests {
         let values = EditedValues::new("Test Solution")
             .with_description(Some("A test solution".to_string()));
 
-        let yaml = service.build_frontmatter_yaml("SOL-001", ItemType::Solution, &values);
+        let yaml = service.build_frontmatter_yaml("SOL-001", ItemType::SOLUTION, &values);
 
         assert!(yaml.contains("id: \"SOL-001\""));
         assert!(yaml.contains("type: solution"));

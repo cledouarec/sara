@@ -22,4 +22,6 @@ pub use diff::{DiffError, DiffOptions, DiffResult, DiffService};
 // Edit service exports
 pub use edit::{EditOptions, EditResult, EditService, EditedValues, ItemContext};
 // Init service exports
-pub use init::{InitError, InitOptions, InitResult, InitService, TypeConfig, parse_item_type};
+pub use init::{
+    FieldInput, InitError, InitOptions, InitResult, InitService, TypeConfig, parse_item_type,
+};

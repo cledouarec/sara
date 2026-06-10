@@ -3,6 +3,7 @@
 //! Provides terminal prompts for creating requirement documents when
 //! the --type argument is not provided (FR-040 through FR-052).
 
+use std::collections::HashSet;
 use std::io::{IsTerminal, stdin, stdout};
 use std::path::PathBuf;
 
@@ -12,6 +13,8 @@ use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
 use sara_core::repository::parse_repositories;
+use sara_core::schema::{FieldDef, FieldType};
+use sara_core::service::FieldInput;
 use thiserror::Error;
 
 use crate::output::{OutputConfig, print_error};
@@ -58,21 +61,7 @@ pub struct InteractiveInput {
     pub name: String,
     pub description: Option<String>,
     pub traceability: TraceabilityLinks,
-    pub type_specific: TypeSpecificInput,
-}
-
-/// Type-specific fields.
-#[derive(Debug, Default)]
-pub enum TypeSpecificInput {
-    /// No type-specific fields (Solution, UseCase, Scenario, DetailedDesign).
-    #[default]
-    None,
-    /// For requirement types (SystemRequirement, SoftwareRequirement, HardwareRequirement).
-    Requirement { specification: Option<String> },
-    /// For SystemArchitecture.
-    SystemArchitecture { platform: Option<String> },
-    /// For Architecture Decision Records.
-    Adr { deciders: Vec<String> },
+    pub type_specific: Vec<(String, FieldInput)>,
 }
 
 /// Errors that can occur during interactive prompts.
@@ -162,7 +151,7 @@ fn prompt_item_type(prefilled: Option<ItemType>) -> Result<ItemType, PromptError
         return Ok(item_type);
     }
 
-    let options: Vec<ItemType> = ItemType::all().to_vec();
+    let options: Vec<ItemType> = ItemType::all();
     let selection = Select::new("Select item type:", options)
         .with_help_message("Use arrow keys to navigate, Enter to select")
         .prompt()?;
@@ -233,9 +222,21 @@ fn prompt_identifier(
     }
 
     let suggested = item_type.suggest_next_id(graph);
+    let existing_ids: HashSet<String> = graph
+        .map(|g| g.items().map(|item| item.id.as_str().to_string()).collect())
+        .unwrap_or_default();
     let id = Text::new("Identifier:")
         .with_default(&suggested)
         .with_validator(IdValidator)
+        .with_validator(move |input: &str| {
+            if existing_ids.contains(input.trim()) {
+                Ok(Validation::Invalid(
+                    "An item with this identifier already exists".into(),
+                ))
+            } else {
+                Ok(Validation::Valid)
+            }
+        })
         .with_help_message("Unique identifier (suggested default shown)")
         .prompt()?;
 
@@ -472,7 +473,7 @@ pub fn prompt_platform(
     prefilled: Option<&String>,
     default: Option<&str>,
 ) -> Result<Option<String>, PromptError> {
-    if item_type != ItemType::SystemArchitecture {
+    if !item_type.accepts_platform() {
         return Ok(None);
     }
 
@@ -494,48 +495,6 @@ pub fn prompt_platform(
     } else {
         Ok(Some(trimmed.to_string()))
     }
-}
-
-/// Prompts for ADR deciders (for architecture_decision_record).
-///
-/// Asks for each decider one at a time until an empty answer is given.
-/// If `prefilled` is not empty, returns those values without prompting.
-/// If `default` is not empty, pre-populates the list and allows adding more.
-pub fn prompt_deciders(
-    item_type: ItemType,
-    prefilled: &[String],
-    default: &[String],
-) -> Result<Vec<String>, PromptError> {
-    if item_type != ItemType::ArchitectureDecisionRecord {
-        return Ok(Vec::new());
-    }
-
-    if !prefilled.is_empty() {
-        return Ok(prefilled.to_vec());
-    }
-
-    let mut deciders: Vec<String> = default.to_vec();
-
-    loop {
-        let prompt_msg = if deciders.is_empty() {
-            "Decider name (press Enter to skip):"
-        } else {
-            "Additional decider (press Enter to finish):"
-        };
-
-        let input = Text::new(prompt_msg)
-            .with_help_message("Person responsible for this decision")
-            .prompt()?;
-
-        let trimmed = input.trim();
-        if trimmed.is_empty() {
-            break;
-        }
-
-        deciders.push(trimmed.to_string());
-    }
-
-    Ok(deciders)
 }
 
 /// Displays a summary and prompts for confirmation (FR-048).
@@ -594,24 +553,17 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
         format!("\n  Justifies: {}", input.traceability.justifies.join(", "))
     };
 
-    let type_specific_info = match &input.type_specific {
-        TypeSpecificInput::None => String::new(),
-        TypeSpecificInput::Requirement { specification } => specification
-            .as_ref()
-            .map(|s| format!("\n  Specification: {}", s))
-            .unwrap_or_default(),
-        TypeSpecificInput::SystemArchitecture { platform } => platform
-            .as_ref()
-            .map(|p| format!("\n  Platform: {}", p))
-            .unwrap_or_default(),
-        TypeSpecificInput::Adr { deciders } => {
-            if deciders.is_empty() {
-                String::new()
-            } else {
-                format!("\n  Deciders: {}", deciders.join(", "))
+    let type_specific_info: String = input
+        .type_specific
+        .iter()
+        .map(|(name, value)| {
+            let label = field_display_name(input.item_type, name);
+            match value {
+                FieldInput::Text(text) => format!("\n  {}: {}", label, text),
+                FieldInput::List(values) => format!("\n  {}: {}", label, values.join(", ")),
             }
-        }
-    };
+        })
+        .collect();
 
     format!(
         "\n\
@@ -635,14 +587,36 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
     )
 }
 
-/// Prompts for file path if not provided.
-fn prompt_file(prefilled: Option<&PathBuf>) -> Result<PathBuf, PromptError> {
+/// Returns the display name the schema declares for a field, or the raw name.
+fn field_display_name(item_type: ItemType, name: &str) -> String {
+    item_type
+        .declared_fields()
+        .iter()
+        .find(|f| f.name == name)
+        .map_or_else(|| name.to_string(), |f| f.display_name.clone())
+}
+
+/// Prompts for file path if not provided, suggesting a file named after the
+/// item identifier inside the first configured repository so the new item is
+/// found by later scans, or the current directory when none is configured.
+fn prompt_file(
+    prefilled: Option<&PathBuf>,
+    id: &str,
+    repositories: &[PathBuf],
+) -> Result<PathBuf, PromptError> {
     if let Some(file) = prefilled {
         return Ok(file.clone());
     }
 
+    let file_name = format!("{id}.md");
+    let default_file = repositories.first().map_or_else(
+        || file_name.clone(),
+        |repo| repo.join(&file_name).display().to_string(),
+    );
+    let help_message = format!("Path for the new document (e.g., {default_file})");
     let file = Text::new("File path:")
-        .with_help_message("Path for the new document (e.g., docs/SOL-001.md)")
+        .with_default(&default_file)
+        .with_help_message(&help_message)
         .with_validator(|input: &str| {
             let trimmed = input.trim();
             if trimmed.is_empty() {
@@ -726,7 +700,7 @@ fn collect_item_input(
         Some(&id),
     )?;
     let type_specific = collect_type_specific_input(session, item_type)?;
-    let file = prompt_file(session.prefilled.file.as_ref())?;
+    let file = prompt_file(session.prefilled.file.as_ref(), &id, session.repositories)?;
 
     Ok(InteractiveInput {
         file,
@@ -739,29 +713,136 @@ fn collect_item_input(
     })
 }
 
-/// Collects type-specific fields (specification, platform).
+/// Collects the declared type-specific fields through prompts.
+///
+/// Text fields are prompted individually (required ones must be non-empty),
+/// text-list fields are collected one entry at a time and enum fields are
+/// selected from their allowed values. Other field kinds (dates, item
+/// references) are left to their schema defaults, like the peer-reference
+/// lists already covered by the traceability prompts.
 fn collect_type_specific_input(
     session: &InteractiveSession<'_>,
     item_type: ItemType,
-) -> Result<TypeSpecificInput, PromptError> {
-    match item_type {
-        ItemType::SystemRequirement
-        | ItemType::SoftwareRequirement
-        | ItemType::HardwareRequirement => {
-            let specification =
-                prompt_specification(item_type, session.prefilled.specification.as_ref(), None)?;
-            Ok(TypeSpecificInput::Requirement { specification })
+) -> Result<Vec<(String, FieldInput)>, PromptError> {
+    let mut inputs = Vec::new();
+
+    for field in item_type.declared_fields() {
+        match &field.field_type {
+            FieldType::Text => {
+                let prefilled = prefilled_text(&session.prefilled, &field.name);
+                if let Some(value) = prompt_text_field(field, prefilled)? {
+                    inputs.push((field.name.clone(), FieldInput::Text(value)));
+                }
+            }
+            FieldType::List(inner) if matches!(**inner, FieldType::Text) => {
+                let prefilled = prefilled_list(&session.prefilled, &field.name);
+                let values = prompt_list_field(field, prefilled)?;
+                if !values.is_empty() {
+                    inputs.push((field.name.clone(), FieldInput::List(values)));
+                }
+            }
+            FieldType::Enum { values } => {
+                if let Some(value) = prompt_enum_field(field, values)? {
+                    inputs.push((field.name.clone(), FieldInput::Text(value)));
+                }
+            }
+            _ => {}
         }
-        ItemType::SystemArchitecture => {
-            let platform = prompt_platform(item_type, session.prefilled.platform.as_ref(), None)?;
-            Ok(TypeSpecificInput::SystemArchitecture { platform })
-        }
-        ItemType::ArchitectureDecisionRecord => {
-            let deciders = prompt_deciders(item_type, &session.prefilled.deciders, &[])?;
-            Ok(TypeSpecificInput::Adr { deciders })
-        }
-        _ => Ok(TypeSpecificInput::None),
     }
+
+    Ok(inputs)
+}
+
+/// Returns the prefilled value for a text field, if any.
+fn prefilled_text(prefilled: &PrefilledFields, name: &str) -> Option<String> {
+    match name {
+        "specification" => prefilled.specification.clone(),
+        "platform" => prefilled.platform.clone(),
+        _ => None,
+    }
+}
+
+/// Returns the prefilled values for a text-list field.
+fn prefilled_list(prefilled: &PrefilledFields, name: &str) -> Vec<String> {
+    match name {
+        "deciders" => prefilled.deciders.clone(),
+        _ => Vec::new(),
+    }
+}
+
+/// Prompts for a single text field; required fields must be non-empty.
+fn prompt_text_field(
+    field: &FieldDef,
+    prefilled: Option<String>,
+) -> Result<Option<String>, PromptError> {
+    if prefilled.is_some() {
+        return Ok(prefilled);
+    }
+
+    if field.required {
+        let value = Text::new(&format!("{}:", field.display_name))
+            .with_validator(NameValidator)
+            .prompt()?;
+        Ok(Some(value.trim().to_string()))
+    } else {
+        let value = Text::new(&format!("{} (optional):", field.display_name))
+            .with_help_message("Press Enter to skip")
+            .prompt()?;
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            Ok(None)
+        } else {
+            Ok(Some(trimmed.to_string()))
+        }
+    }
+}
+
+/// Prompts for an enum field by selecting one of its allowed values.
+///
+/// Required fields must pick a value; optional fields can be skipped with
+/// Esc, leaving the field to its schema default.
+fn prompt_enum_field(field: &FieldDef, values: &[String]) -> Result<Option<String>, PromptError> {
+    let options = values.to_vec();
+
+    if field.required {
+        let value = Select::new(&format!("{}:", field.display_name), options)
+            .with_help_message("Use arrow keys to navigate, Enter to select")
+            .prompt()?;
+        Ok(Some(value))
+    } else {
+        let value = Select::new(&format!("{} (optional):", field.display_name), options)
+            .with_help_message("Use arrow keys to navigate, Enter to select, Esc to skip")
+            .prompt_skippable()?;
+        Ok(value)
+    }
+}
+
+/// Prompts for a text-list field, one entry at a time until an empty answer.
+fn prompt_list_field(field: &FieldDef, prefilled: Vec<String>) -> Result<Vec<String>, PromptError> {
+    if !prefilled.is_empty() {
+        return Ok(prefilled);
+    }
+
+    let mut values: Vec<String> = Vec::new();
+    loop {
+        let message = if values.is_empty() {
+            format!("{} (press Enter to skip):", field.display_name)
+        } else {
+            format!(
+                "Additional {} (press Enter to finish):",
+                field.display_name.to_lowercase()
+            )
+        };
+
+        let input = Text::new(&message).prompt()?;
+        let trimmed = input.trim();
+        if trimmed.is_empty() {
+            break;
+        }
+        values.push(trimmed.to_string());
+    }
+
+    Ok(values)
 }
 
 /// Confirms the creation with the user (FR-048).
@@ -811,7 +892,7 @@ mod tests {
 
     #[test]
     fn test_suggest_next_id_no_graph() {
-        let id = ItemType::Solution.suggest_next_id(None);
+        let id = ItemType::SOLUTION.suggest_next_id(None);
         assert!(id.starts_with("SOL-"));
     }
 
@@ -859,30 +940,30 @@ mod tests {
 
     #[test]
     fn test_required_parent_type() {
-        assert_eq!(ItemType::Solution.required_parent_type(), None);
+        assert_eq!(ItemType::SOLUTION.required_parent_type(), None);
         assert_eq!(
-            ItemType::UseCase.required_parent_type(),
-            Some(ItemType::Solution)
+            ItemType::USE_CASE.required_parent_type(),
+            Some(ItemType::SOLUTION)
         );
         assert_eq!(
-            ItemType::Scenario.required_parent_type(),
-            Some(ItemType::UseCase)
+            ItemType::SCENARIO.required_parent_type(),
+            Some(ItemType::USE_CASE)
         );
     }
 
     #[test]
     fn test_traceability_field() {
-        assert_eq!(ItemType::Solution.traceability_field(), None);
+        assert_eq!(ItemType::SOLUTION.traceability_field(), None);
         assert_eq!(
-            ItemType::UseCase.traceability_field(),
+            ItemType::USE_CASE.traceability_field(),
             Some(FieldName::Refines)
         );
         assert_eq!(
-            ItemType::SystemRequirement.traceability_field(),
+            ItemType::SYSTEM_REQUIREMENT.traceability_field(),
             Some(FieldName::DerivesFrom)
         );
         assert_eq!(
-            ItemType::SystemArchitecture.traceability_field(),
+            ItemType::SYSTEM_ARCHITECTURE.traceability_field(),
             Some(FieldName::Satisfies)
         );
     }

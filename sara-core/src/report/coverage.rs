@@ -60,7 +60,7 @@ impl CoverageReport {
 
         // Calculate coverage for each item type
         for item_type in ItemType::all() {
-            let items = graph.items_by_type(*item_type);
+            let items = graph.items_by_type(item_type);
             let total = items.len();
 
             if total == 0 {
@@ -88,7 +88,7 @@ impl CoverageReport {
             };
 
             by_type.push(TypeCoverage {
-                item_type: *item_type,
+                item_type,
                 type_name: item_type.display_name().to_string(),
                 total,
                 complete: type_complete,
@@ -165,10 +165,10 @@ mod tests {
 
     #[test]
     fn test_coverage_report_complete() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_coverage_report_incomplete() {
         // UseCase without upstream reference
-        let uc = create_test_item("UC-001", ItemType::UseCase);
+        let uc = create_test_item("UC-001", ItemType::USE_CASE);
 
         let graph = KnowledgeGraphBuilder::new().add_item(uc).build().unwrap();
 

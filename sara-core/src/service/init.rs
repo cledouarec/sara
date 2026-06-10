@@ -6,9 +6,12 @@
 use std::fs;
 use std::path::PathBuf;
 
+use indexmap::IndexMap;
+
 use crate::generator::{self, OutputFormat};
-use crate::model::{AdrStatus, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation};
+use crate::model::{FieldValue, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation};
 use crate::parser::{extract_name_from_content, has_frontmatter};
+use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
 /// Options for initializing a new item or adding frontmatter to an existing file.
 #[derive(Debug, Clone)]
@@ -88,199 +91,85 @@ impl InitOptions {
     }
 }
 
-/// Type-specific configuration for each item type.
+/// Value provided for one declared field when initializing an item.
 #[derive(Debug, Clone)]
-pub enum TypeConfig {
-    /// Solution - no type-specific options.
-    Solution,
+pub enum FieldInput {
+    /// A single value (text, enum, date or item-reference fields).
+    Text(String),
+    /// A list of values (list fields).
+    List(Vec<String>),
+}
 
-    /// Use Case with optional refines references.
-    UseCase {
-        /// Solution(s) this use case refines.
-        refines: Vec<String>,
-    },
-
-    /// Scenario with optional refines references.
-    Scenario {
-        /// Use case(s) this scenario refines.
-        refines: Vec<String>,
-    },
-
-    /// System Requirement with specification and traceability.
-    SystemRequirement {
-        /// Specification statement.
-        specification: Option<String>,
-        /// Scenario(s) this requirement derives from.
-        derives_from: Vec<String>,
-        /// Peer dependencies.
-        depends_on: Vec<String>,
-    },
-
-    /// System Architecture with platform and traceability.
-    SystemArchitecture {
-        /// Target platform.
-        platform: Option<String>,
-        /// System requirement(s) this architecture satisfies.
-        satisfies: Vec<String>,
-    },
-
-    /// Software Requirement with specification and traceability.
-    SoftwareRequirement {
-        /// Specification statement.
-        specification: Option<String>,
-        /// System architecture/requirement(s) this derives from.
-        derives_from: Vec<String>,
-        /// Peer dependencies.
-        depends_on: Vec<String>,
-    },
-
-    /// Hardware Requirement with specification and traceability.
-    HardwareRequirement {
-        /// Specification statement.
-        specification: Option<String>,
-        /// System architecture/requirement(s) this derives from.
-        derives_from: Vec<String>,
-        /// Peer dependencies.
-        depends_on: Vec<String>,
-    },
-
-    /// Software Detailed Design with traceability.
-    SoftwareDetailedDesign {
-        /// Software requirement(s) this design satisfies.
-        satisfies: Vec<String>,
-    },
-
-    /// Hardware Detailed Design with traceability.
-    HardwareDetailedDesign {
-        /// Hardware requirement(s) this design satisfies.
-        satisfies: Vec<String>,
-    },
-
-    /// Architecture Decision Record with ADR-specific fields.
-    Adr {
-        /// ADR status (proposed, accepted, deprecated, superseded).
-        status: Option<String>,
-        /// Decision makers.
-        deciders: Vec<String>,
-        /// Design artifacts this ADR justifies.
-        justifies: Vec<String>,
-        /// Older ADRs this decision supersedes.
-        supersedes: Vec<String>,
-        /// Newer ADR that supersedes this one.
-        superseded_by: Option<String>,
-    },
+/// Inputs for the item type being initialized.
+///
+/// Inputs are keyed by the names the active schema declares for the type:
+/// field values by field name, relation targets by relation id. Names the
+/// schema does not declare for the type are ignored when the item is built,
+/// and required fields without input fall back to their schema placeholder.
+#[derive(Debug, Clone)]
+pub struct TypeConfig {
+    item_type: ItemType,
+    fields: IndexMap<String, FieldInput>,
+    relations: IndexMap<String, Vec<String>>,
 }
 
 impl TypeConfig {
+    /// Creates an empty configuration for the given item type.
+    #[must_use]
+    pub fn new(item_type: ItemType) -> Self {
+        Self {
+            item_type,
+            fields: IndexMap::new(),
+            relations: IndexMap::new(),
+        }
+    }
+
     /// Returns the item type for this configuration.
+    #[must_use]
     pub fn item_type(&self) -> ItemType {
-        match self {
-            TypeConfig::Solution => ItemType::Solution,
-            TypeConfig::UseCase { .. } => ItemType::UseCase,
-            TypeConfig::Scenario { .. } => ItemType::Scenario,
-            TypeConfig::SystemRequirement { .. } => ItemType::SystemRequirement,
-            TypeConfig::SystemArchitecture { .. } => ItemType::SystemArchitecture,
-            TypeConfig::SoftwareRequirement { .. } => ItemType::SoftwareRequirement,
-            TypeConfig::HardwareRequirement { .. } => ItemType::HardwareRequirement,
-            TypeConfig::SoftwareDetailedDesign { .. } => ItemType::SoftwareDetailedDesign,
-            TypeConfig::HardwareDetailedDesign { .. } => ItemType::HardwareDetailedDesign,
-            TypeConfig::Adr { .. } => ItemType::ArchitectureDecisionRecord,
+        self.item_type
+    }
+
+    /// Sets the input for a declared field.
+    #[must_use]
+    pub fn field(mut self, name: impl Into<String>, input: FieldInput) -> Self {
+        self.fields.insert(name.into(), input);
+        self
+    }
+
+    /// Sets a single-value field input.
+    #[must_use]
+    pub fn text_field(self, name: impl Into<String>, value: impl Into<String>) -> Self {
+        self.field(name, FieldInput::Text(value.into()))
+    }
+
+    /// Sets a single-value field input when one is provided.
+    #[must_use]
+    pub fn maybe_text_field(self, name: impl Into<String>, value: Option<String>) -> Self {
+        match value {
+            Some(value) => self.text_field(name, value),
+            None => self,
         }
     }
 
-    /// Creates a `Solution` config.
-    pub fn solution() -> Self {
-        TypeConfig::Solution
-    }
-
-    /// Creates a `UseCase` config.
-    pub fn use_case() -> Self {
-        TypeConfig::UseCase {
-            refines: Vec::new(),
+    /// Sets a list field input. An empty list is treated as no input.
+    #[must_use]
+    pub fn list_field(self, name: impl Into<String>, values: Vec<String>) -> Self {
+        if values.is_empty() {
+            self
+        } else {
+            self.field(name, FieldInput::List(values))
         }
     }
 
-    /// Creates a `Scenario` config.
-    pub fn scenario() -> Self {
-        TypeConfig::Scenario {
-            refines: Vec::new(),
+    /// Sets the targets of a declared relation. An empty list is treated as
+    /// no input.
+    #[must_use]
+    pub fn relation(mut self, relation: impl Into<String>, targets: Vec<String>) -> Self {
+        if !targets.is_empty() {
+            self.relations.insert(relation.into(), targets);
         }
-    }
-
-    /// Creates a `SystemRequirement` config.
-    pub fn system_requirement() -> Self {
-        TypeConfig::SystemRequirement {
-            specification: None,
-            derives_from: Vec::new(),
-            depends_on: Vec::new(),
-        }
-    }
-
-    /// Creates a `SystemArchitecture` config.
-    pub fn system_architecture() -> Self {
-        TypeConfig::SystemArchitecture {
-            platform: None,
-            satisfies: Vec::new(),
-        }
-    }
-
-    /// Creates a `SoftwareRequirement` config.
-    pub fn software_requirement() -> Self {
-        TypeConfig::SoftwareRequirement {
-            specification: None,
-            derives_from: Vec::new(),
-            depends_on: Vec::new(),
-        }
-    }
-
-    /// Creates a `HardwareRequirement` config.
-    pub fn hardware_requirement() -> Self {
-        TypeConfig::HardwareRequirement {
-            specification: None,
-            derives_from: Vec::new(),
-            depends_on: Vec::new(),
-        }
-    }
-
-    /// Creates a `SoftwareDetailedDesign` config.
-    pub fn software_detailed_design() -> Self {
-        TypeConfig::SoftwareDetailedDesign {
-            satisfies: Vec::new(),
-        }
-    }
-
-    /// Creates a `HardwareDetailedDesign` config.
-    pub fn hardware_detailed_design() -> Self {
-        TypeConfig::HardwareDetailedDesign {
-            satisfies: Vec::new(),
-        }
-    }
-
-    /// Creates an ADR config.
-    pub fn adr() -> Self {
-        TypeConfig::Adr {
-            status: None,
-            deciders: Vec::new(),
-            justifies: Vec::new(),
-            supersedes: Vec::new(),
-            superseded_by: None,
-        }
-    }
-
-    /// Creates a `TypeConfig` from an `ItemType` with default values.
-    pub fn from_item_type(item_type: ItemType) -> Self {
-        match item_type {
-            ItemType::Solution => TypeConfig::solution(),
-            ItemType::UseCase => TypeConfig::use_case(),
-            ItemType::Scenario => TypeConfig::scenario(),
-            ItemType::SystemRequirement => TypeConfig::system_requirement(),
-            ItemType::SystemArchitecture => TypeConfig::system_architecture(),
-            ItemType::SoftwareRequirement => TypeConfig::software_requirement(),
-            ItemType::HardwareRequirement => TypeConfig::hardware_requirement(),
-            ItemType::SoftwareDetailedDesign => TypeConfig::software_detailed_design(),
-            ItemType::HardwareDetailedDesign => TypeConfig::hardware_detailed_design(),
-            ItemType::ArchitectureDecisionRecord => TypeConfig::adr(),
-        }
+        self
     }
 }
 
@@ -367,14 +256,15 @@ impl InitService {
         })
     }
 
-    /// Checks if the type needs a specification but doesn't have one.
+    /// Checks whether a required text field fell back to its placeholder.
     fn check_needs_specification(&self, type_config: &TypeConfig) -> bool {
-        match type_config {
-            TypeConfig::SystemRequirement { specification, .. }
-            | TypeConfig::SoftwareRequirement { specification, .. }
-            | TypeConfig::HardwareRequirement { specification, .. } => specification.is_none(),
-            _ => false,
-        }
+        schema::item_type_def(type_config.item_type().as_str()).is_some_and(|def| {
+            def.fields.iter().any(|field| {
+                field.required
+                    && matches!(field.field_type, FieldType::Text)
+                    && !type_config.fields.contains_key(&field.name)
+            })
+        })
     }
 
     /// Resolves the ID from options or generates a new one.
@@ -425,102 +315,45 @@ impl InitService {
             builder = builder.description(desc);
         }
 
-        // Build relationships and attributes from TypeConfig
-        match &opts.type_config {
-            TypeConfig::Solution => {}
-
-            TypeConfig::UseCase { refines } | TypeConfig::Scenario { refines } => {
-                builder = builder.relationships(super::ids_to_relationships(
-                    refines,
-                    RelationshipType::Refines,
-                ));
-            }
-
-            TypeConfig::SystemRequirement {
-                specification,
-                derives_from,
-                depends_on,
-            }
-            | TypeConfig::SoftwareRequirement {
-                specification,
-                derives_from,
-                depends_on,
-            }
-            | TypeConfig::HardwareRequirement {
-                specification,
-                derives_from,
-                depends_on,
-            } => {
-                let spec = specification
-                    .clone()
-                    .unwrap_or_else(|| "The system SHALL <describe the requirement>.".to_string());
-                builder = builder.specification(spec);
-                builder = builder.relationships(super::ids_to_relationships(
-                    derives_from,
-                    RelationshipType::DerivesFrom,
-                ));
-                for dep in depends_on {
-                    builder = builder.depends_on(ItemId::new_unchecked(dep));
+        // Fill the declared fields and relations from the configuration.
+        if let Some(def) = schema::item_type_def(opts.item_type().as_str()) {
+            for field in &def.fields {
+                let input = opts.type_config.fields.get(&field.name);
+                if let Some(value) = init_field_value(field, input) {
+                    builder = builder.attribute(field.name.clone(), value);
                 }
             }
 
-            TypeConfig::SystemArchitecture {
-                platform,
-                satisfies,
-            } => {
-                if let Some(p) = platform {
-                    builder = builder.platform(p);
-                }
-                builder = builder.relationships(super::ids_to_relationships(
-                    satisfies,
-                    RelationshipType::Satisfies,
-                ));
-            }
-
-            TypeConfig::SoftwareDetailedDesign { satisfies }
-            | TypeConfig::HardwareDetailedDesign { satisfies } => {
-                builder = builder.relationships(super::ids_to_relationships(
-                    satisfies,
-                    RelationshipType::Satisfies,
-                ));
-            }
-
-            TypeConfig::Adr {
-                status,
-                deciders,
-                justifies,
-                supersedes,
-                superseded_by: _,
-            } => {
-                let adr_status = status
-                    .as_deref()
-                    .and_then(|s| match s {
-                        "proposed" => Some(AdrStatus::Proposed),
-                        "accepted" => Some(AdrStatus::Accepted),
-                        "deprecated" => Some(AdrStatus::Deprecated),
-                        "superseded" => Some(AdrStatus::Superseded),
-                        _ => None,
-                    })
-                    .unwrap_or(AdrStatus::Proposed);
-                builder = builder.status(adr_status);
-                if !deciders.is_empty() {
-                    builder = builder.deciders(deciders.clone());
-                } else {
-                    // Default decider to avoid build failure
-                    builder = builder.decider("TBD");
-                }
-
-                let mut rels = super::ids_to_relationships(justifies, RelationshipType::Justifies);
-                rels.extend(super::ids_to_relationships(
-                    supersedes,
-                    RelationshipType::Supersedes,
-                ));
-
-                builder = builder.relationships(rels);
-                for sup in supersedes {
-                    builder = builder.supersedes(ItemId::new_unchecked(sup));
+            let mut relationships = Vec::new();
+            for target in &def.allowed_targets {
+                let Some(ids) = opts.type_config.relations.get(&target.relation) else {
+                    continue;
+                };
+                let Some(relation) = schema::relation_def(&target.relation) else {
+                    continue;
+                };
+                match relation.direction {
+                    RelationDirection::Upstream => {
+                        if let Some(rel_type) = RelationshipType::from_id(&target.relation) {
+                            relationships.extend(super::ids_to_relationships(ids, rel_type));
+                        }
+                    }
+                    // Peer references live in the attribute map, like the
+                    // parsed form of the same frontmatter field.
+                    RelationDirection::Peer => {
+                        builder = builder.attribute(
+                            target.relation.clone(),
+                            FieldValue::List(
+                                ids.iter()
+                                    .map(|id| FieldValue::ItemRef(ItemId::new_unchecked(id)))
+                                    .collect(),
+                            ),
+                        );
+                    }
+                    RelationDirection::Downstream => {}
                 }
             }
+            builder = builder.relationships(relationships);
         }
 
         builder.build().expect("Failed to build item for init")
@@ -607,33 +440,85 @@ fn remove_frontmatter(content: &str) -> &str {
     content
 }
 
-/// Parses an item type string into `ItemType` enum.
-pub fn parse_item_type(type_str: &str) -> Option<ItemType> {
-    match type_str.to_lowercase().as_str() {
-        "solution" | "sol" => Some(ItemType::Solution),
-        "use_case" | "usecase" | "uc" => Some(ItemType::UseCase),
-        "scenario" | "scen" => Some(ItemType::Scenario),
-        "system_requirement" | "systemrequirement" | "sysreq" => Some(ItemType::SystemRequirement),
-        "system_architecture" | "systemarchitecture" | "sysarch" => {
-            Some(ItemType::SystemArchitecture)
+/// Resolves the typed value of a declared field from its init input.
+///
+/// Required fields without usable input fall back to the schema placeholder
+/// (or the first allowed value for enums) so initialization always produces
+/// a buildable item; optional fields without input are simply omitted.
+fn init_field_value(field: &FieldDef, input: Option<&FieldInput>) -> Option<FieldValue> {
+    let required_fallback = || {
+        field.required.then(|| {
+            field
+                .placeholder
+                .clone()
+                .unwrap_or_else(|| "TBD".to_string())
+        })
+    };
+
+    match &field.field_type {
+        FieldType::Enum { values } => {
+            let provided = match input {
+                Some(FieldInput::Text(value)) if values.contains(value) => Some(value.clone()),
+                _ => None,
+            };
+            provided
+                .or_else(|| {
+                    field.required.then(|| {
+                        field
+                            .placeholder
+                            .clone()
+                            .filter(|p| values.contains(p))
+                            .or_else(|| values.first().cloned())
+                            .unwrap_or_default()
+                    })
+                })
+                .map(FieldValue::Enum)
         }
-        "hardware_requirement" | "hardwarerequirement" | "hwreq" => {
-            Some(ItemType::HardwareRequirement)
+        FieldType::List(inner) => {
+            let values = match input {
+                Some(FieldInput::List(values)) => values.clone(),
+                Some(FieldInput::Text(value)) => vec![value.clone()],
+                None => required_fallback().map(|p| vec![p]).unwrap_or_default(),
+            };
+            if values.is_empty() {
+                None
+            } else {
+                Some(FieldValue::List(
+                    values
+                        .iter()
+                        .map(|v| scalar_field_value(v, inner))
+                        .collect(),
+                ))
+            }
         }
-        "software_requirement" | "softwarerequirement" | "swreq" => {
-            Some(ItemType::SoftwareRequirement)
-        }
-        "hardware_detailed_design" | "hardwaredetaileddesign" | "hwdd" => {
-            Some(ItemType::HardwareDetailedDesign)
-        }
-        "software_detailed_design" | "softwaredetaileddesign" | "swdd" => {
-            Some(ItemType::SoftwareDetailedDesign)
-        }
-        "architecture_decision_record" | "architecturedecisionrecord" | "adr" => {
-            Some(ItemType::ArchitectureDecisionRecord)
-        }
-        _ => None,
+        scalar => match input {
+            Some(FieldInput::Text(value)) => Some(scalar_field_value(value, scalar)),
+            _ => required_fallback().map(|p| scalar_field_value(&p, scalar)),
+        },
     }
+}
+
+/// Wraps a raw string as a value of the given scalar field type.
+fn scalar_field_value(value: &str, field_type: &FieldType) -> FieldValue {
+    match field_type {
+        FieldType::ItemRef => FieldValue::ItemRef(ItemId::new_unchecked(value)),
+        FieldType::Date => FieldValue::Date(value.to_string()),
+        FieldType::Enum { .. } => FieldValue::Enum(value.to_string()),
+        FieldType::Text | FieldType::List(_) => FieldValue::Text(value.to_string()),
+    }
+}
+
+/// Parses an item type string into an [`ItemType`].
+///
+/// Accepts the schema id (`use_case`), its squashed form (`usecase`) and the
+/// type's id prefix in any case (`UC`), for every type the active schema
+/// knows.
+pub fn parse_item_type(type_str: &str) -> Option<ItemType> {
+    let lower = type_str.to_lowercase();
+    ItemType::all().into_iter().find(|item_type| {
+        let id = item_type.as_str();
+        id == lower || id.replace('_', "") == lower || item_type.prefix().to_lowercase() == lower
+    })
 }
 
 #[cfg(test)]
@@ -644,10 +529,10 @@ mod tests {
 
     #[test]
     fn test_parse_item_type() {
-        assert_eq!(parse_item_type("solution"), Some(ItemType::Solution));
-        assert_eq!(parse_item_type("SOL"), Some(ItemType::Solution));
-        assert_eq!(parse_item_type("use_case"), Some(ItemType::UseCase));
-        assert_eq!(parse_item_type("UC"), Some(ItemType::UseCase));
+        assert_eq!(parse_item_type("solution"), Some(ItemType::SOLUTION));
+        assert_eq!(parse_item_type("SOL"), Some(ItemType::SOLUTION));
+        assert_eq!(parse_item_type("use_case"), Some(ItemType::USE_CASE));
+        assert_eq!(parse_item_type("UC"), Some(ItemType::USE_CASE));
         assert_eq!(parse_item_type("invalid"), None);
     }
 
@@ -663,7 +548,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let opts = InitOptions::new(file_path.clone(), TypeConfig::solution())
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(ItemType::SOLUTION))
             .with_id("SOL-001")
             .with_name("Test Solution");
 
@@ -688,7 +573,8 @@ mod tests {
         // Create existing file without frontmatter
         fs::write(&file_path, "# My Document\n\nSome content here.").unwrap();
 
-        let opts = InitOptions::new(file_path.clone(), TypeConfig::use_case()).with_id("UC-001");
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(ItemType::USE_CASE))
+            .with_id("UC-001");
 
         let service = InitService::new();
         let result = service.init(&opts).unwrap();
@@ -711,7 +597,8 @@ mod tests {
         // Create existing file with frontmatter
         fs::write(&file_path, "---\nid: OLD-001\n---\n# Content").unwrap();
 
-        let opts = InitOptions::new(file_path, TypeConfig::solution()).with_id("SOL-001");
+        let opts =
+            InitOptions::new(file_path, TypeConfig::new(ItemType::SOLUTION)).with_id("SOL-001");
 
         let service = InitService::new();
         let result = service.init(&opts);
@@ -727,7 +614,7 @@ mod tests {
         // Create existing file with frontmatter
         fs::write(&file_path, "---\nid: OLD-001\n---\n# Content").unwrap();
 
-        let opts = InitOptions::new(file_path.clone(), TypeConfig::solution())
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(ItemType::SOLUTION))
             .with_id("SOL-001")
             .with_name("New Solution")
             .with_force(true);
@@ -749,8 +636,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let opts =
-            InitOptions::new(file_path, TypeConfig::system_requirement()).with_id("SYSREQ-001");
+        let opts = InitOptions::new(file_path, TypeConfig::new(ItemType::SYSTEM_REQUIREMENT))
+            .with_id("SYSREQ-001");
 
         let service = InitService::new();
         let result = service.init(&opts).unwrap();
@@ -763,11 +650,8 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let type_config = TypeConfig::SystemRequirement {
-            specification: Some("The system SHALL do something".to_string()),
-            derives_from: Vec::new(),
-            depends_on: Vec::new(),
-        };
+        let type_config = TypeConfig::new(ItemType::SYSTEM_REQUIREMENT)
+            .text_field("specification", "The system SHALL do something");
 
         let opts = InitOptions::new(file_path, type_config).with_id("SYSREQ-001");
 

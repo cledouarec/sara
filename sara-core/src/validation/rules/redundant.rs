@@ -80,10 +80,10 @@ mod tests {
     #[test]
     fn test_no_redundancy() {
         // SARCH satisfies SYSREQ, but SYSREQ doesn't declare is_satisfied_by
-        let sysreq = create_test_item("SYSREQ-001", ItemType::SystemRequirement);
+        let sysreq = create_test_item("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT);
         let sarch = create_test_item_with_relationships(
             "SARCH-001",
-            ItemType::SystemArchitecture,
+            ItemType::SYSTEM_ARCHITECTURE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
                 RelationshipType::Satisfies,
@@ -106,7 +106,7 @@ mod tests {
         // Both declare the relationship - this is redundant
         let sysreq = create_test_item_with_relationships(
             "SYSREQ-001",
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SARCH-001"),
                 RelationshipType::IsSatisfiedBy,
@@ -114,7 +114,7 @@ mod tests {
         );
         let sarch = create_test_item_with_relationships(
             "SARCH-001",
-            ItemType::SystemArchitecture,
+            ItemType::SYSTEM_ARCHITECTURE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
                 RelationshipType::Satisfies,

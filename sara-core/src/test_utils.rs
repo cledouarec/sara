@@ -21,8 +21,8 @@ use crate::model::{
 /// use sara_core::test_utils::create_test_item;
 /// use sara_core::model::ItemType;
 ///
-/// let solution = create_test_item("SOL-001", ItemType::Solution);
-/// let requirement = create_test_item("SYSREQ-001", ItemType::SystemRequirement);
+/// let solution = create_test_item("SOL-001", ItemType::SOLUTION);
+/// let requirement = create_test_item("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT);
 /// ```
 #[must_use]
 pub fn create_test_item(id: &str, item_type: ItemType) -> Item {
@@ -40,7 +40,7 @@ pub fn create_test_item(id: &str, item_type: ItemType) -> Item {
 /// use sara_core::test_utils::create_test_item_with_name;
 /// use sara_core::model::ItemType;
 ///
-/// let solution = create_test_item_with_name("SOL-001", ItemType::Solution, "My Custom Name");
+/// let solution = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "My Custom Name");
 /// ```
 #[must_use]
 pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> Item {
@@ -77,7 +77,7 @@ pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> 
 ///
 /// let use_case = create_test_item_with_relationships(
 ///     "UC-001",
-///     ItemType::UseCase,
+///     ItemType::USE_CASE,
 ///     vec![Relationship::new(ItemId::new_unchecked("SOL-001"), RelationshipType::Refines)],
 /// );
 /// ```
@@ -131,7 +131,7 @@ pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Ite
 
     ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
-        .item_type(ItemType::ArchitectureDecisionRecord)
+        .item_type(ItemType::ARCHITECTURE_DECISION_RECORD)
         .name(format!("Test {id}"))
         .source(source)
         .relationships(relationships)
@@ -180,10 +180,10 @@ pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> It
 #[must_use]
 pub fn create_simple_hierarchy() -> Vec<Item> {
     vec![
-        create_test_item("SOL-001", ItemType::Solution),
+        create_test_item("SOL-001", ItemType::SOLUTION),
         create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -191,7 +191,7 @@ pub fn create_simple_hierarchy() -> Vec<Item> {
         ),
         create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::Scenario,
+            ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
                 RelationshipType::Refines,
@@ -206,14 +206,14 @@ mod tests {
 
     #[test]
     fn test_create_test_item_solution() {
-        let item = create_test_item("SOL-001", ItemType::Solution);
+        let item = create_test_item("SOL-001", ItemType::SOLUTION);
         assert_eq!(item.id.as_str(), "SOL-001");
-        assert_eq!(item.item_type, ItemType::Solution);
+        assert_eq!(item.item_type, ItemType::SOLUTION);
     }
 
     #[test]
     fn test_create_test_item_requirement() {
-        let item = create_test_item("SYSREQ-001", ItemType::SystemRequirement);
+        let item = create_test_item("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT);
         assert_eq!(item.id.as_str(), "SYSREQ-001");
         assert!(item.attributes.specification().is_some());
     }
@@ -232,8 +232,8 @@ mod tests {
     fn test_create_simple_hierarchy() {
         let items = create_simple_hierarchy();
         assert_eq!(items.len(), 3);
-        assert_eq!(items[0].item_type, ItemType::Solution);
-        assert_eq!(items[1].item_type, ItemType::UseCase);
-        assert_eq!(items[2].item_type, ItemType::Scenario);
+        assert_eq!(items[0].item_type, ItemType::SOLUTION);
+        assert_eq!(items[1].item_type, ItemType::USE_CASE);
+        assert_eq!(items[2].item_type, ItemType::SCENARIO);
     }
 }

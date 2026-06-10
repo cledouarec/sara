@@ -11,40 +11,76 @@ use crate::error::SaraError;
 use crate::model::FieldName;
 use crate::model::field::FieldValue;
 use crate::model::relationship::{Relationship, RelationshipType};
-use crate::schema::{self, RelationDirection};
+use crate::schema::{self, FieldDef, ItemTypeDef, RelationDirection};
 
-/// Represents the type of item in the knowledge graph.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum ItemType {
-    Solution,
-    UseCase,
-    Scenario,
-    SystemRequirement,
-    SystemArchitecture,
-    HardwareRequirement,
-    SoftwareRequirement,
-    HardwareDetailedDesign,
-    SoftwareDetailedDesign,
-    ArchitectureDecisionRecord,
-}
+/// Identifies an item type by its schema id.
+///
+/// Wraps the interned snake_case id of a type defined by the active schema
+/// (or the built-in default). All metadata — prefix, display name, declared
+/// fields, parent and relation links — is resolved against the schema, so
+/// types introduced by a custom YAML schema behave exactly like the built-in
+/// ones. Constants are provided for the built-in types; other types are
+/// obtained through [`ItemType::from_id`] or [`ItemType::all`].
+///
+/// Equality and hashing compare the id by content, so a constant compares
+/// equal to the same type resolved from a schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct ItemType(&'static str);
 
 impl ItemType {
-    /// Returns all item types in hierarchy order (upstream to downstream).
+    /// The built-in solution type.
+    pub const SOLUTION: Self = Self("solution");
+    /// The built-in use case type.
+    pub const USE_CASE: Self = Self("use_case");
+    /// The built-in scenario type.
+    pub const SCENARIO: Self = Self("scenario");
+    /// The built-in system requirement type.
+    pub const SYSTEM_REQUIREMENT: Self = Self("system_requirement");
+    /// The built-in system architecture type.
+    pub const SYSTEM_ARCHITECTURE: Self = Self("system_architecture");
+    /// The built-in hardware requirement type.
+    pub const HARDWARE_REQUIREMENT: Self = Self("hardware_requirement");
+    /// The built-in software requirement type.
+    pub const SOFTWARE_REQUIREMENT: Self = Self("software_requirement");
+    /// The built-in hardware detailed design type.
+    pub const HARDWARE_DETAILED_DESIGN: Self = Self("hardware_detailed_design");
+    /// The built-in software detailed design type.
+    pub const SOFTWARE_DETAILED_DESIGN: Self = Self("software_detailed_design");
+    /// The built-in architecture decision record type.
+    pub const ARCHITECTURE_DECISION_RECORD: Self = Self("architecture_decision_record");
+
+    /// Returns all item types known to the active schema, in hierarchy order.
+    ///
+    /// Includes built-in types that a partial custom schema does not redefine.
     #[must_use]
-    pub const fn all() -> &'static [ItemType] {
-        &[
-            Self::Solution,
-            Self::UseCase,
-            Self::Scenario,
-            Self::SystemRequirement,
-            Self::SystemArchitecture,
-            Self::HardwareRequirement,
-            Self::SoftwareRequirement,
-            Self::HardwareDetailedDesign,
-            Self::SoftwareDetailedDesign,
-            Self::ArchitectureDecisionRecord,
-        ]
+    pub fn all() -> Vec<ItemType> {
+        schema::all_item_type_defs()
+            .iter()
+            .map(|def| Self(def.id.as_str()))
+            .collect()
+    }
+
+    /// Returns the item type definition in the active schema, if any.
+    fn def(&self) -> Option<&'static ItemTypeDef> {
+        schema::item_type_def(self.0)
+    }
+
+    /// Returns true if the type declares the given relation toward targets.
+    fn declares_relation(&self, relation: &str) -> bool {
+        self.def()
+            .is_some_and(|def| def.allowed_targets.iter().any(|t| t.relation == relation))
+    }
+
+    /// Returns the declaration of the given field, if the type declares it.
+    fn field_def(&self, name: &str) -> Option<&'static FieldDef> {
+        self.def()
+            .and_then(|def| def.fields.iter().find(|f| f.name == name))
+    }
+
+    /// Returns the fields the active schema declares for this type.
+    #[must_use]
+    pub fn declared_fields(&self) -> &'static [FieldDef] {
+        self.def().map_or(&[], |def| def.fields.as_slice())
     }
 
     /// Returns the display name for this item type.
@@ -106,74 +142,72 @@ impl ItemType {
 
     /// Returns true if this item type requires the refines field.
     #[must_use]
-    pub const fn requires_refines(&self) -> bool {
-        matches!(self, Self::UseCase | Self::Scenario)
+    pub fn requires_refines(&self) -> bool {
+        self.declares_relation("refines")
     }
 
     /// Returns true if this item type requires the derives_from field.
     #[must_use]
-    pub const fn requires_derives_from(&self) -> bool {
-        matches!(
-            self,
-            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement
-        )
+    pub fn requires_derives_from(&self) -> bool {
+        self.declares_relation("derives_from")
     }
 
     /// Returns true if this item type requires the satisfies field.
     #[must_use]
-    pub const fn requires_satisfies(&self) -> bool {
-        matches!(
-            self,
-            Self::SystemArchitecture | Self::HardwareDetailedDesign | Self::SoftwareDetailedDesign
-        )
+    pub fn requires_satisfies(&self) -> bool {
+        self.declares_relation("satisfies")
     }
 
-    /// Returns true if this item type requires/accepts a specification field.
+    /// Returns true if this item type requires a specification field.
     #[must_use]
-    pub const fn requires_specification(&self) -> bool {
-        matches!(
-            self,
-            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement
-        )
+    pub fn requires_specification(&self) -> bool {
+        self.field_def("specification").is_some_and(|f| f.required)
     }
 
     /// Returns true if this item type accepts the platform field.
     #[must_use]
-    pub const fn accepts_platform(&self) -> bool {
-        matches!(self, Self::SystemArchitecture)
+    pub fn accepts_platform(&self) -> bool {
+        self.field_def("platform").is_some()
     }
 
     /// Returns true if this item type accepts the depends_on field (peer dependencies).
     #[must_use]
-    pub const fn supports_depends_on(&self) -> bool {
-        matches!(
-            self,
-            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement
-        )
+    pub fn supports_depends_on(&self) -> bool {
+        self.declares_relation("depends_on")
     }
 
-    /// Returns true if this is a root item type (Solution).
+    /// Returns true if this is a root item type.
+    ///
+    /// A root has no required parent and declares no upstream relation, so it
+    /// anchors the hierarchy (detached types like ADRs are not roots: they
+    /// have no parent but justify other items).
     #[must_use]
-    pub const fn is_root(&self) -> bool {
-        matches!(self, Self::Solution)
+    pub fn is_root(&self) -> bool {
+        self.def().is_some_and(|def| {
+            def.parent_types.is_empty()
+                && !def.allowed_targets.iter().any(|t| {
+                    schema::relation_def(&t.relation)
+                        .is_some_and(|r| r.direction == RelationDirection::Upstream)
+                })
+        })
     }
 
-    /// Returns true if this is an Architecture Decision Record type.
+    /// Returns true if this item type requires a deciders field.
     #[must_use]
-    pub const fn requires_deciders(&self) -> bool {
-        matches!(self, Self::ArchitectureDecisionRecord)
+    pub fn requires_deciders(&self) -> bool {
+        self.field_def("deciders").is_some_and(|f| f.required)
     }
 
-    /// Returns true if this item type supports the status field (ADR only).
+    /// Returns true if this item type supports the status field.
     #[must_use]
-    pub const fn supports_status(&self) -> bool {
-        matches!(self, Self::ArchitectureDecisionRecord)
+    pub fn supports_status(&self) -> bool {
+        self.field_def("status").is_some()
     }
 
-    /// Returns true if this item type supports the supersedes field (ADR peer relationship).
+    /// Returns true if this item type supports the supersedes field (peer relationship).
     #[must_use]
-    pub const fn supports_supersedes(&self) -> bool {
-        matches!(self, Self::ArchitectureDecisionRecord)
+    pub fn supports_supersedes(&self) -> bool {
+        self.field_def("supersedes").is_some()
     }
 
     /// Returns the required parent item type for this type, if any.
@@ -188,45 +222,36 @@ impl ItemType {
     }
 
     /// Returns the upstream traceability field for this item type.
+    ///
+    /// Resolved as the first upstream relation the type declares in the
+    /// active schema.
     #[must_use]
-    pub const fn traceability_field(&self) -> Option<FieldName> {
-        match self {
-            Self::Solution => None,
-            Self::UseCase | Self::Scenario => Some(FieldName::Refines),
-            Self::SystemRequirement | Self::HardwareRequirement | Self::SoftwareRequirement => {
-                Some(FieldName::DerivesFrom)
-            }
-            Self::SystemArchitecture
-            | Self::HardwareDetailedDesign
-            | Self::SoftwareDetailedDesign => Some(FieldName::Satisfies),
-            Self::ArchitectureDecisionRecord => Some(FieldName::Justifies),
-        }
+    pub fn traceability_field(&self) -> Option<FieldName> {
+        let def = self.def()?;
+        def.allowed_targets
+            .iter()
+            .find(|t| {
+                schema::relation_def(&t.relation)
+                    .is_some_and(|r| r.direction == RelationDirection::Upstream)
+            })
+            .and_then(|t| RelationshipType::from_id(&t.relation))
+            .map(|r| r.field_name())
     }
 
-    /// Returns the YAML value (snake_case string) for this item type.
+    /// Returns the schema id (snake_case string) for this item type.
     #[must_use]
     pub const fn as_str(&self) -> &'static str {
-        match self {
-            Self::Solution => "solution",
-            Self::UseCase => "use_case",
-            Self::Scenario => "scenario",
-            Self::SystemRequirement => "system_requirement",
-            Self::SystemArchitecture => "system_architecture",
-            Self::HardwareRequirement => "hardware_requirement",
-            Self::SoftwareRequirement => "software_requirement",
-            Self::HardwareDetailedDesign => "hardware_detailed_design",
-            Self::SoftwareDetailedDesign => "software_detailed_design",
-            Self::ArchitectureDecisionRecord => "architecture_decision_record",
-        }
+        self.0
     }
 
-    /// Returns the variant matching the given schema id, if any.
+    /// Returns the item type with the given schema id, if the active schema
+    /// (or the built-in default) defines it.
     ///
-    /// Inverse of [`ItemType::as_str`]. Used when mapping a schema definition
-    /// back to a concrete enum variant.
+    /// Inverse of [`ItemType::as_str`]. The returned value carries the id
+    /// interned in the schema, so it lives for the whole process.
     #[must_use]
     pub fn from_id(id: &str) -> Option<Self> {
-        Self::all().iter().copied().find(|t| t.as_str() == id)
+        schema::item_type_def(id).map(|def| Self(def.id.as_str()))
     }
 
     /// Returns all traceability configurations for this item type.
@@ -280,6 +305,20 @@ pub struct TraceabilityConfig {
 impl fmt::Display for ItemType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{}", self.display_name())
+    }
+}
+
+impl Serialize for ItemType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for ItemType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = String::deserialize(deserializer)?;
+        Self::from_id(&id)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown item type `{id}`")))
     }
 }
 
@@ -572,26 +611,26 @@ mod tests {
 
     #[test]
     fn test_item_type_display() {
-        assert_eq!(ItemType::Solution.display_name(), "Solution");
+        assert_eq!(ItemType::SOLUTION.display_name(), "Solution");
         assert_eq!(
-            ItemType::SystemRequirement.display_name(),
+            ItemType::SYSTEM_REQUIREMENT.display_name(),
             "System Requirement"
         );
     }
 
     #[test]
     fn test_item_type_requires_specification() {
-        assert!(ItemType::SystemRequirement.requires_specification());
-        assert!(ItemType::HardwareRequirement.requires_specification());
-        assert!(ItemType::SoftwareRequirement.requires_specification());
-        assert!(!ItemType::Solution.requires_specification());
-        assert!(!ItemType::Scenario.requires_specification());
+        assert!(ItemType::SYSTEM_REQUIREMENT.requires_specification());
+        assert!(ItemType::HARDWARE_REQUIREMENT.requires_specification());
+        assert!(ItemType::SOFTWARE_REQUIREMENT.requires_specification());
+        assert!(!ItemType::SOLUTION.requires_specification());
+        assert!(!ItemType::SCENARIO.requires_specification());
     }
 
     #[test]
     fn test_generate_id() {
-        assert_eq!(ItemType::Solution.generate_id(Some(1)), "SOL-001");
-        assert_eq!(ItemType::UseCase.generate_id(Some(42)), "UC-042");
-        assert_eq!(ItemType::SystemRequirement.generate_id(None), "SYSREQ-001");
+        assert_eq!(ItemType::SOLUTION.generate_id(Some(1)), "SOL-001");
+        assert_eq!(ItemType::USE_CASE.generate_id(Some(42)), "UC-042");
+        assert_eq!(ItemType::SYSTEM_REQUIREMENT.generate_id(None), "SYSREQ-001");
     }
 }

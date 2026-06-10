@@ -321,29 +321,15 @@ fn print_traversal_json(result: &TraversalResult, graph: &KnowledgeGraph) {
     println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
 }
 
-/// Parses item type strings into ItemType enum values.
+/// Parses item type strings into item types known to the active schema.
+///
+/// Accepts, for every type the schema defines, the schema id (`use_case`),
+/// its squashed form (`usecase`) and the type's id prefix in any case
+/// (`adr`). Unknown names are ignored.
 pub fn parse_item_types(types: &[String]) -> Vec<ItemType> {
     types
         .iter()
-        .filter_map(|t| match t.to_lowercase().as_str() {
-            "solution" => Some(ItemType::Solution),
-            "use_case" | "usecase" => Some(ItemType::UseCase),
-            "scenario" => Some(ItemType::Scenario),
-            "system_requirement" | "systemrequirement" => Some(ItemType::SystemRequirement),
-            "system_architecture" | "systemarchitecture" => Some(ItemType::SystemArchitecture),
-            "hardware_requirement" | "hardwarerequirement" => Some(ItemType::HardwareRequirement),
-            "software_requirement" | "softwarerequirement" => Some(ItemType::SoftwareRequirement),
-            "hardware_detailed_design" | "hardwaredetaileddesign" => {
-                Some(ItemType::HardwareDetailedDesign)
-            }
-            "software_detailed_design" | "softwaredetaileddesign" => {
-                Some(ItemType::SoftwareDetailedDesign)
-            }
-            "architecture_decision_record" | "architecturedecisionrecord" => {
-                Some(ItemType::ArchitectureDecisionRecord)
-            }
-            _ => None,
-        })
+        .filter_map(|t| sara_core::service::parse_item_type(t))
         .collect()
 }
 
@@ -357,7 +343,7 @@ mod tests {
             let parsed = parse_item_types(&[item_type.as_str().to_string()]);
             assert_eq!(
                 parsed,
-                vec![*item_type],
+                vec![item_type],
                 "type id `{}` must be accepted by --type",
                 item_type.as_str()
             );

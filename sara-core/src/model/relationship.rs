@@ -300,7 +300,8 @@ impl RelationshipRules {
     /// active schema.
     #[must_use]
     pub fn valid_justification_targets() -> Vec<ItemType> {
-        let Some(def) = schema::item_type_def(ItemType::ArchitectureDecisionRecord.as_str()) else {
+        let Some(def) = schema::item_type_def(ItemType::ARCHITECTURE_DECISION_RECORD.as_str())
+        else {
             return Vec::new();
         };
         def.allowed_targets
@@ -370,29 +371,29 @@ mod tests {
     fn test_valid_relationships() {
         // UseCase refines Solution
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::UseCase,
-            ItemType::Solution,
+            ItemType::USE_CASE,
+            ItemType::SOLUTION,
             RelationshipType::Refines
         ));
 
         // Scenario refines UseCase
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::Scenario,
-            ItemType::UseCase,
+            ItemType::SCENARIO,
+            ItemType::USE_CASE,
             RelationshipType::Refines
         ));
 
         // SystemRequirement derives_from Scenario
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::SystemRequirement,
-            ItemType::Scenario,
+            ItemType::SYSTEM_REQUIREMENT,
+            ItemType::SCENARIO,
             RelationshipType::DerivesFrom
         ));
 
         // Invalid: Solution refines nothing
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::Solution,
-            ItemType::UseCase,
+            ItemType::SOLUTION,
+            ItemType::USE_CASE,
             RelationshipType::Refines
         ));
     }
@@ -400,14 +401,14 @@ mod tests {
     #[test]
     fn test_peer_dependencies() {
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::SystemRequirement,
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
+            ItemType::SYSTEM_REQUIREMENT,
             RelationshipType::DependsOn
         ));
 
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::Solution,
-            ItemType::Solution,
+            ItemType::SOLUTION,
+            ItemType::SOLUTION,
             RelationshipType::DependsOn
         ));
     }
@@ -416,25 +417,25 @@ mod tests {
     fn test_adr_justifies_relationship() {
         // ADR can justify design artifacts
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::SystemArchitecture,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::SYSTEM_ARCHITECTURE,
             RelationshipType::Justifies
         ));
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::SoftwareDetailedDesign,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::SOFTWARE_DETAILED_DESIGN,
             RelationshipType::Justifies
         ));
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::HardwareDetailedDesign,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::HARDWARE_DETAILED_DESIGN,
             RelationshipType::Justifies
         ));
 
         // ADR cannot justify non-design artifacts
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::SystemRequirement,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::SYSTEM_REQUIREMENT,
             RelationshipType::Justifies
         ));
     }
@@ -443,20 +444,20 @@ mod tests {
     fn test_adr_supersession_relationship() {
         // ADR can supersede other ADRs (peer relationship)
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::ArchitectureDecisionRecord,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
             RelationshipType::Supersedes
         ));
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::ArchitectureDecisionRecord,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
             RelationshipType::IsSupersededBy
         ));
 
         // ADR cannot supersede non-ADR items
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::ArchitectureDecisionRecord,
-            ItemType::SystemArchitecture,
+            ItemType::ARCHITECTURE_DECISION_RECORD,
+            ItemType::SYSTEM_ARCHITECTURE,
             RelationshipType::Supersedes
         ));
     }

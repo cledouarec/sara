@@ -8,6 +8,7 @@ use super::item::{Item, ItemAttributes, ItemId, ItemType};
 use super::metadata::SourceLocation;
 use super::relationship::Relationship;
 use crate::error::SaraError;
+use crate::schema;
 
 /// Field name used for the requirement specification text.
 const FIELD_SPECIFICATION: &str = "specification";
@@ -137,43 +138,40 @@ impl ItemBuilder {
         self
     }
 
+    /// Sets the value of a declared field by name.
+    pub fn attribute(mut self, name: impl Into<String>, value: FieldValue) -> Self {
+        self.attributes.insert(name, value);
+        self
+    }
+
     /// Replaces the entire attribute map with the supplied one.
     pub fn attributes(mut self, attrs: ItemAttributes) -> Self {
         self.attributes = attrs;
         self
     }
 
-    /// Validates that required fields for the given type are populated.
+    /// Validates that the fields the schema marks as required are populated.
+    ///
+    /// A required list field must also be non-empty, since an empty list
+    /// carries no more information than an absent one.
     fn validate_required_attributes(
         &self,
         item_type: ItemType,
         file: &str,
     ) -> Result<(), SaraError> {
-        if item_type.requires_specification() && self.attributes.get(FIELD_SPECIFICATION).is_none()
-        {
-            return Err(SaraError::MissingField {
-                field: FIELD_SPECIFICATION.to_string(),
-                file: PathBuf::from(file),
-            });
-        }
+        let Some(def) = schema::item_type_def(item_type.as_str()) else {
+            return Ok(());
+        };
 
-        if item_type == ItemType::ArchitectureDecisionRecord {
-            if self.attributes.get(FIELD_STATUS).is_none() {
+        for field in def.fields.iter().filter(|f| f.required) {
+            let satisfied = match self.attributes.get(&field.name) {
+                Some(FieldValue::List(values)) => !values.is_empty(),
+                Some(_) => true,
+                None => false,
+            };
+            if !satisfied {
                 return Err(SaraError::MissingField {
-                    field: FIELD_STATUS.to_string(),
-                    file: PathBuf::from(file),
-                });
-            }
-
-            let has_deciders = self
-                .attributes
-                .get(FIELD_DECIDERS)
-                .and_then(FieldValue::as_list)
-                .is_some_and(|list| !list.is_empty());
-
-            if !has_deciders {
-                return Err(SaraError::MissingField {
-                    field: FIELD_DECIDERS.to_string(),
+                    field: field.name.clone(),
                     file: PathBuf::from(file),
                 });
             }
@@ -280,7 +278,7 @@ mod tests {
 
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::Solution)
+            .item_type(ItemType::SOLUTION)
             .name("Test Solution")
             .source(source)
             .build();
@@ -301,7 +299,7 @@ mod tests {
 
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("UC-001"))
-            .item_type(ItemType::UseCase)
+            .item_type(ItemType::USE_CASE)
             .name("Test Use Case")
             .source(source)
             .relationships(vec![Relationship::new(

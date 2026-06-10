@@ -111,7 +111,7 @@ fn relationship_matrix_parity() {
     for from in ItemType::all() {
         for to in ItemType::all() {
             for rel in ALL_RELATIONSHIPS {
-                let legacy = RelationshipRules::is_valid_relationship(*from, *to, *rel);
+                let legacy = RelationshipRules::is_valid_relationship(from, to, *rel);
                 let relation_id = rel.field_name().as_str();
                 let derived = schema.is_valid_relationship(from.as_str(), to.as_str(), relation_id);
                 assert_eq!(

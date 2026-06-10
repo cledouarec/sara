@@ -28,6 +28,7 @@ fn schema_with_owner_field() -> Schema {
         display_name: "Owner".to_string(),
         field_type: FieldType::Text,
         required: false,
+        placeholder: None,
     });
     schema
 }
@@ -68,7 +69,7 @@ fn generation_follows_active_schema_and_overrides() {
 
     // A field added by the schema shows up in the generated frontmatter,
     // while the built-in document body for the type is untouched.
-    let mut solution = build_item("SOL-001", ItemType::Solution, "Test Solution");
+    let mut solution = build_item("SOL-001", ItemType::SOLUTION, "Test Solution");
     solution
         .attributes
         .insert("owner", FieldValue::Text("Alice".to_string()));
@@ -86,7 +87,7 @@ fn generation_follows_active_schema_and_overrides() {
     // frontmatter, including declared relations.
     let use_case = ItemBuilder::new()
         .id(ItemId::new_unchecked("UC-001"))
-        .item_type(ItemType::UseCase)
+        .item_type(ItemType::USE_CASE)
         .name("Test Use Case")
         .source(test_source())
         .relationships(vec![Relationship::new(
@@ -105,7 +106,7 @@ fn generation_follows_active_schema_and_overrides() {
     assert!(document.contains("- \"SOL-001\""));
 
     // Types without overrides keep their built-in bodies.
-    let scenario = build_item("SCEN-001", ItemType::Scenario, "Test Scenario");
+    let scenario = build_item("SCEN-001", ItemType::SCENARIO, "Test Scenario");
     let document = generator::generate_document(&scenario, OutputFormat::Markdown);
     assert!(document.contains("# Scenario: Test Scenario"));
 }

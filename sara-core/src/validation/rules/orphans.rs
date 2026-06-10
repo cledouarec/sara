@@ -41,7 +41,7 @@ mod tests {
     #[test]
     fn test_solution_not_orphan() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .build()
             .unwrap();
 
@@ -56,7 +56,7 @@ mod tests {
     #[test]
     fn test_use_case_orphan_detected() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
             .build()
             .unwrap();
 
@@ -66,7 +66,7 @@ mod tests {
 
         if let SaraError::OrphanItem { id, item_type, .. } = &errors[0] {
             assert_eq!(id.as_str(), "UC-001");
-            assert_eq!(*item_type, ItemType::UseCase);
+            assert_eq!(*item_type, ItemType::USE_CASE);
         } else {
             panic!("Expected OrphanItem error");
         }
@@ -75,10 +75,10 @@ mod tests {
     #[test]
     fn test_linked_item_not_orphan() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::UseCase,
+                ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
                     RelationshipType::Refines,

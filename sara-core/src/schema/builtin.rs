@@ -40,6 +40,7 @@ fn specification_field() -> FieldDef {
         display_name: "Specification".to_string(),
         field_type: FieldType::Text,
         required: true,
+        placeholder: Some("The system SHALL <describe the requirement>.".to_string()),
     }
 }
 
@@ -50,6 +51,7 @@ fn depends_on_field() -> FieldDef {
         display_name: "Depends on".to_string(),
         field_type: FieldType::List(Box::new(FieldType::ItemRef)),
         required: false,
+        placeholder: None,
     }
 }
 
@@ -200,6 +202,7 @@ impl Schema {
                     display_name: "Platform".to_string(),
                     field_type: FieldType::Text,
                     required: false,
+                    placeholder: None,
                 }],
                 allowed_targets: vec![allowed("satisfies", &["system_requirement"])],
             },
@@ -264,18 +267,21 @@ impl Schema {
                             ],
                         },
                         required: true,
+                        placeholder: Some("proposed".to_string()),
                     },
                     FieldDef {
                         name: "deciders".to_string(),
                         display_name: "Deciders".to_string(),
                         field_type: FieldType::List(Box::new(FieldType::Text)),
                         required: true,
+                        placeholder: Some("TBD".to_string()),
                     },
                     FieldDef {
                         name: "supersedes".to_string(),
                         display_name: "Supersedes".to_string(),
                         field_type: FieldType::List(Box::new(FieldType::ItemRef)),
                         required: false,
+                        placeholder: None,
                     },
                 ],
                 allowed_targets: vec![

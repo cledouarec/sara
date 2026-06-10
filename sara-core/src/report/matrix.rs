@@ -230,10 +230,10 @@ mod tests {
 
     #[test]
     fn test_matrix_generation() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -253,7 +253,7 @@ mod tests {
 
     #[test]
     fn test_matrix_csv() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
 
         let graph = KnowledgeGraphBuilder::new().add_item(sol).build().unwrap();
 
