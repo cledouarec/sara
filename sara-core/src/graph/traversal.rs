@@ -221,7 +221,7 @@ mod tests {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
         let scen = create_test_item_with_relationships(
@@ -229,7 +229,7 @@ mod tests {
             ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
 
@@ -260,7 +260,7 @@ mod tests {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
 
@@ -289,7 +289,7 @@ mod tests {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
         let scen = create_test_item_with_relationships(
@@ -297,7 +297,7 @@ mod tests {
             ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
 
@@ -329,7 +329,7 @@ mod tests {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
 

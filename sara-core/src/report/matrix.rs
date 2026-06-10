@@ -87,15 +87,15 @@ impl TraceabilityMatrix {
         use crate::model::RelationshipType;
 
         let upstream_types = [
-            RelationshipType::Refines,
-            RelationshipType::DerivesFrom,
-            RelationshipType::Satisfies,
-            RelationshipType::Justifies,
+            RelationshipType::REFINES,
+            RelationshipType::DERIVES_FROM,
+            RelationshipType::SATISFIES,
+            RelationshipType::JUSTIFIES,
         ];
 
         for rel_type in &upstream_types {
             let ids: Vec<_> = item.relationship_ids(*rel_type).cloned().collect();
-            Self::add_targets(&ids, rel_type.field_name().as_str(), graph, targets);
+            Self::add_targets(&ids, rel_type.as_str(), graph, targets);
         }
     }
 
@@ -108,15 +108,15 @@ impl TraceabilityMatrix {
         use crate::model::RelationshipType;
 
         let downstream_types = [
-            RelationshipType::IsRefinedBy,
-            RelationshipType::Derives,
-            RelationshipType::IsSatisfiedBy,
-            RelationshipType::IsJustifiedBy,
+            RelationshipType::IS_REFINED_BY,
+            RelationshipType::DERIVES,
+            RelationshipType::IS_SATISFIED_BY,
+            RelationshipType::IS_JUSTIFIED_BY,
         ];
 
         for rel_type in &downstream_types {
             let ids: Vec<_> = item.relationship_ids(*rel_type).cloned().collect();
-            Self::add_targets(&ids, rel_type.field_name().as_str(), graph, targets);
+            Self::add_targets(&ids, rel_type.as_str(), graph, targets);
         }
     }
 
@@ -236,7 +236,7 @@ mod tests {
             ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::Refines,
+                RelationshipType::REFINES,
             )],
         );
 

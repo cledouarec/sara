@@ -57,11 +57,11 @@ fn active_schema_overrides_propagate_to_domain_enums() {
     assert!(RelationshipRules::is_valid_relationship(
         ItemType::USE_CASE,
         ItemType::SOLUTION,
-        RelationshipType::Refines,
+        RelationshipType::REFINES,
     ));
     assert!(!RelationshipRules::is_valid_relationship(
         ItemType::SOLUTION,
         ItemType::USE_CASE,
-        RelationshipType::Refines,
+        RelationshipType::REFINES,
     ));
 }

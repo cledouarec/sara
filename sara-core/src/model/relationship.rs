@@ -2,163 +2,144 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::field::FieldName;
 use super::item::{ItemId, ItemType};
-use crate::schema::{self, RelationDirection};
+use crate::schema::{self, RelationDef, RelationDirection};
 
-/// Represents the type of relationship between items.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum RelationshipType {
-    /// Refinement: child refines parent (Scenario refines Use Case).
-    Refines,
-    /// Inverse of Refines: parent is refined by child.
-    IsRefinedBy,
-    /// Derivation: parent derives child (Scenario derives System Requirement).
-    Derives,
-    /// Inverse of Derives: child derives from parent.
-    DerivesFrom,
-    /// Satisfaction: child satisfies parent (System Architecture satisfies System Requirement).
-    Satisfies,
-    /// Inverse of Satisfies: parent is satisfied by child.
-    IsSatisfiedBy,
-    /// Dependency: Requirement depends on another Requirement of the same type.
-    DependsOn,
-    /// Inverse of DependsOn: Requirement is required by another.
-    IsRequiredBy,
-    /// Justification: ADR justifies a design artifact (SYSARCH, SWDD, HWDD).
-    Justifies,
-    /// Inverse of Justifies: design artifact is justified by an ADR.
-    IsJustifiedBy,
-    /// Supersession: newer ADR supersedes older ADR.
-    Supersedes,
-    /// Inverse of Supersedes: older ADR is superseded by newer ADR.
-    IsSupersededBy,
-}
+/// Identifies a relation by its schema id.
+///
+/// Wraps the interned snake_case id of a relation declared by the active
+/// schema (or the built-in default). Inverse, direction and primality are
+/// resolved against the schema, so relations introduced by a custom YAML
+/// schema behave exactly like the built-in ones. Constants are provided for
+/// the built-in relations; other relations are obtained through
+/// [`RelationshipType::from_id`] or [`RelationshipType::all`].
+///
+/// Equality and hashing compare the id by content, so a constant compares
+/// equal to the same relation resolved from a schema.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+pub struct RelationshipType(&'static str);
 
 impl RelationshipType {
-    /// Returns all relationship variants in declaration order.
+    /// Refinement: child refines parent (Scenario refines Use Case).
+    pub const REFINES: Self = Self("refines");
+    /// Inverse of refines: parent is refined by child.
+    pub const IS_REFINED_BY: Self = Self("is_refined_by");
+    /// Derivation: parent derives child (Scenario derives System Requirement).
+    pub const DERIVES: Self = Self("derives");
+    /// Inverse of derives: child derives from parent.
+    pub const DERIVES_FROM: Self = Self("derives_from");
+    /// Satisfaction: child satisfies parent.
+    pub const SATISFIES: Self = Self("satisfies");
+    /// Inverse of satisfies: parent is satisfied by child.
+    pub const IS_SATISFIED_BY: Self = Self("is_satisfied_by");
+    /// Dependency: an item depends on a peer of the same type.
+    pub const DEPENDS_ON: Self = Self("depends_on");
+    /// Inverse of depends_on: an item is required by a peer.
+    pub const IS_REQUIRED_BY: Self = Self("is_required_by");
+    /// Justification: an ADR justifies a design artifact.
+    pub const JUSTIFIES: Self = Self("justifies");
+    /// Inverse of justifies: a design artifact is justified by an ADR.
+    pub const IS_JUSTIFIED_BY: Self = Self("justified_by");
+    /// Supersession: a newer ADR supersedes an older ADR.
+    pub const SUPERSEDES: Self = Self("supersedes");
+    /// Inverse of supersedes: an older ADR is superseded by a newer one.
+    pub const IS_SUPERSEDED_BY: Self = Self("superseded_by");
+
+    /// Returns all relations known to the active schema, in catalog order.
+    ///
+    /// Includes built-in relations that a partial custom schema does not
+    /// redefine.
     #[must_use]
-    pub const fn all() -> &'static [RelationshipType] {
-        &[
-            Self::Refines,
-            Self::IsRefinedBy,
-            Self::Derives,
-            Self::DerivesFrom,
-            Self::Satisfies,
-            Self::IsSatisfiedBy,
-            Self::DependsOn,
-            Self::IsRequiredBy,
-            Self::Justifies,
-            Self::IsJustifiedBy,
-            Self::Supersedes,
-            Self::IsSupersededBy,
-        ]
+    pub fn all() -> Vec<RelationshipType> {
+        schema::all_relation_defs()
+            .iter()
+            .map(|def| Self(def.id.as_str()))
+            .collect()
     }
 
-    /// Returns the variant matching the given schema relation id, if any.
+    /// Returns the relation with the given schema id, if the active schema
+    /// (or the built-in default) defines it.
     ///
-    /// Inverse of [`RelationshipType::field_name`]: the schema relation id
-    /// matches `RelationshipType::field_name().as_str()`.
+    /// Inverse of [`RelationshipType::as_str`]. The returned value carries
+    /// the id interned in the schema, so it lives for the whole process.
     #[must_use]
     pub fn from_id(id: &str) -> Option<Self> {
-        Self::all()
-            .iter()
-            .copied()
-            .find(|r| r.field_name().as_str() == id)
+        schema::relation_def(id).map(|def| Self(def.id.as_str()))
+    }
+
+    /// Returns the schema id (snake_case string) for this relation.
+    ///
+    /// This is also the frontmatter field name carrying the relation.
+    #[must_use]
+    pub const fn as_str(&self) -> &'static str {
+        self.0
+    }
+
+    /// Returns the relation definition in the active schema, if any.
+    fn def(&self) -> Option<&'static RelationDef> {
+        schema::relation_def(self.0)
     }
 
     /// Get the inverse relationship type.
+    ///
+    /// Resolved from the schema's relation catalog; relations missing from
+    /// the schema (which validation prevents) are their own inverse.
     #[must_use]
-    pub const fn inverse(&self) -> Self {
-        match self {
-            Self::Refines => Self::IsRefinedBy,
-            Self::IsRefinedBy => Self::Refines,
-            Self::Derives => Self::DerivesFrom,
-            Self::DerivesFrom => Self::Derives,
-            Self::Satisfies => Self::IsSatisfiedBy,
-            Self::IsSatisfiedBy => Self::Satisfies,
-            Self::DependsOn => Self::IsRequiredBy,
-            Self::IsRequiredBy => Self::DependsOn,
-            Self::Justifies => Self::IsJustifiedBy,
-            Self::IsJustifiedBy => Self::Justifies,
-            Self::Supersedes => Self::IsSupersededBy,
-            Self::IsSupersededBy => Self::Supersedes,
-        }
+    pub fn inverse(&self) -> Self {
+        self.def()
+            .and_then(|def| Self::from_id(&def.inverse))
+            .unwrap_or(*self)
     }
 
-    /// Check if this is an upstream relationship (toward Solution).
-    /// For ADRs, Justifies is considered upstream as it links ADR to design artifacts.
+    /// Check if this is an upstream relationship (toward the hierarchy root).
     #[must_use]
-    pub const fn is_upstream(&self) -> bool {
-        matches!(
-            self,
-            Self::Refines | Self::DerivesFrom | Self::Satisfies | Self::Justifies
-        )
+    pub fn is_upstream(&self) -> bool {
+        self.def()
+            .is_some_and(|def| def.direction == RelationDirection::Upstream)
     }
 
-    /// Check if this is a downstream relationship (toward Detailed Designs).
+    /// Check if this is a downstream relationship (away from the root).
     #[must_use]
-    pub const fn is_downstream(&self) -> bool {
-        matches!(
-            self,
-            Self::IsRefinedBy | Self::Derives | Self::IsSatisfiedBy | Self::IsJustifiedBy
-        )
+    pub fn is_downstream(&self) -> bool {
+        self.def()
+            .is_some_and(|def| def.direction == RelationDirection::Downstream)
     }
 
     /// Check if this is a peer relationship (between items of the same type).
     #[must_use]
-    pub const fn is_peer(&self) -> bool {
-        matches!(
-            self,
-            Self::DependsOn | Self::IsRequiredBy | Self::Supersedes | Self::IsSupersededBy
-        )
+    pub fn is_peer(&self) -> bool {
+        self.def()
+            .is_some_and(|def| def.direction == RelationDirection::Peer)
     }
 
     /// Check if this is a primary relationship (not an inverse).
     ///
-    /// Primary relationships are the declared direction:
-    /// - Refines, DerivesFrom, Satisfies, Justifies (upstream)
-    /// - DependsOn, Supersedes (peer, primary)
-    ///
-    /// Inverse relationships exist only for graph traversal and should not
-    /// be considered when checking for cycles.
+    /// Primary relations are the declared side of an inverse pair; inverse
+    /// relations exist for graph traversal and are not considered when
+    /// checking for cycles.
     #[must_use]
-    pub const fn is_primary(&self) -> bool {
-        matches!(
-            self,
-            Self::Refines
-                | Self::DerivesFrom
-                | Self::Satisfies
-                | Self::Justifies
-                | Self::DependsOn
-                | Self::Supersedes
-        )
-    }
-
-    /// Returns the corresponding FieldName for this relationship type.
-    #[must_use]
-    pub const fn field_name(&self) -> FieldName {
-        match self {
-            Self::Refines => FieldName::Refines,
-            Self::IsRefinedBy => FieldName::IsRefinedBy,
-            Self::Derives => FieldName::Derives,
-            Self::DerivesFrom => FieldName::DerivesFrom,
-            Self::Satisfies => FieldName::Satisfies,
-            Self::IsSatisfiedBy => FieldName::IsSatisfiedBy,
-            Self::DependsOn => FieldName::DependsOn,
-            Self::IsRequiredBy => FieldName::IsRequiredBy,
-            Self::Justifies => FieldName::Justifies,
-            Self::IsJustifiedBy => FieldName::JustifiedBy,
-            Self::Supersedes => FieldName::Supersedes,
-            Self::IsSupersededBy => FieldName::SupersededBy,
-        }
+    pub fn is_primary(&self) -> bool {
+        self.def().is_some_and(|def| def.primary)
     }
 }
 
 impl std::fmt::Display for RelationshipType {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.field_name().as_str())
+        write!(f, "{}", self.0)
+    }
+}
+
+impl Serialize for RelationshipType {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        serializer.serialize_str(self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for RelationshipType {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        let id = String::deserialize(deserializer)?;
+        Self::from_id(&id)
+            .ok_or_else(|| serde::de::Error::custom(format!("unknown relation `{id}`")))
     }
 }
 
@@ -324,7 +305,7 @@ impl RelationshipRules {
         schema::active().is_valid_relationship(
             from_type.as_str(),
             to_type.as_str(),
-            rel_type.field_name().as_str(),
+            rel_type.as_str(),
         )
     }
 }
@@ -336,35 +317,35 @@ mod tests {
     #[test]
     fn test_relationship_type_inverse() {
         assert_eq!(
-            RelationshipType::Refines.inverse(),
-            RelationshipType::IsRefinedBy
+            RelationshipType::REFINES.inverse(),
+            RelationshipType::IS_REFINED_BY
         );
         assert_eq!(
-            RelationshipType::Derives.inverse(),
-            RelationshipType::DerivesFrom
+            RelationshipType::DERIVES.inverse(),
+            RelationshipType::DERIVES_FROM
         );
         assert_eq!(
-            RelationshipType::Satisfies.inverse(),
-            RelationshipType::IsSatisfiedBy
+            RelationshipType::SATISFIES.inverse(),
+            RelationshipType::IS_SATISFIED_BY
         );
         assert_eq!(
-            RelationshipType::DependsOn.inverse(),
-            RelationshipType::IsRequiredBy
+            RelationshipType::DEPENDS_ON.inverse(),
+            RelationshipType::IS_REQUIRED_BY
         );
     }
 
     #[test]
     fn test_relationship_type_direction() {
-        assert!(RelationshipType::Refines.is_upstream());
-        assert!(RelationshipType::DerivesFrom.is_upstream());
-        assert!(RelationshipType::Satisfies.is_upstream());
+        assert!(RelationshipType::REFINES.is_upstream());
+        assert!(RelationshipType::DERIVES_FROM.is_upstream());
+        assert!(RelationshipType::SATISFIES.is_upstream());
 
-        assert!(RelationshipType::IsRefinedBy.is_downstream());
-        assert!(RelationshipType::Derives.is_downstream());
-        assert!(RelationshipType::IsSatisfiedBy.is_downstream());
+        assert!(RelationshipType::IS_REFINED_BY.is_downstream());
+        assert!(RelationshipType::DERIVES.is_downstream());
+        assert!(RelationshipType::IS_SATISFIED_BY.is_downstream());
 
-        assert!(RelationshipType::DependsOn.is_peer());
-        assert!(RelationshipType::IsRequiredBy.is_peer());
+        assert!(RelationshipType::DEPENDS_ON.is_peer());
+        assert!(RelationshipType::IS_REQUIRED_BY.is_peer());
     }
 
     #[test]
@@ -373,28 +354,28 @@ mod tests {
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::USE_CASE,
             ItemType::SOLUTION,
-            RelationshipType::Refines
+            RelationshipType::REFINES
         ));
 
         // Scenario refines UseCase
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::SCENARIO,
             ItemType::USE_CASE,
-            RelationshipType::Refines
+            RelationshipType::REFINES
         ));
 
         // SystemRequirement derives_from Scenario
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::SYSTEM_REQUIREMENT,
             ItemType::SCENARIO,
-            RelationshipType::DerivesFrom
+            RelationshipType::DERIVES_FROM
         ));
 
         // Invalid: Solution refines nothing
         assert!(!RelationshipRules::is_valid_relationship(
             ItemType::SOLUTION,
             ItemType::USE_CASE,
-            RelationshipType::Refines
+            RelationshipType::REFINES
         ));
     }
 
@@ -403,13 +384,13 @@ mod tests {
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::SYSTEM_REQUIREMENT,
             ItemType::SYSTEM_REQUIREMENT,
-            RelationshipType::DependsOn
+            RelationshipType::DEPENDS_ON
         ));
 
         assert!(!RelationshipRules::is_valid_relationship(
             ItemType::SOLUTION,
             ItemType::SOLUTION,
-            RelationshipType::DependsOn
+            RelationshipType::DEPENDS_ON
         ));
     }
 
@@ -419,24 +400,24 @@ mod tests {
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::SYSTEM_ARCHITECTURE,
-            RelationshipType::Justifies
+            RelationshipType::JUSTIFIES
         ));
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::SOFTWARE_DETAILED_DESIGN,
-            RelationshipType::Justifies
+            RelationshipType::JUSTIFIES
         ));
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::HARDWARE_DETAILED_DESIGN,
-            RelationshipType::Justifies
+            RelationshipType::JUSTIFIES
         ));
 
         // ADR cannot justify non-design artifacts
         assert!(!RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::SYSTEM_REQUIREMENT,
-            RelationshipType::Justifies
+            RelationshipType::JUSTIFIES
         ));
     }
 
@@ -446,30 +427,30 @@ mod tests {
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::ARCHITECTURE_DECISION_RECORD,
-            RelationshipType::Supersedes
+            RelationshipType::SUPERSEDES
         ));
         assert!(RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::ARCHITECTURE_DECISION_RECORD,
-            RelationshipType::IsSupersededBy
+            RelationshipType::IS_SUPERSEDED_BY
         ));
 
         // ADR cannot supersede non-ADR items
         assert!(!RelationshipRules::is_valid_relationship(
             ItemType::ARCHITECTURE_DECISION_RECORD,
             ItemType::SYSTEM_ARCHITECTURE,
-            RelationshipType::Supersedes
+            RelationshipType::SUPERSEDES
         ));
     }
 
     #[test]
     fn test_adr_relationship_direction() {
         // Justifies is upstream
-        assert!(RelationshipType::Justifies.is_upstream());
+        assert!(RelationshipType::JUSTIFIES.is_upstream());
         // IsJustifiedBy is downstream
-        assert!(RelationshipType::IsJustifiedBy.is_downstream());
+        assert!(RelationshipType::IS_JUSTIFIED_BY.is_downstream());
         // Supersedes/IsSupersededBy are peer
-        assert!(RelationshipType::Supersedes.is_peer());
-        assert!(RelationshipType::IsSupersededBy.is_peer());
+        assert!(RelationshipType::SUPERSEDES.is_peer());
+        assert!(RelationshipType::IS_SUPERSEDED_BY.is_peer());
     }
 }

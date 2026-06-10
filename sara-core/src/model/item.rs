@@ -8,7 +8,6 @@ use serde::{Deserialize, Serialize};
 
 use super::adr::AdrStatus;
 use crate::error::SaraError;
-use crate::model::FieldName;
 use crate::model::field::FieldValue;
 use crate::model::relationship::{Relationship, RelationshipType};
 use crate::schema::{self, FieldDef, ItemTypeDef, RelationDirection};
@@ -221,12 +220,12 @@ impl ItemType {
             .and_then(|id| ItemType::from_id(id))
     }
 
-    /// Returns the upstream traceability field for this item type.
+    /// Returns the upstream traceability relation for this item type.
     ///
     /// Resolved as the first upstream relation the type declares in the
     /// active schema.
     #[must_use]
-    pub fn traceability_field(&self) -> Option<FieldName> {
+    pub fn traceability_field(&self) -> Option<RelationshipType> {
         let def = self.def()?;
         def.allowed_targets
             .iter()
@@ -235,7 +234,6 @@ impl ItemType {
                     .is_some_and(|r| r.direction == RelationDirection::Upstream)
             })
             .and_then(|t| RelationshipType::from_id(&t.relation))
-            .map(|r| r.field_name())
     }
 
     /// Returns the schema id (snake_case string) for this item type.
@@ -280,11 +278,11 @@ impl ItemType {
                 })
             })
             .flat_map(|t| {
-                let field = RelationshipType::from_id(&t.relation).map(|r| r.field_name());
+                let relationship = RelationshipType::from_id(&t.relation);
                 t.targets.iter().filter_map(move |target| {
                     let target_type = ItemType::from_id(target)?;
                     Some(TraceabilityConfig {
-                        relationship_field: field?,
+                        relationship: relationship?,
                         target_type,
                     })
                 })
@@ -296,8 +294,8 @@ impl ItemType {
 /// Configuration for traceability relationships.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TraceabilityConfig {
-    /// The relationship field (refines, derives_from, satisfies, depends_on).
-    pub relationship_field: FieldName,
+    /// The relation carrying the link (refines, derives_from, satisfies, depends_on).
+    pub relationship: RelationshipType,
     /// The target item type to link to (parent for hierarchical, same type for peers).
     pub target_type: ItemType,
 }

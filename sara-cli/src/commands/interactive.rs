@@ -11,7 +11,7 @@ use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
-use sara_core::model::{FieldName, ItemType, TraceabilityLinks};
+use sara_core::model::{ItemType, RelationshipType, TraceabilityLinks};
 use sara_core::repository::parse_repositories;
 use sara_core::schema::{FieldDef, FieldType};
 use sara_core::service::FieldInput;
@@ -290,15 +290,18 @@ enum TraceabilityKind {
 }
 
 impl TraceabilityKind {
-    /// Creates a TraceabilityKind from the FieldName.
-    fn from_field(field: FieldName) -> Self {
-        match field {
-            FieldName::Refines => Self::Refines,
-            FieldName::DerivesFrom => Self::DerivesFrom,
-            FieldName::Satisfies => Self::Satisfies,
-            FieldName::DependsOn => Self::DependsOn,
-            FieldName::Justifies => Self::Justifies,
-            _ => Self::Refines, // Fallback
+    /// Maps a relation to the prompt bucket carrying its selections.
+    ///
+    /// Relations introduced by a custom schema have no dedicated bucket yet
+    /// and are skipped by the prompts.
+    fn from_relationship(relationship: RelationshipType) -> Option<Self> {
+        match relationship.as_str() {
+            "refines" => Some(Self::Refines),
+            "derives_from" => Some(Self::DerivesFrom),
+            "satisfies" => Some(Self::Satisfies),
+            "depends_on" => Some(Self::DependsOn),
+            "justifies" => Some(Self::Justifies),
+            _ => None,
         }
     }
 }
@@ -318,21 +321,21 @@ fn get_traceability_prompt_configs(item_type: ItemType) -> Vec<TraceabilityPromp
     item_type
         .traceability_configs()
         .into_iter()
-        .map(|config| {
-            let kind = TraceabilityKind::from_field(config.relationship_field);
+        .filter_map(|config| {
+            let kind = TraceabilityKind::from_relationship(config.relationship)?;
 
             let prompt_message = format!(
                 "Select {} this {} {}:",
                 config.target_type.display_name(),
                 item_type.display_name(),
-                config.relationship_field.as_str().replace('_', " ")
+                config.relationship.as_str().replace('_', " ")
             );
 
-            TraceabilityPromptConfig {
+            Some(TraceabilityPromptConfig {
                 kind,
                 target_type: config.target_type,
                 prompt_message,
-            }
+            })
         })
         .collect()
 }
@@ -956,15 +959,15 @@ mod tests {
         assert_eq!(ItemType::SOLUTION.traceability_field(), None);
         assert_eq!(
             ItemType::USE_CASE.traceability_field(),
-            Some(FieldName::Refines)
+            Some(RelationshipType::REFINES)
         );
         assert_eq!(
             ItemType::SYSTEM_REQUIREMENT.traceability_field(),
-            Some(FieldName::DerivesFrom)
+            Some(RelationshipType::DERIVES_FROM)
         );
         assert_eq!(
             ItemType::SYSTEM_ARCHITECTURE.traceability_field(),
-            Some(FieldName::Satisfies)
+            Some(RelationshipType::SATISFIES)
         );
     }
 }

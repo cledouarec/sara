@@ -70,7 +70,7 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<SaraE
         item,
         graph,
         item.attributes.depends_on().iter(),
-        RelationshipType::DependsOn,
+        RelationshipType::DEPENDS_ON,
         &mut errors,
     );
 
@@ -93,7 +93,7 @@ mod tests {
                 ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::Refines,
+                    RelationshipType::REFINES,
                 )],
             ))
             .build()
@@ -117,7 +117,7 @@ mod tests {
                 ItemType::SCENARIO,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::Refines,
+                    RelationshipType::REFINES,
                 )],
             ))
             .build()
@@ -136,7 +136,7 @@ mod tests {
         {
             assert_eq!(*from_type, ItemType::SCENARIO);
             assert_eq!(*to_type, ItemType::SOLUTION);
-            assert_eq!(*rel_type, RelationshipType::Refines);
+            assert_eq!(*rel_type, RelationshipType::REFINES);
         } else {
             panic!("Expected InvalidRelationship error");
         }
@@ -150,7 +150,7 @@ mod tests {
                 ItemType::SOLUTION,
                 vec![Relationship::new(
                     ItemId::new_unchecked("UC-001"),
-                    RelationshipType::IsRefinedBy,
+                    RelationshipType::IS_REFINED_BY,
                 )],
             ))
             .add_item(create_test_item("UC-001", ItemType::USE_CASE))

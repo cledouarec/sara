@@ -94,12 +94,12 @@ fn custom_type_flows_through_the_whole_pipeline() {
     assert!(RelationshipRules::is_valid_relationship(
         custom,
         ItemType::SOLUTION,
-        RelationshipType::Refines,
+        RelationshipType::REFINES,
     ));
     assert!(!RelationshipRules::is_valid_relationship(
         ItemType::SOLUTION,
         custom,
-        RelationshipType::Refines,
+        RelationshipType::REFINES,
     ));
 
     // Parsing fills the declared fields and the relationships.
@@ -123,7 +123,7 @@ fn custom_type_flows_through_the_whole_pipeline() {
         .and_then(|v| v.as_date())
         .expect("review_date date field");
     assert_eq!(review_date, "2026-06-01");
-    let refines: Vec<_> = item.relationship_ids(RelationshipType::Refines).collect();
+    let refines: Vec<_> = item.relationship_ids(RelationshipType::REFINES).collect();
     assert_eq!(refines.len(), 1);
 
     // A required field missing from the frontmatter fails the build.

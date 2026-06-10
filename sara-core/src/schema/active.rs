@@ -86,3 +86,23 @@ pub(crate) fn all_item_type_defs() -> &'static [&'static ItemTypeDef] {
         defs
     })
 }
+
+/// Returns the definitions of all known relations.
+///
+/// Active-schema relations come first in declaration order, followed by
+/// built-in relations the active schema does not redefine, mirroring
+/// [`all_item_type_defs`].
+#[must_use]
+pub(crate) fn all_relation_defs() -> &'static [&'static RelationDef] {
+    static ALL: OnceLock<Vec<&'static RelationDef>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut defs: Vec<&'static RelationDef> = active().relations.iter().collect();
+        defs.extend(
+            builtin()
+                .relations
+                .iter()
+                .filter(|def| active().relation(&def.id).is_none()),
+        );
+        defs
+    })
+}
