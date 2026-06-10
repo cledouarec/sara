@@ -105,9 +105,9 @@ mod tests {
 
         if matches!(
             item_type,
-            ItemType::SystemRequirement
-                | ItemType::SoftwareRequirement
-                | ItemType::HardwareRequirement
+            ItemType::SYSTEM_REQUIREMENT
+                | ItemType::SOFTWARE_REQUIREMENT
+                | ItemType::HARDWARE_REQUIREMENT
         ) {
             builder = builder.specification(spec);
         }
@@ -119,7 +119,7 @@ mod tests {
     fn test_valid_metadata_with_rfc2119_keyword() {
         let item = create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
             "The system SHALL respond within 100ms",
         );
         let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn test_empty_specification_fails() {
-        let item = create_item_with_spec("SYSREQ-001", ItemType::SystemRequirement, "");
+        let item = create_item_with_spec("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT, "");
         let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
 
         let rule = MetadataRule;
@@ -147,7 +147,7 @@ mod tests {
     fn test_specification_without_rfc2119_keyword_fails() {
         let item = create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
             "The system responds within 100ms",
         );
         let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
@@ -218,7 +218,7 @@ mod tests {
     fn test_pre_validate_valid_items() {
         let items = vec![create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
             "The system SHALL respond within 100ms",
         )];
 
@@ -231,7 +231,7 @@ mod tests {
     fn test_pre_validate_empty_specification() {
         let items = vec![create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
             "",
         )];
 
@@ -248,7 +248,7 @@ mod tests {
     fn test_pre_validate_missing_rfc2119_keyword() {
         let items = vec![create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SystemRequirement,
+            ItemType::SYSTEM_REQUIREMENT,
             "The system responds within 100ms",
         )];
 
@@ -267,7 +267,7 @@ mod tests {
         let source = SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::Solution)
+            .item_type(ItemType::SOLUTION)
             .name("Test Solution")
             .source(source)
             .build()
@@ -286,17 +286,17 @@ mod tests {
         let items = vec![
             create_item_with_spec(
                 "SYSREQ-001",
-                ItemType::SystemRequirement,
+                ItemType::SYSTEM_REQUIREMENT,
                 "The system SHALL respond within 100ms",
             ),
             create_item_with_spec(
                 "SYSREQ-002",
-                ItemType::SystemRequirement,
+                ItemType::SYSTEM_REQUIREMENT,
                 "Missing keyword here", // Invalid
             ),
             create_item_with_spec(
                 "SYSREQ-003",
-                ItemType::SystemRequirement,
+                ItemType::SYSTEM_REQUIREMENT,
                 "The system MUST be secure",
             ),
         ];

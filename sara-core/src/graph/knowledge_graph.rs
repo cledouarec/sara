@@ -373,7 +373,7 @@ mod tests {
     #[test]
     fn test_add_and_get_item() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .build()
             .unwrap();
 
@@ -385,16 +385,16 @@ mod tests {
     #[test]
     fn test_items_by_type() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item("UC-001", ItemType::UseCase))
-            .add_item(create_test_item("UC-002", ItemType::UseCase))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
+            .add_item(create_test_item("UC-002", ItemType::USE_CASE))
             .build()
             .unwrap();
 
-        let solutions = graph.items_by_type(ItemType::Solution);
+        let solutions = graph.items_by_type(ItemType::SOLUTION);
         assert_eq!(solutions.len(), 1);
 
-        let use_cases = graph.items_by_type(ItemType::UseCase);
+        let use_cases = graph.items_by_type(ItemType::USE_CASE);
         assert_eq!(use_cases.len(), 2);
     }
 
@@ -404,14 +404,14 @@ mod tests {
         assert_eq!(graph.item_count(), 0);
 
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .build()
             .unwrap();
         assert_eq!(graph.item_count(), 1);
 
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
             .build()
             .unwrap();
         assert_eq!(graph.item_count(), 2);
@@ -420,7 +420,7 @@ mod tests {
     #[test]
     fn test_build_simple_graph() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .build()
             .unwrap();
 
@@ -429,10 +429,10 @@ mod tests {
 
     #[test]
     fn test_build_graph_with_relationships() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -452,7 +452,7 @@ mod tests {
     #[test]
     fn test_adr_justifies_relationship() {
         // Create a system architecture item
-        let sysarch = create_test_item("SYSARCH-001", ItemType::SystemArchitecture);
+        let sysarch = create_test_item("SYSARCH-001", ItemType::SYSTEM_ARCHITECTURE);
         // Create an ADR that justifies it
         let adr = create_test_adr("ADR-001", &["SYSARCH-001"], &[]);
 
@@ -489,7 +489,7 @@ mod tests {
     #[test]
     fn test_lookup_found() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .build()
             .unwrap();
 
@@ -504,9 +504,9 @@ mod tests {
     #[test]
     fn test_lookup_not_found_with_suggestions() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
-            .add_item(create_test_item("SOL-002", ItemType::Solution))
-            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-002", ItemType::SOLUTION))
+            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
             .build()
             .unwrap();
 

@@ -19,7 +19,7 @@ mod parity_tests;
 use serde::{Deserialize, Serialize};
 
 pub use active::{active, install};
-pub(crate) use active::{item_type_def, relation_def};
+pub(crate) use active::{all_item_type_defs, item_type_def, relation_def};
 
 /// The direction of a relation relative to the model hierarchy.
 ///
@@ -67,6 +67,10 @@ pub struct FieldDef {
     /// Whether the field must be present when building the item.
     #[serde(default)]
     pub required: bool,
+    /// Value substituted when a required field is initialized without input
+    /// (e.g. a specification statement skeleton).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub placeholder: Option<String>,
 }
 
 /// A relation that types can declare a target as (e.g. `refines`).

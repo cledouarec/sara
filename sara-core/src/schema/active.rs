@@ -66,3 +66,23 @@ pub(crate) fn item_type_def(id: &str) -> Option<&'static ItemTypeDef> {
 pub(crate) fn relation_def(id: &str) -> Option<&'static RelationDef> {
     active().relation(id).or_else(|| builtin().relation(id))
 }
+
+/// Returns the definitions of all known item types.
+///
+/// Active-schema types come first in declaration order, followed by built-in
+/// types the active schema does not redefine, so that a partial custom schema
+/// still exposes the full default model.
+#[must_use]
+pub(crate) fn all_item_type_defs() -> &'static [&'static ItemTypeDef] {
+    static ALL: OnceLock<Vec<&'static ItemTypeDef>> = OnceLock::new();
+    ALL.get_or_init(|| {
+        let mut defs: Vec<&'static ItemTypeDef> = active().item_types.iter().collect();
+        defs.extend(
+            builtin()
+                .item_types
+                .iter()
+                .filter(|def| active().item_type(&def.id).is_none()),
+        );
+        defs
+    })
+}

@@ -6,10 +6,12 @@
 
 use std::path::Path;
 
+use indexmap::IndexMap;
 use serde::Deserialize;
 
 use crate::error::SaraError;
-use crate::model::{AdrStatus, ItemId, ItemType, Relationship, RelationshipType};
+use crate::model::{FieldValue, ItemId, ItemType, Relationship, RelationshipType};
+use crate::schema::{FieldDef, FieldType};
 
 /// Raw frontmatter structure for deserialization.
 ///
@@ -76,7 +78,7 @@ pub struct RawFrontmatter {
 
     /// ADR lifecycle status (required for ADR items).
     #[serde(default)]
-    pub status: Option<AdrStatus>,
+    pub status: Option<String>,
 
     /// ADR deciders (required for ADR items).
     #[serde(default)]
@@ -93,6 +95,13 @@ pub struct RawFrontmatter {
     /// Newer ADR that supersedes this one.
     #[serde(default)]
     pub superseded_by: Option<String>,
+
+    /// Remaining frontmatter entries, keyed by field name.
+    ///
+    /// Captures the values of fields declared by a custom schema that have no
+    /// dedicated struct field above; read via [`Self::declared_field_value`].
+    #[serde(flatten)]
+    pub extra: IndexMap<String, serde_yaml::Value>,
 }
 
 /// Extends a relationship vector with relationships built from a slice of ID strings.
@@ -104,6 +113,46 @@ fn extend_rels(rels: &mut Vec<Relationship>, ids: &[String], rel_type: Relations
 }
 
 impl RawFrontmatter {
+    /// Returns the value of a schema-declared field as a typed [`FieldValue`].
+    ///
+    /// Fields with a dedicated struct member (`specification`, `platform`,
+    /// `status`, `deciders`, `depends_on`, `supersedes`) are read from it;
+    /// any other declared field is read from the flattened remainder of the
+    /// frontmatter. Absent fields and empty lists yield `Ok(None)`.
+    ///
+    /// # Errors
+    ///
+    /// Returns a human-readable reason when the value does not match the
+    /// declared type, e.g. an enum value outside the allowed set.
+    pub fn declared_field_value(&self, field: &FieldDef) -> Result<Option<FieldValue>, String> {
+        match field.name.as_str() {
+            "specification" => Ok(self
+                .specification
+                .as_ref()
+                .map(|s| FieldValue::Text(s.clone()))),
+            "platform" => Ok(self.platform.as_ref().map(|s| FieldValue::Text(s.clone()))),
+            "status" => self
+                .status
+                .as_ref()
+                .map(|s| {
+                    field_value_from_yaml(&serde_yaml::Value::String(s.clone()), &field.field_type)
+                })
+                .transpose()
+                .map(Option::flatten),
+            "deciders" => Ok(non_empty_list(
+                self.deciders.iter().map(|s| FieldValue::Text(s.clone())),
+            )),
+            "depends_on" => Ok(non_empty_list(item_ref_values(&self.depends_on))),
+            "supersedes" => Ok(non_empty_list(item_ref_values(&self.supersedes))),
+            _ => self
+                .extra
+                .get(&field.name)
+                .map(|value| field_value_from_yaml(value, &field.field_type))
+                .transpose()
+                .map(Option::flatten),
+        }
+    }
+
     /// Converts all relationship fields to a Vec of Relationships.
     #[must_use]
     pub fn to_relationships(&self) -> Vec<Relationship> {
@@ -152,6 +201,60 @@ pub fn parse_yaml_frontmatter(yaml: &str, file: &Path) -> Result<RawFrontmatter,
     })
 }
 
+/// Wraps the IDs of a string slice as item-reference field values.
+fn item_ref_values(ids: &[String]) -> impl Iterator<Item = FieldValue> + '_ {
+    ids.iter()
+        .map(|id| FieldValue::ItemRef(ItemId::new_unchecked(id)))
+}
+
+/// Collects values into a list field value, mapping an empty list to `None`.
+fn non_empty_list(values: impl Iterator<Item = FieldValue>) -> Option<FieldValue> {
+    let list: Vec<FieldValue> = values.collect();
+    if list.is_empty() {
+        None
+    } else {
+        Some(FieldValue::List(list))
+    }
+}
+
+/// Converts a raw YAML value to a [`FieldValue`] of the declared type.
+///
+/// Values whose shape does not match the declared type yield `Ok(None)`,
+/// mirroring the historical tolerance of the parser; only enum values outside
+/// the allowed set are reported as errors.
+fn field_value_from_yaml(
+    value: &serde_yaml::Value,
+    field_type: &FieldType,
+) -> Result<Option<FieldValue>, String> {
+    match field_type {
+        FieldType::Text => Ok(value.as_str().map(|s| FieldValue::Text(s.to_string()))),
+        FieldType::Date => Ok(value.as_str().map(|s| FieldValue::Date(s.to_string()))),
+        FieldType::ItemRef => Ok(value
+            .as_str()
+            .map(|s| FieldValue::ItemRef(ItemId::new_unchecked(s)))),
+        FieldType::Enum { values } => match value.as_str() {
+            Some(s) if values.iter().any(|v| v == s) => Ok(Some(FieldValue::Enum(s.to_string()))),
+            Some(s) => Err(format!(
+                "invalid value `{s}`, expected one of: {}",
+                values.join(", ")
+            )),
+            None => Ok(None),
+        },
+        FieldType::List(inner) => {
+            let Some(sequence) = value.as_sequence() else {
+                return Ok(None);
+            };
+            let mut list = Vec::with_capacity(sequence.len());
+            for entry in sequence {
+                if let Some(converted) = field_value_from_yaml(entry, inner)? {
+                    list.push(converted);
+                }
+            }
+            Ok(non_empty_list(list.into_iter()))
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -166,7 +269,7 @@ description: "A test solution"
 "#;
         let fm = parse_yaml_frontmatter(yaml, Path::new("test.md")).unwrap();
         assert_eq!(fm.id, "SOL-001");
-        assert_eq!(fm.item_type, ItemType::Solution);
+        assert_eq!(fm.item_type, ItemType::SOLUTION);
         assert_eq!(fm.name, "Test Solution");
         assert_eq!(fm.description, Some("A test solution".to_string()));
     }
@@ -209,7 +312,7 @@ supersedes:
   - "ADR-000"
 "#;
         let fm = parse_yaml_frontmatter(yaml, Path::new("test.md")).unwrap();
-        assert_eq!(fm.status, Some(AdrStatus::Proposed));
+        assert_eq!(fm.status.as_deref(), Some("proposed"));
         assert_eq!(fm.deciders, vec!["Alice"]);
         assert_eq!(fm.justifies, vec!["SYSARCH-001"]);
         assert_eq!(fm.supersedes, vec!["ADR-000"]);

@@ -60,7 +60,7 @@ mod tests {
     fn test_generate_document_markdown() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::Solution)
+            .item_type(ItemType::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()
@@ -76,7 +76,7 @@ mod tests {
     fn test_generate_metadata_markdown() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::Solution)
+            .item_type(ItemType::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()

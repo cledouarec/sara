@@ -279,7 +279,7 @@ mod tests {
 
     #[test]
     fn test_no_changes() {
-        let item = create_test_item_with_name("SOL-001", ItemType::Solution, "Solution");
+        let item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "Solution");
 
         let old_graph = KnowledgeGraphBuilder::new()
             .add_item(item.clone())
@@ -297,7 +297,7 @@ mod tests {
         let new_graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_name(
                 "SOL-001",
-                ItemType::Solution,
+                ItemType::SOLUTION,
                 "Solution",
             ))
             .build()
@@ -313,7 +313,7 @@ mod tests {
         let old_graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_name(
                 "SOL-001",
-                ItemType::Solution,
+                ItemType::SOLUTION,
                 "Solution",
             ))
             .build()
@@ -327,8 +327,8 @@ mod tests {
 
     #[test]
     fn test_modified_item() {
-        let old_item = create_test_item_with_name("SOL-001", ItemType::Solution, "Old Name");
-        let new_item = create_test_item_with_name("SOL-001", ItemType::Solution, "New Name");
+        let old_item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "Old Name");
+        let new_item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "New Name");
 
         let old_graph = KnowledgeGraphBuilder::new()
             .add_item(old_item)

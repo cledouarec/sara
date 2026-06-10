@@ -40,10 +40,10 @@ mod tests {
     #[test]
     fn test_no_broken_refs() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::UseCase,
+                ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
                     RelationshipType::Refines,
@@ -62,7 +62,7 @@ mod tests {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::UseCase,
+                ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-MISSING"),
                     RelationshipType::Refines,

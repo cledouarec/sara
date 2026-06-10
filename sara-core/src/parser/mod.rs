@@ -76,7 +76,7 @@ Body content.
         .unwrap();
 
         assert_eq!(item.id.as_str(), "SOL-001");
-        assert_eq!(item.item_type, ItemType::Solution);
+        assert_eq!(item.item_type, ItemType::SOLUTION);
         assert_eq!(item.name, "Test Solution");
         let is_refined_by: Vec<_> = item
             .relationship_ids(RelationshipType::IsRefinedBy)

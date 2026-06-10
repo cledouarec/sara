@@ -95,10 +95,10 @@ mod tests {
     #[test]
     fn test_no_cycles() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::UseCase,
+                ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
                     RelationshipType::Refines,
@@ -117,7 +117,7 @@ mod tests {
         // Create a cycle: SCEN-001 -> SCEN-002 -> SCEN-001
         let scen1 = create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::Scenario,
+            ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-002"),
                 RelationshipType::Refines,
@@ -125,7 +125,7 @@ mod tests {
         );
         let scen2 = create_test_item_with_relationships(
             "SCEN-002",
-            ItemType::Scenario,
+            ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-001"),
                 RelationshipType::Refines,
@@ -145,10 +145,10 @@ mod tests {
 
     #[test]
     fn test_would_create_cycle() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,

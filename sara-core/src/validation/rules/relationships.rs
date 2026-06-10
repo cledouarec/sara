@@ -87,10 +87,10 @@ mod tests {
     #[test]
     fn test_valid_relationship() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::UseCase,
+                ItemType::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
                     RelationshipType::Refines,
@@ -110,11 +110,11 @@ mod tests {
     #[test]
     fn test_invalid_relationship() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::Solution))
+            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
             // Scenario trying to refine Solution directly (should be UseCase)
             .add_item(create_test_item_with_relationships(
                 "SCEN-001",
-                ItemType::Scenario,
+                ItemType::SCENARIO,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
                     RelationshipType::Refines,
@@ -134,8 +134,8 @@ mod tests {
             ..
         } = &errors[0]
         {
-            assert_eq!(*from_type, ItemType::Scenario);
-            assert_eq!(*to_type, ItemType::Solution);
+            assert_eq!(*from_type, ItemType::SCENARIO);
+            assert_eq!(*to_type, ItemType::SOLUTION);
             assert_eq!(*rel_type, RelationshipType::Refines);
         } else {
             panic!("Expected InvalidRelationship error");
@@ -147,13 +147,13 @@ mod tests {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_relationships(
                 "SOL-001",
-                ItemType::Solution,
+                ItemType::SOLUTION,
                 vec![Relationship::new(
                     ItemId::new_unchecked("UC-001"),
                     RelationshipType::IsRefinedBy,
                 )],
             ))
-            .add_item(create_test_item("UC-001", ItemType::UseCase))
+            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
             .build()
             .unwrap();
 

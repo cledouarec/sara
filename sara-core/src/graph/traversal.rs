@@ -215,10 +215,10 @@ mod tests {
     #[test]
     fn test_upstream_traversal() {
         // Build a simple hierarchy: SOL-001 <- UC-001 <- SCEN-001
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -226,7 +226,7 @@ mod tests {
         );
         let scen = create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::Scenario,
+            ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
                 RelationshipType::Refines,
@@ -254,10 +254,10 @@ mod tests {
 
     #[test]
     fn test_downstream_traversal() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -283,10 +283,10 @@ mod tests {
 
     #[test]
     fn test_depth_limited_traversal() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -294,7 +294,7 @@ mod tests {
         );
         let scen = create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::Scenario,
+            ItemType::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
                 RelationshipType::Refines,
@@ -323,10 +323,10 @@ mod tests {
 
     #[test]
     fn test_type_filtered_traversal() {
-        let sol = create_test_item("SOL-001", ItemType::Solution);
+        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::UseCase,
+            ItemType::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
                 RelationshipType::Refines,
@@ -342,7 +342,7 @@ mod tests {
         let result = traverse_upstream(
             &graph,
             &ItemId::new_unchecked("UC-001"),
-            &TraversalOptions::new().with_types(vec![ItemType::Solution]),
+            &TraversalOptions::new().with_types(vec![ItemType::SOLUTION]),
         );
 
         assert!(result.is_some());

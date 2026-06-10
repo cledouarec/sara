@@ -3,9 +3,10 @@
 use std::path::Path;
 
 use crate::error::SaraError;
-use crate::model::{Item, ItemBuilder, ItemId, ItemType, SourceLocation};
+use crate::model::{Item, ItemBuilder, ItemId, SourceLocation};
 use crate::parser::frontmatter::extract_frontmatter;
 use crate::parser::yaml::parse_yaml_frontmatter;
+use crate::schema;
 
 /// Parses a Markdown file and extracts the item.
 ///
@@ -40,37 +41,19 @@ pub fn parse_markdown_file(
         builder = builder.description(desc);
     }
 
-    // Set type-specific attributes based on item type
-    match frontmatter.item_type {
-        ItemType::Solution | ItemType::UseCase | ItemType::Scenario => {}
-        ItemType::SystemRequirement
-        | ItemType::SoftwareRequirement
-        | ItemType::HardwareRequirement => {
-            if let Some(spec) = &frontmatter.specification {
-                builder = builder.specification(spec);
+    // Populate the attributes the schema declares for this type.
+    if let Some(def) = schema::item_type_def(frontmatter.item_type.as_str()) {
+        for field in &def.fields {
+            match frontmatter.declared_field_value(field) {
+                Ok(Some(value)) => builder = builder.attribute(field.name.clone(), value),
+                Ok(None) => {}
+                Err(reason) => {
+                    return Err(SaraError::InvalidFrontmatter {
+                        file: file_path.to_path_buf(),
+                        reason: format!("field `{}`: {reason}", field.name),
+                    });
+                }
             }
-            for id in &frontmatter.depends_on {
-                builder = builder.depends_on(ItemId::new_unchecked(id));
-            }
-        }
-        ItemType::SystemArchitecture => {
-            if let Some(platform) = &frontmatter.platform {
-                builder = builder.platform(platform);
-            }
-        }
-        ItemType::SoftwareDetailedDesign | ItemType::HardwareDetailedDesign => {}
-        ItemType::ArchitectureDecisionRecord => {
-            if let Some(status) = frontmatter.status {
-                builder = builder.status(status);
-            }
-            builder = builder.deciders(frontmatter.deciders.clone());
-            builder = builder.supersedes_all(
-                frontmatter
-                    .supersedes
-                    .iter()
-                    .map(ItemId::new_unchecked)
-                    .collect(),
-            );
         }
     }
 
@@ -96,7 +79,7 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::model::{AdrStatus, RelationshipType};
+    use crate::model::{AdrStatus, ItemType, RelationshipType};
 
     const SOLUTION_MD: &str = r#"---
 id: "SOL-001"
@@ -134,7 +117,7 @@ is_satisfied_by:
         .unwrap();
 
         assert_eq!(item.id.as_str(), "SOL-001");
-        assert_eq!(item.item_type, ItemType::Solution);
+        assert_eq!(item.item_type, ItemType::SOLUTION);
         assert_eq!(item.name, "Test Solution");
         assert_eq!(item.description, Some("A test solution".to_string()));
         let is_refined_by: Vec<_> = item
@@ -154,7 +137,7 @@ is_satisfied_by:
         .unwrap();
 
         assert_eq!(item.id.as_str(), "SYSREQ-001");
-        assert_eq!(item.item_type, ItemType::SystemRequirement);
+        assert_eq!(item.item_type, ItemType::SYSTEM_REQUIREMENT);
         assert_eq!(
             item.attributes.specification().map(String::as_str),
             Some("The system SHALL respond within 100ms.")
@@ -230,7 +213,7 @@ Chosen option: Microservices, because it provides better scalability.
         .unwrap();
 
         assert_eq!(item.id.as_str(), "ADR-001");
-        assert_eq!(item.item_type, ItemType::ArchitectureDecisionRecord);
+        assert_eq!(item.item_type, ItemType::ARCHITECTURE_DECISION_RECORD);
         assert_eq!(item.name, "Use Microservices Architecture");
         assert_eq!(
             item.description,
