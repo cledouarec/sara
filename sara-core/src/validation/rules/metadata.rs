@@ -93,34 +93,26 @@ mod tests {
 
     use super::*;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemAttributes, ItemBuilder, ItemId, ItemType, SourceLocation};
+    use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation};
 
     fn create_item_with_spec(id: &str, item_type: ItemType, spec: &str) -> crate::model::Item {
         let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
-        let attributes = match item_type {
-            ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
-                specification: spec.to_string(),
-                depends_on: Vec::new(),
-            },
-            ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
-                specification: spec.to_string(),
-                depends_on: Vec::new(),
-            },
-            ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
-                specification: spec.to_string(),
-                depends_on: Vec::new(),
-            },
-            _ => ItemAttributes::for_type(item_type),
-        };
-
-        ItemBuilder::new()
+        let mut builder = ItemBuilder::new()
             .id(ItemId::new_unchecked(id))
             .item_type(item_type)
             .name(format!("Test {}", id))
-            .source(source)
-            .attributes(attributes)
-            .build()
-            .unwrap()
+            .source(source);
+
+        if matches!(
+            item_type,
+            ItemType::SystemRequirement
+                | ItemType::SoftwareRequirement
+                | ItemType::HardwareRequirement
+        ) {
+            builder = builder.specification(spec);
+        }
+
+        builder.build().unwrap()
     }
 
     #[test]
@@ -278,7 +270,6 @@ mod tests {
             .item_type(ItemType::Solution)
             .name("Test Solution")
             .source(source)
-            .attributes(ItemAttributes::for_type(ItemType::Solution))
             .build()
             .unwrap();
 

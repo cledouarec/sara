@@ -1,7 +1,12 @@
-//! Field name definitions for YAML frontmatter.
+//! Field name definitions and runtime field values.
 //!
-//! This module provides a single source of truth for all field names
-//! used in YAML frontmatter serialization and deserialization.
+//! Defines a single source of truth for all field names used in YAML
+//! frontmatter, plus a typed [`FieldValue`] enum used to store the
+//! runtime value of declared fields in an item's attribute map.
+
+use serde::{Deserialize, Serialize};
+
+use super::item::ItemId;
 
 /// All field names used in YAML frontmatter.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -131,6 +136,83 @@ impl FieldName {
 impl std::fmt::Display for FieldName {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.as_str())
+    }
+}
+
+/// Runtime value of a declared field, mirroring [`crate::schema::FieldType`].
+///
+/// Item attributes are stored as a map of `String -> FieldValue` so that the
+/// model can express schema-declared fields uniformly. Each variant carries
+/// the concrete payload for a declared type:
+///
+/// - [`FieldValue::Text`]: free-form text (specification, platform).
+/// - [`FieldValue::Enum`]: a value from a closed set (e.g., ADR status).
+/// - [`FieldValue::ItemRef`]: a single reference to another item's id.
+/// - [`FieldValue::List`]: an ordered list of values (deciders, depends_on).
+/// - [`FieldValue::Date`]: an ISO-8601 date held as a string.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FieldValue {
+    /// Free-form text.
+    Text(String),
+    /// One value among a closed set, kept as its snake_case identifier.
+    Enum(String),
+    /// A single reference to another item's id.
+    ItemRef(ItemId),
+    /// An ordered list of values.
+    List(Vec<FieldValue>),
+    /// An ISO-8601 date string.
+    Date(String),
+}
+
+impl FieldValue {
+    /// Returns the inner string if this is a [`FieldValue::Text`].
+    #[must_use]
+    pub fn as_text(&self) -> Option<&String> {
+        if let Self::Text(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the inner string if this is a [`FieldValue::Enum`].
+    #[must_use]
+    pub fn as_enum(&self) -> Option<&String> {
+        if let Self::Enum(s) = self {
+            Some(s)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the inner [`ItemId`] if this is a [`FieldValue::ItemRef`].
+    #[must_use]
+    pub fn as_item_ref(&self) -> Option<&ItemId> {
+        if let Self::ItemRef(id) = self {
+            Some(id)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the inner slice if this is a [`FieldValue::List`].
+    #[must_use]
+    pub fn as_list(&self) -> Option<&[FieldValue]> {
+        if let Self::List(v) = self {
+            Some(v)
+        } else {
+            None
+        }
+    }
+
+    /// Returns the inner string if this is a [`FieldValue::Date`].
+    #[must_use]
+    pub fn as_date(&self) -> Option<&String> {
+        if let Self::Date(s) = self {
+            Some(s)
+        } else {
+            None
+        }
     }
 }
 

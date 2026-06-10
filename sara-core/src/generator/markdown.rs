@@ -10,7 +10,7 @@ use std::sync::OnceLock;
 
 use tera::{Context, Tera};
 
-use crate::model::{FieldName, Item, ItemAttributes, ItemType, RelationshipType};
+use crate::model::{FieldName, Item, ItemId, ItemType, RelationshipType};
 
 /// Pairs a frontmatter partial with its full document template.
 #[derive(Debug)]
@@ -216,56 +216,36 @@ fn build_context(item: &Item) -> Context {
         FieldName::Justifies,
     );
 
-    // Type-specific attributes
-    match &item.attributes {
-        ItemAttributes::Solution
-        | ItemAttributes::UseCase
-        | ItemAttributes::Scenario
-        | ItemAttributes::SoftwareDetailedDesign
-        | ItemAttributes::HardwareDetailedDesign => {}
+    // Type-specific attributes (read through the shim accessors so that
+    // generator output stays stable as the underlying map representation
+    // evolves).
+    if let Some(spec) = item.attributes.specification() {
+        context.insert(FieldName::Specification.as_str(), &escape_yaml_string(spec));
+    }
 
-        ItemAttributes::SystemRequirement {
-            specification,
-            depends_on,
-        }
-        | ItemAttributes::SoftwareRequirement {
-            specification,
-            depends_on,
-        }
-        | ItemAttributes::HardwareRequirement {
-            specification,
-            depends_on,
-        } => {
-            if !depends_on.is_empty() {
-                let ids: Vec<&str> = depends_on.iter().map(|id| id.as_str()).collect();
-                context.insert(FieldName::DependsOn.as_str(), &ids);
-            }
-            context.insert(
-                FieldName::Specification.as_str(),
-                &escape_yaml_string(specification),
-            );
-        }
+    if let Some(plat) = item.attributes.platform() {
+        context.insert(FieldName::Platform.as_str(), &escape_yaml_string(plat));
+    }
 
-        ItemAttributes::SystemArchitecture { platform } => {
-            if let Some(plat) = platform {
-                context.insert(FieldName::Platform.as_str(), &escape_yaml_string(plat));
-            }
-        }
+    let depends_on = item.attributes.depends_on();
+    if !depends_on.is_empty() {
+        let ids: Vec<&str> = depends_on.iter().map(ItemId::as_str).collect();
+        context.insert(FieldName::DependsOn.as_str(), &ids);
+    }
 
-        ItemAttributes::Adr {
-            status,
-            deciders,
-            supersedes,
-        } => {
-            context.insert(FieldName::Status.as_str(), status.as_str());
-            if !deciders.is_empty() {
-                context.insert(FieldName::Deciders.as_str(), deciders);
-            }
-            if !supersedes.is_empty() {
-                let ids: Vec<&str> = supersedes.iter().map(|id| id.as_str()).collect();
-                context.insert(FieldName::Supersedes.as_str(), &ids);
-            }
-        }
+    if let Some(status) = item.attributes.status() {
+        context.insert(FieldName::Status.as_str(), status.as_str());
+    }
+
+    let deciders = item.attributes.deciders();
+    if !deciders.is_empty() {
+        context.insert(FieldName::Deciders.as_str(), &deciders);
+    }
+
+    let supersedes = item.attributes.supersedes();
+    if !supersedes.is_empty() {
+        let ids: Vec<&str> = supersedes.iter().map(ItemId::as_str).collect();
+        context.insert(FieldName::Supersedes.as_str(), &ids);
     }
 
     context

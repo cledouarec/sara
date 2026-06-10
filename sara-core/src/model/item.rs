@@ -1,12 +1,15 @@
 //! Item types and structures for the knowledge graph.
 
 use std::fmt;
+use std::str::FromStr;
 
+use indexmap::IndexMap;
 use serde::{Deserialize, Serialize};
 
 use super::adr::AdrStatus;
 use crate::error::SaraError;
 use crate::model::FieldName;
+use crate::model::field::FieldValue;
 use crate::model::relationship::{Relationship, RelationshipType};
 use crate::schema::{self, RelationDirection};
 
@@ -339,170 +342,143 @@ impl AsRef<str> for ItemId {
     }
 }
 
-/// Type-specific attributes for items in the knowledge graph.
+/// Canonical field name for the specification text.
+const FIELD_SPECIFICATION: &str = "specification";
+/// Canonical field name for the platform string.
+const FIELD_PLATFORM: &str = "platform";
+/// Canonical field name for the ADR lifecycle status.
+const FIELD_STATUS: &str = "status";
+/// Canonical field name for the ADR deciders list.
+const FIELD_DECIDERS: &str = "deciders";
+/// Canonical field name for the peer-dependency list.
+const FIELD_DEPENDS_ON: &str = "depends_on";
+/// Canonical field name for the ADR supersession list.
+const FIELD_SUPERSEDES: &str = "supersedes";
+
+/// Type-specific attributes for items, stored as an ordered field map.
+///
+/// Each declared field of the active schema maps to a [`FieldValue`] entry
+/// keyed by the field's canonical snake_case name. The map preserves
+/// declaration order so that template output remains stable.
+///
+/// Legacy accessors ([`Self::specification`], [`Self::status`], [`Self::platform`],
+/// [`Self::deciders`], [`Self::depends_on`], [`Self::supersedes`]) read from the
+/// map and convert to the historical return types so existing callers keep
+/// working unchanged.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
-#[serde(tag = "_attr_type")]
-pub enum ItemAttributes {
-    /// Solution - no type-specific attributes.
-    #[serde(rename = "solution")]
-    #[default]
-    Solution,
-
-    /// Use Case - no type-specific attributes beyond upstream refs.
-    #[serde(rename = "use_case")]
-    UseCase,
-
-    /// Scenario - no type-specific attributes beyond upstream refs.
-    #[serde(rename = "scenario")]
-    Scenario,
-
-    /// System Requirement with specification and peer dependencies.
-    #[serde(rename = "system_requirement")]
-    SystemRequirement {
-        /// Specification statement.
-        specification: String,
-        /// Peer dependencies.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        depends_on: Vec<ItemId>,
-    },
-
-    /// System Architecture with platform.
-    #[serde(rename = "system_architecture")]
-    SystemArchitecture {
-        /// Target platform.
-        #[serde(default, skip_serializing_if = "Option::is_none")]
-        platform: Option<String>,
-    },
-
-    /// Software Requirement with specification and peer dependencies.
-    #[serde(rename = "software_requirement")]
-    SoftwareRequirement {
-        /// Specification statement.
-        specification: String,
-        /// Peer dependencies.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        depends_on: Vec<ItemId>,
-    },
-
-    /// Hardware Requirement with specification and peer dependencies.
-    #[serde(rename = "hardware_requirement")]
-    HardwareRequirement {
-        /// Specification statement.
-        specification: String,
-        /// Peer dependencies.
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        depends_on: Vec<ItemId>,
-    },
-
-    /// Software Detailed Design.
-    #[serde(rename = "software_detailed_design")]
-    SoftwareDetailedDesign,
-
-    /// Hardware Detailed Design.
-    #[serde(rename = "hardware_detailed_design")]
-    HardwareDetailedDesign,
-
-    /// Architecture Decision Record with ADR-specific fields.
-    #[serde(rename = "architecture_decision_record")]
-    Adr {
-        /// ADR lifecycle status.
-        status: AdrStatus,
-        /// List of people involved in the decision.
-        deciders: Vec<String>,
-        /// Older ADRs this decision supersedes (peer relationship).
-        #[serde(default, skip_serializing_if = "Vec::is_empty")]
-        supersedes: Vec<ItemId>,
-    },
+#[serde(transparent)]
+pub struct ItemAttributes {
+    fields: IndexMap<String, FieldValue>,
 }
 
 impl ItemAttributes {
-    /// Creates default attributes for the given item type.
+    /// Creates an empty attribute map.
     #[must_use]
-    pub fn for_type(item_type: ItemType) -> Self {
-        match item_type {
-            ItemType::Solution => ItemAttributes::Solution,
-            ItemType::UseCase => ItemAttributes::UseCase,
-            ItemType::Scenario => ItemAttributes::Scenario,
-            ItemType::SystemRequirement => ItemAttributes::SystemRequirement {
-                specification: String::new(),
-                depends_on: Vec::new(),
-            },
-            ItemType::SystemArchitecture => ItemAttributes::SystemArchitecture { platform: None },
-            ItemType::SoftwareRequirement => ItemAttributes::SoftwareRequirement {
-                specification: String::new(),
-                depends_on: Vec::new(),
-            },
-            ItemType::HardwareRequirement => ItemAttributes::HardwareRequirement {
-                specification: String::new(),
-                depends_on: Vec::new(),
-            },
-            ItemType::SoftwareDetailedDesign => ItemAttributes::SoftwareDetailedDesign,
-            ItemType::HardwareDetailedDesign => ItemAttributes::HardwareDetailedDesign,
-            ItemType::ArchitectureDecisionRecord => ItemAttributes::Adr {
-                status: AdrStatus::Proposed,
-                deciders: Vec::new(),
-                supersedes: Vec::new(),
-            },
-        }
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Returns the specification if this is a requirement type.
+    /// Creates default attributes for the given item type.
+    ///
+    /// In the map representation, "default" means an empty field set; the
+    /// builder and parsers populate the required entries as they construct
+    /// the item.
+    #[must_use]
+    pub fn for_type(_item_type: ItemType) -> Self {
+        Self::default()
+    }
+
+    /// Returns the value for a field, if present.
+    #[must_use]
+    pub fn get(&self, name: &str) -> Option<&FieldValue> {
+        self.fields.get(name)
+    }
+
+    /// Inserts a value for a field, returning the previous value if any.
+    pub fn insert(&mut self, name: impl Into<String>, value: FieldValue) -> Option<FieldValue> {
+        self.fields.insert(name.into(), value)
+    }
+
+    /// Removes a field, returning the previous value if any.
+    pub fn remove(&mut self, name: &str) -> Option<FieldValue> {
+        self.fields.shift_remove(name)
+    }
+
+    /// Returns an iterator over `(field_name, value)` pairs in declaration order.
+    pub fn iter(&self) -> indexmap::map::Iter<'_, String, FieldValue> {
+        self.fields.iter()
+    }
+
+    /// Returns true when the attribute map is empty.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.fields.is_empty()
+    }
+
+    /// Returns the number of fields currently stored.
+    #[must_use]
+    pub fn len(&self) -> usize {
+        self.fields.len()
+    }
+
+    /// Returns the specification text if a `specification` text field is set.
     #[must_use]
     pub fn specification(&self) -> Option<&String> {
-        match self {
-            Self::SystemRequirement { specification, .. }
-            | Self::SoftwareRequirement { specification, .. }
-            | Self::HardwareRequirement { specification, .. } => Some(specification),
-            _ => None,
-        }
+        self.get(FIELD_SPECIFICATION).and_then(FieldValue::as_text)
     }
 
-    /// Returns the depends_on references if this is a requirement type.
+    /// Returns the depends_on references as owned [`ItemId`]s.
     #[must_use]
-    pub fn depends_on(&self) -> &[ItemId] {
-        match self {
-            Self::SystemRequirement { depends_on, .. }
-            | Self::SoftwareRequirement { depends_on, .. }
-            | Self::HardwareRequirement { depends_on, .. } => depends_on,
-            _ => &[],
-        }
+    pub fn depends_on(&self) -> Vec<ItemId> {
+        collect_item_refs(self.get(FIELD_DEPENDS_ON))
     }
 
-    /// Returns the platform if this is a SystemArchitecture.
+    /// Returns the platform text if a `platform` text field is set.
     #[must_use]
     pub fn platform(&self) -> Option<&String> {
-        match self {
-            Self::SystemArchitecture { platform, .. } => platform.as_ref(),
-            _ => None,
-        }
+        self.get(FIELD_PLATFORM).and_then(FieldValue::as_text)
     }
 
-    /// Returns the ADR status if this is an ADR.
+    /// Returns the ADR lifecycle status if a `status` enum field is set.
     #[must_use]
     pub fn status(&self) -> Option<AdrStatus> {
-        match self {
-            Self::Adr { status, .. } => Some(*status),
-            _ => None,
-        }
+        self.get(FIELD_STATUS)
+            .and_then(FieldValue::as_enum)
+            .and_then(|s| AdrStatus::from_str(s).ok())
     }
 
-    /// Returns the deciders if this is an ADR.
+    /// Returns the ADR deciders as owned strings.
     #[must_use]
-    pub fn deciders(&self) -> &[String] {
-        match self {
-            Self::Adr { deciders, .. } => deciders,
-            _ => &[],
-        }
+    pub fn deciders(&self) -> Vec<String> {
+        self.get(FIELD_DECIDERS)
+            .and_then(FieldValue::as_list)
+            .map(|list| {
+                list.iter()
+                    .filter_map(FieldValue::as_text)
+                    .cloned()
+                    .collect()
+            })
+            .unwrap_or_default()
     }
 
-    /// Returns the supersedes references if this is an ADR.
+    /// Returns the supersedes references as owned [`ItemId`]s.
     #[must_use]
-    pub fn supersedes(&self) -> &[ItemId] {
-        match self {
-            Self::Adr { supersedes, .. } => supersedes,
-            _ => &[],
-        }
+    pub fn supersedes(&self) -> Vec<ItemId> {
+        collect_item_refs(self.get(FIELD_SUPERSEDES))
     }
+}
+
+/// Extracts the inner [`ItemId`]s from a [`FieldValue::List`] of [`FieldValue::ItemRef`].
+fn collect_item_refs(value: Option<&FieldValue>) -> Vec<ItemId> {
+    value
+        .and_then(FieldValue::as_list)
+        .map(|list| {
+            list.iter()
+                .filter_map(FieldValue::as_item_ref)
+                .cloned()
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 use crate::model::metadata::SourceLocation;
@@ -564,14 +540,13 @@ impl Item {
     pub fn all_references(&self) -> impl Iterator<Item = &ItemId> {
         let relationship_refs = self.relationships.iter().map(|r| &r.to);
 
-        // Peer references from attributes (depends_on for requirements, supersedes for ADRs)
-        let peer_refs: Box<dyn Iterator<Item = &ItemId>> = match &self.attributes {
-            ItemAttributes::SystemRequirement { depends_on, .. }
-            | ItemAttributes::SoftwareRequirement { depends_on, .. }
-            | ItemAttributes::HardwareRequirement { depends_on, .. } => Box::new(depends_on.iter()),
-            ItemAttributes::Adr { supersedes, .. } => Box::new(supersedes.iter()),
-            _ => Box::new(std::iter::empty()),
-        };
+        // Peer references stored as item-ref lists in the attribute map
+        // (`depends_on` for requirements, `supersedes` for ADRs).
+        let peer_refs: Vec<&ItemId> = [FIELD_DEPENDS_ON, FIELD_SUPERSEDES]
+            .iter()
+            .filter_map(|name| self.attributes.get(name).and_then(FieldValue::as_list))
+            .flat_map(|list| list.iter().filter_map(FieldValue::as_item_ref))
+            .collect();
 
         relationship_refs.chain(peer_refs)
     }
