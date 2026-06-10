@@ -345,11 +345,7 @@ impl KnowledgeGraphBuilder {
 
         // Peer dependencies (for requirement types, stored in attributes)
         for target_id in item.attributes.depends_on() {
-            edges.push((
-                item.id.clone(),
-                target_id.clone(),
-                RelationshipType::DependsOn,
-            ));
+            edges.push((item.id.clone(), target_id, RelationshipType::DependsOn));
         }
 
         // ADR supersession (peer relationships between ADRs, stored in attributes)
@@ -359,11 +355,7 @@ impl KnowledgeGraphBuilder {
                 target_id.clone(),
                 RelationshipType::Supersedes,
             ));
-            edges.push((
-                target_id.clone(),
-                item.id.clone(),
-                RelationshipType::IsSupersededBy,
-            ));
+            edges.push((target_id, item.id.clone(), RelationshipType::IsSupersededBy));
         }
 
         edges

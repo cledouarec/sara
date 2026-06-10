@@ -11,7 +11,7 @@ mod relationship;
 pub use adr::AdrStatus;
 pub use builder::ItemBuilder;
 pub use edit::{EditSummary, EditUpdates, FieldChange, TraceabilityLinks};
-pub use field::FieldName;
+pub use field::{FieldName, FieldValue};
 pub use item::{Item, ItemAttributes, ItemId, ItemType, TraceabilityConfig};
 pub use metadata::SourceLocation;
 pub use relationship::{Relationship, RelationshipRules, RelationshipType};

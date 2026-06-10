@@ -3,12 +3,30 @@
 use std::path::PathBuf;
 
 use super::adr::AdrStatus;
+use super::field::FieldValue;
 use super::item::{Item, ItemAttributes, ItemId, ItemType};
 use super::metadata::SourceLocation;
 use super::relationship::Relationship;
 use crate::error::SaraError;
 
+/// Field name used for the requirement specification text.
+const FIELD_SPECIFICATION: &str = "specification";
+/// Field name used for the system-architecture platform string.
+const FIELD_PLATFORM: &str = "platform";
+/// Field name used for the ADR lifecycle status.
+const FIELD_STATUS: &str = "status";
+/// Field name used for the ADR deciders list.
+const FIELD_DECIDERS: &str = "deciders";
+/// Field name used for the peer-dependency list.
+const FIELD_DEPENDS_ON: &str = "depends_on";
+/// Field name used for the ADR supersession list.
+const FIELD_SUPERSEDES: &str = "supersedes";
+
 /// Builder for constructing `Item` instances from parsed frontmatter.
+///
+/// Type-specific values are accumulated directly into an [`ItemAttributes`]
+/// map; build-time validation enforces the required entries for each
+/// [`ItemType`].
 #[derive(Debug, Default)]
 pub struct ItemBuilder {
     id: Option<ItemId>,
@@ -17,13 +35,7 @@ pub struct ItemBuilder {
     description: Option<String>,
     source: Option<SourceLocation>,
     relationships: Vec<Relationship>,
-    // Temporary storage for attributes before we know the type
-    specification: Option<String>,
-    platform: Option<String>,
-    depends_on: Vec<ItemId>,
-    status: Option<AdrStatus>,
-    deciders: Vec<String>,
-    supersedes: Vec<ItemId>,
+    attributes: ItemAttributes,
 }
 
 impl ItemBuilder {
@@ -70,152 +82,104 @@ impl ItemBuilder {
 
     /// Sets the specification text (for requirement types).
     pub fn specification(mut self, spec: impl Into<String>) -> Self {
-        self.specification = Some(spec.into());
+        self.attributes
+            .insert(FIELD_SPECIFICATION, FieldValue::Text(spec.into()));
         self
     }
 
     /// Sets the platform (for `SystemArchitecture`).
     pub fn platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
+        self.attributes
+            .insert(FIELD_PLATFORM, FieldValue::Text(platform.into()));
         self
     }
 
     /// Adds a dependency (for requirement types).
     pub fn depends_on(mut self, id: ItemId) -> Self {
-        self.depends_on.push(id);
+        push_item_ref(&mut self.attributes, FIELD_DEPENDS_ON, id);
         self
     }
 
     /// Sets the ADR status.
     pub fn status(mut self, status: AdrStatus) -> Self {
-        self.status = Some(status);
+        self.attributes
+            .insert(FIELD_STATUS, FieldValue::Enum(status.as_str().to_string()));
         self
     }
 
     /// Adds a decider (for ADR).
     pub fn decider(mut self, decider: impl Into<String>) -> Self {
-        self.deciders.push(decider.into());
+        push_text(&mut self.attributes, FIELD_DECIDERS, decider.into());
         self
     }
 
     /// Sets the deciders (for ADR).
     pub fn deciders(mut self, deciders: Vec<String>) -> Self {
-        self.deciders = deciders;
+        self.attributes.insert(
+            FIELD_DECIDERS,
+            FieldValue::List(deciders.into_iter().map(FieldValue::Text).collect()),
+        );
         self
     }
 
     /// Adds a superseded ADR ID.
     pub fn supersedes(mut self, id: ItemId) -> Self {
-        self.supersedes.push(id);
+        push_item_ref(&mut self.attributes, FIELD_SUPERSEDES, id);
         self
     }
 
     /// Sets the supersedes references (for ADR).
     pub fn supersedes_all(mut self, ids: Vec<ItemId>) -> Self {
-        self.supersedes = ids;
+        self.attributes.insert(
+            FIELD_SUPERSEDES,
+            FieldValue::List(ids.into_iter().map(FieldValue::ItemRef).collect()),
+        );
         self
     }
 
-    /// Sets the attributes directly.
+    /// Replaces the entire attribute map with the supplied one.
     pub fn attributes(mut self, attrs: ItemAttributes) -> Self {
-        match attrs {
-            ItemAttributes::Solution
-            | ItemAttributes::UseCase
-            | ItemAttributes::Scenario
-            | ItemAttributes::SoftwareDetailedDesign
-            | ItemAttributes::HardwareDetailedDesign => {}
-            ItemAttributes::SystemRequirement {
-                specification,
-                depends_on,
-            } => {
-                self.specification = Some(specification);
-                self.depends_on = depends_on;
-            }
-            ItemAttributes::SystemArchitecture { platform } => {
-                self.platform = platform;
-            }
-            ItemAttributes::SoftwareRequirement {
-                specification,
-                depends_on,
-            } => {
-                self.specification = Some(specification);
-                self.depends_on = depends_on;
-            }
-            ItemAttributes::HardwareRequirement {
-                specification,
-                depends_on,
-            } => {
-                self.specification = Some(specification);
-                self.depends_on = depends_on;
-            }
-            ItemAttributes::Adr {
-                status,
-                deciders,
-                supersedes,
-            } => {
-                self.status = Some(status);
-                self.deciders = deciders;
-                self.supersedes = supersedes;
-            }
-        }
+        self.attributes = attrs;
         self
     }
 
-    /// Validates and returns the specification, returning an error if missing.
-    fn require_specification(&self, file: &str) -> Result<String, SaraError> {
-        self.specification
-            .clone()
-            .ok_or_else(|| SaraError::MissingField {
-                field: "specification".to_string(),
-                file: PathBuf::from(file),
-            })
-    }
-
-    /// Builds the attributes for the given item type.
-    fn build_attributes(
+    /// Validates that required fields for the given type are populated.
+    fn validate_required_attributes(
         &self,
         item_type: ItemType,
         file: &str,
-    ) -> Result<ItemAttributes, SaraError> {
-        match item_type {
-            ItemType::Solution => Ok(ItemAttributes::Solution),
-            ItemType::UseCase => Ok(ItemAttributes::UseCase),
-            ItemType::Scenario => Ok(ItemAttributes::Scenario),
-            ItemType::SoftwareDetailedDesign => Ok(ItemAttributes::SoftwareDetailedDesign),
-            ItemType::HardwareDetailedDesign => Ok(ItemAttributes::HardwareDetailedDesign),
-            ItemType::SystemArchitecture => Ok(ItemAttributes::SystemArchitecture {
-                platform: self.platform.clone(),
-            }),
-            ItemType::SystemRequirement => Ok(ItemAttributes::SystemRequirement {
-                specification: self.require_specification(file)?,
-                depends_on: self.depends_on.clone(),
-            }),
-            ItemType::SoftwareRequirement => Ok(ItemAttributes::SoftwareRequirement {
-                specification: self.require_specification(file)?,
-                depends_on: self.depends_on.clone(),
-            }),
-            ItemType::HardwareRequirement => Ok(ItemAttributes::HardwareRequirement {
-                specification: self.require_specification(file)?,
-                depends_on: self.depends_on.clone(),
-            }),
-            ItemType::ArchitectureDecisionRecord => {
-                let status = self.status.ok_or_else(|| SaraError::MissingField {
-                    field: "status".to_string(),
+    ) -> Result<(), SaraError> {
+        if item_type.requires_specification() && self.attributes.get(FIELD_SPECIFICATION).is_none()
+        {
+            return Err(SaraError::MissingField {
+                field: FIELD_SPECIFICATION.to_string(),
+                file: PathBuf::from(file),
+            });
+        }
+
+        if item_type == ItemType::ArchitectureDecisionRecord {
+            if self.attributes.get(FIELD_STATUS).is_none() {
+                return Err(SaraError::MissingField {
+                    field: FIELD_STATUS.to_string(),
                     file: PathBuf::from(file),
-                })?;
-                if self.deciders.is_empty() {
-                    return Err(SaraError::MissingField {
-                        field: "deciders".to_string(),
-                        file: PathBuf::from(file),
-                    });
-                }
-                Ok(ItemAttributes::Adr {
-                    status,
-                    deciders: self.deciders.clone(),
-                    supersedes: self.supersedes.clone(),
-                })
+                });
+            }
+
+            let has_deciders = self
+                .attributes
+                .get(FIELD_DECIDERS)
+                .and_then(FieldValue::as_list)
+                .is_some_and(|list| !list.is_empty());
+
+            if !has_deciders {
+                return Err(SaraError::MissingField {
+                    field: FIELD_DECIDERS.to_string(),
+                    file: PathBuf::from(file),
+                });
             }
         }
+
+        Ok(())
     }
 
     /// Builds the `Item`, returning an error if required fields are missing.
@@ -258,7 +222,7 @@ impl ItemBuilder {
         })?;
 
         let file_path = source.file_path.display().to_string();
-        let attributes = self.build_attributes(item_type, &file_path)?;
+        self.validate_required_attributes(item_type, &file_path)?;
 
         Ok(Item {
             id,
@@ -267,8 +231,37 @@ impl ItemBuilder {
             description: self.description,
             source,
             relationships: self.relationships,
-            attributes,
+            attributes: self.attributes,
         })
+    }
+}
+
+/// Appends an `ItemRef` value to the list stored under `field`, creating the
+/// list entry if it does not yet exist.
+fn push_item_ref(attrs: &mut ItemAttributes, field: &str, id: ItemId) {
+    push_value(attrs, field, FieldValue::ItemRef(id));
+}
+
+/// Appends a `Text` value to the list stored under `field`, creating the
+/// list entry if it does not yet exist.
+fn push_text(attrs: &mut ItemAttributes, field: &str, text: String) {
+    push_value(attrs, field, FieldValue::Text(text));
+}
+
+/// Appends a [`FieldValue`] to the list stored under `field`. If the field
+/// already holds a non-list value, it is replaced with a new single-element
+/// list — matching the prior builder semantics where typed setters always
+/// appended into the same logical collection.
+fn push_value(attrs: &mut ItemAttributes, field: &str, value: FieldValue) {
+    match attrs.get(field) {
+        Some(FieldValue::List(existing)) => {
+            let mut updated = existing.clone();
+            updated.push(value);
+            attrs.insert(field.to_string(), FieldValue::List(updated));
+        }
+        _ => {
+            attrs.insert(field.to_string(), FieldValue::List(vec![value]));
+        }
     }
 }
 

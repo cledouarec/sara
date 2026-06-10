@@ -142,8 +142,7 @@ mod tests {
     use crate::error::SaraError;
     use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{
-        ItemAttributes, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType,
-        SourceLocation,
+        ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
     };
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
@@ -276,10 +275,7 @@ mod tests {
             .item_type(ItemType::SystemRequirement)
             .name("Test Requirement")
             .source(source)
-            .attributes(ItemAttributes::SystemRequirement {
-                specification: "The system SHALL respond within 100ms".to_string(),
-                depends_on: Vec::new(),
-            })
+            .specification("The system SHALL respond within 100ms")
             .build()
             .unwrap();
 
@@ -303,10 +299,7 @@ mod tests {
             .item_type(ItemType::SystemRequirement)
             .name("Test Requirement")
             .source(source)
-            .attributes(ItemAttributes::SystemRequirement {
-                specification: "The system responds within 100ms".to_string(), // Missing RFC2119 keyword
-                depends_on: Vec::new(),
-            })
+            .specification("The system responds within 100ms") // Missing RFC2119 keyword
             .build()
             .unwrap();
 
@@ -331,10 +324,7 @@ mod tests {
             .item_type(ItemType::SystemRequirement)
             .name("Test Requirement")
             .source(source)
-            .attributes(ItemAttributes::SystemRequirement {
-                specification: String::new(),
-                depends_on: Vec::new(),
-            })
+            .specification(String::new())
             .build()
             .unwrap();
 
@@ -356,7 +346,6 @@ mod tests {
             .item_type(ItemType::Solution)
             .name("Test Solution")
             .source(source)
-            .attributes(ItemAttributes::for_type(ItemType::Solution))
             .build()
             .unwrap();
 
@@ -373,10 +362,7 @@ mod tests {
                 .item_type(ItemType::SystemRequirement)
                 .name("Valid Requirement")
                 .source(SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md"))
-                .attributes(ItemAttributes::SystemRequirement {
-                    specification: "The system SHALL respond".to_string(),
-                    depends_on: Vec::new(),
-                })
+                .specification("The system SHALL respond")
                 .build()
                 .unwrap(),
             ItemBuilder::new()
@@ -384,10 +370,7 @@ mod tests {
                 .item_type(ItemType::SystemRequirement)
                 .name("Invalid Requirement")
                 .source(SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-002.md"))
-                .attributes(ItemAttributes::SystemRequirement {
-                    specification: "Missing keyword".to_string(), // Invalid
-                    depends_on: Vec::new(),
-                })
+                .specification("Missing keyword") // Invalid
                 .build()
                 .unwrap(),
             ItemBuilder::new()
@@ -395,7 +378,6 @@ mod tests {
                 .item_type(ItemType::Solution)
                 .name("Solution")
                 .source(SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md"))
-                .attributes(ItemAttributes::for_type(ItemType::Solution))
                 .build()
                 .unwrap(),
         ];
