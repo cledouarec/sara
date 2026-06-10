@@ -25,6 +25,7 @@ cargo install sara-cli
 | `sara query <ID>` | Query items and traceability chains |
 | `sara report coverage` | Generate coverage report |
 | `sara report matrix` | Generate traceability matrix |
+| `sara schema` | Export the active model schema as YAML |
 
 ## Output Formats
 
