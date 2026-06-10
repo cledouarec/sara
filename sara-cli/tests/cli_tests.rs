@@ -832,3 +832,113 @@ mod global_options {
             .success();
     }
 }
+
+mod custom_schema {
+    use std::fs;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    /// Writes a config and a schema declaring a type with no built-in
+    /// counterpart, and returns the config path.
+    fn write_custom_schema(temp_dir: &TempDir) -> std::path::PathBuf {
+        let schema_path = temp_dir.path().join("model.yaml");
+        fs::write(
+            &schema_path,
+            r#"item_types:
+- id: stakeholder_requirement
+  display_name: Stakeholder Requirement
+  prefix: STKREQ
+  id_format: "{prefix}-{seq:03}"
+  parent_types: []
+  fields:
+  - name: rationale
+    display_name: Rationale
+    field_type: text
+    required: true
+    placeholder: TBD
+  allowed_targets: []
+relations: []
+"#,
+        )
+        .unwrap();
+
+        let config_path = temp_dir.path().join("sara.toml");
+        fs::write(
+            &config_path,
+            format!("model_schema = \"{}\"\n", schema_path.display()),
+        )
+        .unwrap();
+        config_path
+    }
+
+    #[test]
+    fn test_init_subcommand_for_custom_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_custom_schema(&temp_dir);
+        let test_file = temp_dir.path().join("STKREQ-001.md");
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("init")
+            .arg("stakeholder-requirement")
+            .arg(&test_file)
+            .arg("--id")
+            .arg("STKREQ-001")
+            .arg("--name")
+            .arg("Operator overview")
+            .arg("--rationale")
+            .arg("Operators need a single pane of glass.")
+            .assert()
+            .success();
+
+        let content = fs::read_to_string(&test_file).unwrap();
+        assert!(content.contains("type: stakeholder_requirement"));
+        assert!(content.contains("id: \"STKREQ-001\""));
+        assert!(content.contains("rationale: \"Operators need a single pane of glass.\""));
+        assert!(content.contains("# Stakeholder Requirement: Operator overview"));
+    }
+
+    #[test]
+    fn test_init_prefix_alias_for_custom_type() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_custom_schema(&temp_dir);
+        let test_file = temp_dir.path().join("STKREQ-002.md");
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("init")
+            .arg("stkreq")
+            .arg(&test_file)
+            .assert()
+            .success();
+
+        let content = fs::read_to_string(&test_file).unwrap();
+        assert!(content.contains("type: stakeholder_requirement"));
+        assert!(content.contains("rationale: \"TBD\""));
+    }
+
+    #[test]
+    fn test_builtin_types_still_available_with_custom_schema() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_custom_schema(&temp_dir);
+        let test_file = temp_dir.path().join("SOL-001.md");
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("init")
+            .arg("solution")
+            .arg(&test_file)
+            .arg("--name")
+            .arg("Test Solution")
+            .assert()
+            .success();
+
+        let content = fs::read_to_string(&test_file).unwrap();
+        assert!(content.contains("type: solution"));
+    }
+}
