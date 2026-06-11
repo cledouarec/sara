@@ -5,8 +5,8 @@ use std::process::ExitCode;
 
 use clap::Args;
 use sara_core::graph::{
-    KnowledgeGraph, KnowledgeGraphBuilder, LookupResult, TraversalNode, TraversalOptions,
-    TraversalResult, traverse_downstream, traverse_upstream,
+    KnowledgeGraph, LookupResult, TraversalNode, TraversalOptions, TraversalResult,
+    traverse_downstream, traverse_upstream,
 };
 use sara_core::model::{Item, ItemId, ItemType};
 
@@ -53,8 +53,7 @@ pub struct QueryArgs {
 
 /// Runs the query command.
 pub fn run(args: &QueryArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
-    let items = super::parse_items(config)?;
-    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
+    let graph = super::build_graph(config)?;
 
     match graph.lookup(&args.item_id) {
         LookupResult::Found(item) => handle_found_item(args, &config.output, item, &graph),

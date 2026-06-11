@@ -13,7 +13,7 @@ use clap::{Arg, ArgAction, ArgMatches, Args, Command, FromArgMatches};
 use indexmap::IndexMap;
 use inquire::{Confirm, InquireError};
 use sara_core::error::SaraError;
-use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
+use sara_core::graph::KnowledgeGraph;
 use sara_core::model::{
     EditSummary, FIELD_DESCRIPTION, FIELD_ID, FIELD_NAME, FieldChange, FieldValue, ItemType,
     RelationshipType,
@@ -184,9 +184,7 @@ impl FromArgMatches for EditArgs {
 pub fn run(args: &EditArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let service = EditService::new();
 
-    // Build the knowledge graph
-    let items = super::parse_items(config)?;
-    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
+    let graph = super::build_graph(config)?;
 
     // Look up the item (FR-054)
     let item = match service.lookup_item(&graph, &args.item_id) {
