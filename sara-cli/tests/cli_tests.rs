@@ -369,10 +369,95 @@ mod init_command {
 }
 
 mod diff_command {
+    use std::fs;
+    use std::path::Path;
+    use std::process::Command as SystemCommand;
+
+    use tempfile::TempDir;
+
     use super::*;
 
-    // Note: diff command requires a git repository context.
-    // These tests verify basic argument parsing and help text.
+    /// Item renamed by the second commit, as committed in the baseline.
+    const RENAMED_ITEM_BEFORE: &str = r#"---
+id: "SOL-001"
+type: solution
+name: "Payment Service"
+---
+# Solution: Payment Service
+"#;
+
+    /// Item renamed by the second commit, after the rename.
+    const RENAMED_ITEM_AFTER: &str = r#"---
+id: "SOL-001"
+type: solution
+name: "Payment Platform"
+---
+# Solution: Payment Platform
+"#;
+
+    /// Item present in the baseline and deleted by the second commit.
+    const REMOVED_ITEM: &str = r#"---
+id: "SOL-002"
+type: solution
+name: "Legacy Gateway"
+---
+# Solution: Legacy Gateway
+"#;
+
+    /// Item introduced by the second commit.
+    const ADDED_ITEM: &str = r#"---
+id: "SOL-003"
+type: solution
+name: "Mobile App"
+---
+# Solution: Mobile App
+"#;
+
+    /// Runs a Git command in the repository, isolated from the user and
+    /// system Git configuration.
+    fn git(repo: &Path, args: &[&str]) {
+        let output = SystemCommand::new("git")
+            .arg("-C")
+            .arg(repo)
+            .env("GIT_CONFIG_GLOBAL", "/dev/null")
+            .env("GIT_CONFIG_SYSTEM", "/dev/null")
+            .args(args)
+            .output()
+            .expect("failed to run git");
+        assert!(
+            output.status.success(),
+            "git {:?} failed: {}",
+            args,
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    /// Creates a Git repository whose `baseline` branch holds SOL-001 and
+    /// SOL-002, while the second commit at HEAD renames SOL-001, removes
+    /// SOL-002 and adds SOL-003.
+    fn diff_repo() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = temp_dir.path();
+
+        git(repo, &["init"]);
+        git(repo, &["config", "user.name", "Sara Tests"]);
+        git(repo, &["config", "user.email", "tests@example.com"]);
+
+        fs::write(repo.join("sara.toml"), "[repositories]\npaths = [\".\"]\n").unwrap();
+        fs::write(repo.join("SOL-001.md"), RENAMED_ITEM_BEFORE).unwrap();
+        fs::write(repo.join("SOL-002.md"), REMOVED_ITEM).unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "baseline"]);
+        git(repo, &["branch", "baseline"]);
+
+        fs::write(repo.join("SOL-001.md"), RENAMED_ITEM_AFTER).unwrap();
+        fs::write(repo.join("SOL-003.md"), ADDED_ITEM).unwrap();
+        fs::remove_file(repo.join("SOL-002.md")).unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "changes"]);
+
+        temp_dir
+    }
 
     #[test]
     fn test_diff_help() {
@@ -389,6 +474,111 @@ mod diff_command {
     #[test]
     fn test_diff_requires_two_refs() {
         sara().arg("diff").arg("main").assert().failure();
+    }
+
+    #[test]
+    fn test_diff_text_lists_added_removed_modified() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("baseline")
+            .arg("HEAD")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("not fully implemented").not())
+            .stdout(predicate::str::contains("Added Items:"))
+            .stdout(predicate::str::contains("+ SOL-003 (Solution)"))
+            .stdout(predicate::str::contains("Removed Items:"))
+            .stdout(predicate::str::contains("- SOL-002 (Solution)"))
+            .stdout(predicate::str::contains("Modified Items:"))
+            .stdout(predicate::str::contains("~ SOL-001 (Solution)"))
+            .stdout(predicate::str::contains(
+                "name: Payment Service → Payment Platform",
+            ));
+    }
+
+    #[test]
+    fn test_diff_stat_prints_summary_only() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("baseline")
+            .arg("HEAD")
+            .arg("--stat")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Items:         +1 -1 ~1"))
+            .stdout(predicate::str::contains("Relationships: +0 -0"))
+            .stdout(predicate::str::contains("Added Items:").not());
+    }
+
+    #[test]
+    fn test_diff_json_output() {
+        let repo = diff_repo();
+
+        let assert = sara()
+            .current_dir(repo.path())
+            .arg("diff")
+            .arg("baseline")
+            .arg("HEAD")
+            .arg("--format")
+            .arg("json")
+            .assert()
+            .success();
+
+        let stdout = String::from_utf8(assert.get_output().stdout.clone()).unwrap();
+        let diff: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON output");
+
+        assert_eq!(diff["added_items"][0]["id"], "SOL-003");
+        assert_eq!(diff["removed_items"][0]["id"], "SOL-002");
+        assert_eq!(diff["modified_items"][0]["id"], "SOL-001");
+        assert_eq!(diff["modified_items"][0]["changes"][0]["field"], "name");
+        assert_eq!(
+            diff["modified_items"][0]["changes"][0]["old_value"],
+            "Payment Service"
+        );
+        assert_eq!(
+            diff["modified_items"][0]["changes"][0]["new_value"],
+            "Payment Platform"
+        );
+        assert_eq!(diff["stats"]["items_added"], 1);
+        assert_eq!(diff["stats"]["items_removed"], 1);
+        assert_eq!(diff["stats"]["items_modified"], 1);
+    }
+
+    #[test]
+    fn test_diff_same_ref_reports_no_changes() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("diff")
+            .arg("HEAD")
+            .arg("HEAD")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("No changes detected"));
+    }
+
+    #[test]
+    fn test_diff_unknown_ref_fails() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("diff")
+            .arg("no-such-branch")
+            .arg("HEAD")
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("Failed to parse repository"))
+            .stdout(predicate::str::contains("no-such-branch"));
     }
 }
 
