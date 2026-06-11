@@ -4,7 +4,7 @@
 //! Markdown items at arbitrary Git references. Pure Rust — no libgit2 or
 //! OpenSSL dependency.
 
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 use gix::bstr::ByteSlice;
 use gix::object::tree::EntryKind;
@@ -112,6 +112,31 @@ impl GitReader {
         &self.repo_path
     }
 
+    /// Converts a filesystem path into a tree scope relative to the
+    /// repository root.
+    ///
+    /// Both the repository root and the given path are canonicalized so that
+    /// relative components and symbolic links resolve consistently. The
+    /// repository root itself yields an empty scope, which selects the whole
+    /// tree.
+    ///
+    /// # Errors
+    /// Returns [`SaraError::Io`] if either path cannot be canonicalized, or
+    /// [`SaraError::Git`] if the path lies outside the repository.
+    pub fn scope_from_path(&self, path: &Path) -> Result<PathBuf, SaraError> {
+        let root = self.repo_path.canonicalize()?;
+        let path = path.canonicalize()?;
+        path.strip_prefix(&root)
+            .map(Path::to_path_buf)
+            .map_err(|_| {
+                SaraError::Git(format!(
+                    "Path {} is outside the repository {}",
+                    path.display(),
+                    root.display()
+                ))
+            })
+    }
+
     /// Resolves a Git reference to a commit.
     ///
     /// # Errors
@@ -166,17 +191,64 @@ impl GitReader {
             .map_err(|e| SaraError::Git(format!("Invalid UTF-8 in file: {e}")))
     }
 
-    /// Lists all Markdown files in a commit's tree.
+    /// Lists the Markdown files under `scope` in a commit's tree.
+    ///
+    /// `scope` is a path relative to the repository root; an empty path or
+    /// `.` selects the whole tree. Returned paths are always relative to the
+    /// repository root. A scope that is absent from the commit yields an
+    /// empty list, since the directory may not exist at every reference.
     ///
     /// # Errors
     /// Returns [`SaraError::Gix`] if tree traversal fails, or
     /// [`SaraError::Git`] for non-UTF-8 file names.
-    pub fn list_markdown_files(&self, commit: &Commit<'_>) -> Result<Vec<PathBuf>, SaraError> {
+    pub fn list_markdown_files(
+        &self,
+        commit: &Commit<'_>,
+        scope: &Path,
+    ) -> Result<Vec<PathBuf>, SaraError> {
         let tree = commit.tree().map_err(gix_err)?;
+        let Some((tree, prefix)) = self.scoped_tree(tree, scope)? else {
+            return Ok(Vec::new());
+        };
 
         let mut files = Vec::new();
-        self.walk_tree(&tree, PathBuf::new(), &mut files)?;
+        self.walk_tree(&tree, prefix, &mut files)?;
         Ok(files)
+    }
+
+    /// Resolves a repository-relative scope to its subtree.
+    ///
+    /// Returns the subtree together with the path prefix to prepend to
+    /// walked entries, or `None` when the scope does not exist as a
+    /// directory in the commit. An empty scope or `.` selects the whole
+    /// tree.
+    fn scoped_tree<'repo>(
+        &self,
+        tree: Tree<'repo>,
+        scope: &Path,
+    ) -> Result<Option<(Tree<'repo>, PathBuf)>, SaraError> {
+        let scope: PathBuf = scope
+            .components()
+            .filter(|c| !matches!(c, Component::CurDir))
+            .collect();
+        if scope.as_os_str().is_empty() {
+            return Ok(Some((tree, PathBuf::new())));
+        }
+
+        let Some(entry) = tree.lookup_entry_by_path(&scope).map_err(gix_err)? else {
+            tracing::debug!("Scope {} not present in commit tree", scope.display());
+            return Ok(None);
+        };
+        if !matches!(entry.mode().kind(), EntryKind::Tree) {
+            tracing::debug!("Scope {} is not a directory", scope.display());
+            return Ok(None);
+        }
+
+        let object = entry.object().map_err(gix_err)?;
+        let subtree = object
+            .try_into_tree()
+            .map_err(|_| SaraError::Git("Expected tree object".to_string()))?;
+        Ok(Some((subtree, scope)))
     }
 
     /// Recursively walks a tree to find Markdown files.
@@ -220,16 +292,21 @@ impl GitReader {
         Ok(())
     }
 
-    /// Parses all Markdown files from a specific commit.
+    /// Parses the Markdown files under `scope` at a specific commit.
+    ///
+    /// `scope` is a path relative to the repository root; an empty path or
+    /// `.` selects the whole tree. A scope that is absent from the commit
+    /// yields no items. Use [`Self::scope_from_path`] to derive the scope
+    /// from a filesystem path.
     ///
     /// # Errors
     /// Propagates errors from [`Self::resolve_ref`]. Returns the first parse
     /// error only when no items could be parsed at all; otherwise individual
     /// parse failures are logged via `tracing` and the successful items are
     /// returned.
-    pub fn parse_commit(&self, git_ref: &GitRef) -> Result<Vec<Item>, SaraError> {
+    pub fn parse_commit(&self, git_ref: &GitRef, scope: &Path) -> Result<Vec<Item>, SaraError> {
         let commit = self.resolve_ref(git_ref)?;
-        let files = self.list_markdown_files(&commit)?;
+        let files = self.list_markdown_files(&commit, scope)?;
 
         let mut items = Vec::new();
         let mut parse_errors = Vec::new();
@@ -284,7 +361,117 @@ pub fn get_repo_root(path: &Path) -> Option<PathBuf> {
 
 #[cfg(test)]
 mod tests {
+    use std::fs;
+
+    use tempfile::TempDir;
+
     use super::*;
+    use crate::test_utils::run_git;
+
+    /// Item committed inside the `docs` directory of the test repository.
+    const SCOPED_ITEM: &str = r#"---
+id: "SOL-001"
+type: solution
+name: "Scoped"
+---
+# Solution: Scoped
+"#;
+
+    /// Item committed at the root of the test repository.
+    const ROOT_ITEM: &str = r#"---
+id: "SOL-002"
+type: solution
+name: "Root"
+---
+# Solution: Root
+"#;
+
+    /// Creates a Git repository with one item under `docs` and one at the
+    /// repository root, committed at HEAD.
+    fn scoped_repo() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = temp_dir.path();
+
+        run_git(repo, &["init"]);
+        run_git(repo, &["config", "user.name", "Sara Tests"]);
+        run_git(repo, &["config", "user.email", "tests@example.com"]);
+
+        fs::create_dir(repo.join("docs")).unwrap();
+        fs::write(repo.join("docs/SOL-001.md"), SCOPED_ITEM).unwrap();
+        fs::write(repo.join("SOL-002.md"), ROOT_ITEM).unwrap();
+        run_git(repo, &["add", "."]);
+        run_git(repo, &["commit", "-m", "initial"]);
+
+        temp_dir
+    }
+
+    #[test]
+    fn test_scope_from_path_repo_root_is_empty() {
+        let repo = scoped_repo();
+        let reader = GitReader::discover(repo.path()).unwrap();
+
+        let scope = reader.scope_from_path(repo.path()).unwrap();
+
+        assert_eq!(scope, PathBuf::new());
+    }
+
+    #[test]
+    fn test_scope_from_path_subdirectory() {
+        let repo = scoped_repo();
+        let reader = GitReader::discover(&repo.path().join("docs")).unwrap();
+
+        let scope = reader.scope_from_path(&repo.path().join("docs")).unwrap();
+
+        assert_eq!(scope, PathBuf::from("docs"));
+    }
+
+    #[test]
+    fn test_parse_commit_scopes_to_subtree() {
+        let repo = scoped_repo();
+        let reader = GitReader::discover(repo.path()).unwrap();
+
+        let items = reader
+            .parse_commit(&GitRef::Head, Path::new("docs"))
+            .unwrap();
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].id.as_str(), "SOL-001");
+    }
+
+    #[test]
+    fn test_parse_commit_empty_scope_lists_whole_tree() {
+        let repo = scoped_repo();
+        let reader = GitReader::discover(repo.path()).unwrap();
+
+        let items = reader.parse_commit(&GitRef::Head, Path::new(".")).unwrap();
+
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn test_parse_commit_missing_scope_yields_no_items() {
+        let repo = scoped_repo();
+        let reader = GitReader::discover(repo.path()).unwrap();
+
+        let items = reader
+            .parse_commit(&GitRef::Head, Path::new("no-such-dir"))
+            .unwrap();
+
+        assert!(items.is_empty());
+    }
+
+    #[test]
+    fn test_list_markdown_files_keeps_repo_relative_paths() {
+        let repo = scoped_repo();
+        let reader = GitReader::discover(repo.path()).unwrap();
+        let commit = reader.resolve_ref(&GitRef::Head).unwrap();
+
+        let files = reader
+            .list_markdown_files(&commit, Path::new("docs"))
+            .unwrap();
+
+        assert_eq!(files, vec![PathBuf::from("docs/SOL-001.md")]);
+    }
 
     #[test]
     fn test_git_ref_parse_head() {

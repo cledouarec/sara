@@ -3,7 +3,8 @@
 //! This module provides common test helpers to reduce duplication
 //! across test modules.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 use crate::model::{FieldValue, Item, ItemBuilder, ItemId, ItemType, Relationship, SourceLocation};
 use crate::schema::builtin;
@@ -181,6 +182,28 @@ pub fn create_simple_hierarchy() -> Vec<Item> {
             )],
         ),
     ]
+}
+
+/// Runs a Git command in the given repository, isolated from the user and
+/// system Git configuration.
+///
+/// # Panics
+/// Panics if the command cannot be spawned or exits unsuccessfully.
+pub fn run_git(repo: &Path, args: &[&str]) {
+    let output = Command::new("git")
+        .arg("-C")
+        .arg(repo)
+        .env("GIT_CONFIG_GLOBAL", "/dev/null")
+        .env("GIT_CONFIG_SYSTEM", "/dev/null")
+        .args(args)
+        .output()
+        .expect("failed to run git");
+    assert!(
+        output.status.success(),
+        "git {:?} failed: {}",
+        args,
+        String::from_utf8_lossy(&output.stderr)
+    );
 }
 
 #[cfg(test)]
