@@ -3,7 +3,7 @@
 //! Provides functionality for editing requirement items (FR-054 through FR-066).
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 
@@ -369,7 +369,7 @@ impl EditService {
         item_id: &str,
         item_type: ItemType,
         new_values: &EditedValues,
-        file_path: &PathBuf,
+        file_path: &Path,
     ) -> Result<(), SaraError> {
         let content =
             fs::read_to_string(file_path).map_err(|e| SaraError::EditFailed(e.to_string()))?;

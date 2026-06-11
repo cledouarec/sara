@@ -2,7 +2,7 @@
 
 use std::error::Error;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
@@ -128,7 +128,7 @@ fn handle_output(
         }
     };
 
-    write_output(&output, args.output.as_ref())?;
+    write_output(&output, args.output.as_deref())?;
 
     if report.is_valid() {
         Ok(ExitCode::SUCCESS)
@@ -163,7 +163,7 @@ fn build_check_result(
 }
 
 /// Writes output to stdout or a file.
-fn write_output(content: &str, output_path: Option<&PathBuf>) -> Result<(), Box<dyn Error>> {
+fn write_output(content: &str, output_path: Option<&Path>) -> Result<(), Box<dyn Error>> {
     match output_path {
         Some(path) => {
             fs::write(path, content)?;
