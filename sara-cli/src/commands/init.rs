@@ -17,9 +17,8 @@ use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeCo
 
 use sara_core::config::{Config, OutputConfig};
 
-use super::interactive::{
-    InteractiveSession, PromptError, handle_interactive_result, run_interactive_session,
-};
+use super::EXIT_CANCELLED;
+use super::interactive::{InteractiveSession, handle_interactive_result, run_interactive_session};
 use crate::output::{Color, Style, colorize, print_error, print_success, print_warning};
 
 /// Arguments for the init command.
@@ -296,10 +295,8 @@ fn run_interactive(config: &Config) -> Result<ExitCode, Box<dyn Error>> {
 
             run_with_options(opts, config)
         }
-        Ok(None) => Ok(ExitCode::from(130)),
-        Err(PromptError::NonInteractiveTerminal) => Ok(ExitCode::from(1)),
-        Err(PromptError::MissingParent(_)) => Ok(ExitCode::from(1)),
-        Err(_) => Ok(ExitCode::from(1)),
+        Ok(None) => Ok(ExitCode::from(EXIT_CANCELLED)),
+        Err(_) => Ok(ExitCode::FAILURE),
     }
 }
 
