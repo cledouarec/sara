@@ -476,10 +476,16 @@ impl EditService {
 
 #[cfg(test)]
 mod tests {
+    use tempfile::TempDir;
+
     use super::*;
 
+    use crate::model::{FieldValue, Relationship};
     use crate::schema::builtin;
-    use crate::test_utils::{create_test_item, create_test_item_with_name};
+    use crate::test_utils::{
+        create_test_adr, create_test_item, create_test_item_with_name,
+        create_test_item_with_relationships,
+    };
 
     #[test]
     fn test_edit_options_has_updates() {
@@ -596,9 +602,85 @@ mod tests {
 
         assert_eq!(
             merged.attributes.get("specification"),
-            Some(&crate::model::FieldValue::Text(
-                "The system SHALL be edited.".to_string()
-            ))
+            Some(&FieldValue::Text("The system SHALL be edited.".to_string()))
+        );
+    }
+
+    #[test]
+    fn test_merge_values_adds_field() {
+        let service = EditService::new();
+
+        let item = create_test_item("SYSARCH-001", builtin::SYSTEM_ARCHITECTURE);
+        let current = ItemContext::from_item(&item);
+        assert!(current.attributes.get("platform").is_none());
+
+        let opts = EditOptions::new("SYSARCH-001")
+            .with_field("platform", FieldInput::Text("AWS Lambda".to_string()));
+        let merged = service.merge_values(opts, &current);
+
+        assert_eq!(
+            merged.attributes.get("platform"),
+            Some(&FieldValue::text("AWS Lambda"))
+        );
+    }
+
+    #[test]
+    fn test_merge_values_empty_list_input_keeps_field() {
+        let service = EditService::new();
+
+        let item = create_test_adr("ADR-001", &[], &[]);
+        let current = ItemContext::from_item(&item);
+
+        // An empty list input resolves to no value, so merging leaves the
+        // current value in place: an edit never removes an attribute.
+        let opts = EditOptions::new("ADR-001").with_field("deciders", FieldInput::List(Vec::new()));
+        let merged = service.merge_values(opts, &current);
+
+        assert_eq!(
+            merged.attributes.get("deciders"),
+            Some(&FieldValue::text_list(["Test Decider"]))
+        );
+    }
+
+    #[test]
+    fn test_merge_values_clears_relation() {
+        let service = EditService::new();
+
+        let item = create_test_item_with_relationships(
+            "UC-001",
+            builtin::USE_CASE,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                builtin::REFINES,
+            )],
+        );
+        let current = ItemContext::from_item(&item);
+
+        let opts = EditOptions::new("UC-001").with_relation(builtin::REFINES, Vec::new());
+        let merged = service.merge_values(opts, &current);
+
+        assert!(merged.traceability.get(builtin::REFINES).is_empty());
+    }
+
+    #[test]
+    fn test_merge_values_preserves_untouched_values() {
+        let service = EditService::new();
+
+        let item = create_test_adr("ADR-001", &["SYSARCH-001"], &[]);
+        let current = ItemContext::from_item(&item);
+
+        let opts = EditOptions::new("ADR-001").with_name("Renamed");
+        let merged = service.merge_values(opts, &current);
+
+        assert_eq!(merged.name, "Renamed");
+        assert_eq!(merged.traceability.get(builtin::JUSTIFIES), ["SYSARCH-001"]);
+        assert_eq!(
+            merged.attributes.get("status"),
+            Some(&FieldValue::Enum("proposed".to_string()))
+        );
+        assert_eq!(
+            merged.attributes.get("deciders"),
+            Some(&FieldValue::text_list(["Test Decider"]))
         );
     }
 
@@ -644,6 +726,117 @@ mod tests {
     }
 
     #[test]
+    fn test_build_change_summary_marks_unchanged_entries() {
+        let service = EditService::new();
+
+        let item = create_test_item_with_name("SOL-001", builtin::SOLUTION, "Old Name");
+        let old = ItemContext::from_item(&item);
+        let new = service.merge_values(EditOptions::new("SOL-001").with_name("New Name"), &old);
+
+        let changes = service.build_change_summary(&old, &new);
+
+        let name = changes.iter().find(|c| c.field == "Name").unwrap();
+        assert!(name.is_changed());
+        let description = changes.iter().find(|c| c.field == "Description").unwrap();
+        assert!(!description.is_changed());
+        assert_eq!(description.old_value, "(none)");
+        assert_eq!(description.new_value, "(none)");
+    }
+
+    #[test]
+    fn test_build_change_summary_relation_entries() {
+        let service = EditService::new();
+
+        let item = create_test_adr("ADR-001", &["SYSARCH-001"], &[]);
+        let old = ItemContext::from_item(&item);
+        let new = service.merge_values(
+            EditOptions::new("ADR-001").with_relation(builtin::JUSTIFIES, Vec::new()),
+            &old,
+        );
+
+        let changes = service.build_change_summary(&old, &new);
+
+        let justifies = changes
+            .iter()
+            .find(|c| c.field == builtin::JUSTIFIES.display_name())
+            .unwrap();
+        assert!(justifies.is_changed());
+        assert_eq!(justifies.old_value, "SYSARCH-001");
+        assert_eq!(justifies.new_value, "(none)");
+
+        // A relation with no targets on either side yields no entry.
+        assert!(
+            changes
+                .iter()
+                .all(|c| c.field != builtin::SUPERSEDES.display_name())
+        );
+    }
+
+    #[test]
+    fn test_build_change_summary_field_entries() {
+        let service = EditService::new();
+
+        let item = create_test_item("SYSARCH-001", builtin::SYSTEM_ARCHITECTURE);
+        let old = ItemContext::from_item(&item);
+
+        // A declared field absent on both sides yields no entry.
+        let unchanged = service.merge_values(EditOptions::new("SYSARCH-001"), &old);
+        let changes = service.build_change_summary(&old, &unchanged);
+        assert!(changes.iter().all(|c| c.field != "Platform"));
+
+        // An added field reports the transition from "(none)" to its value.
+        let edited = service.merge_values(
+            EditOptions::new("SYSARCH-001")
+                .with_field("platform", FieldInput::Text("AWS Lambda".to_string())),
+            &old,
+        );
+        let changes = service.build_change_summary(&old, &edited);
+        let platform = changes.iter().find(|c| c.field == "Platform").unwrap();
+        assert!(platform.is_changed());
+        assert_eq!(platform.old_value, "(none)");
+        assert_eq!(platform.new_value, "AWS Lambda");
+    }
+
+    #[test]
+    fn test_apply_changes_writes_file() {
+        let service = EditService::new();
+
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("SOL-001.md");
+        fs::write(
+            &file,
+            "---\nid: \"SOL-001\"\ntype: solution\nname: \"Old Name\"\n---\n# Old Heading\n\nBody to preserve.\n",
+        )
+        .unwrap();
+
+        let values =
+            EditedValues::new("New Name").with_description(Some("Now described".to_string()));
+        service
+            .apply_changes("SOL-001", builtin::SOLUTION, &values, &file)
+            .unwrap();
+
+        let content = fs::read_to_string(&file).unwrap();
+        assert!(content.starts_with("---"));
+        assert!(content.contains("name: \"New Name\""));
+        assert!(content.contains("description: \"Now described\""));
+        assert!(content.contains("# Old Heading"));
+        assert!(content.contains("Body to preserve."));
+    }
+
+    #[test]
+    fn test_apply_changes_missing_file() {
+        let service = EditService::new();
+
+        let dir = TempDir::new().unwrap();
+        let missing = dir.path().join("does-not-exist.md");
+        let values = EditedValues::new("Name");
+
+        let result = service.apply_changes("SOL-001", builtin::SOLUTION, &values, &missing);
+
+        assert!(result.is_err());
+    }
+
+    #[test]
     fn test_build_frontmatter_yaml() {
         let service = EditService::new();
 
@@ -662,8 +855,7 @@ mod tests {
     fn test_build_frontmatter_yaml_preserves_attributes() {
         let service = EditService::new();
 
-        let item =
-            crate::test_utils::create_test_item("ADR-001", builtin::ARCHITECTURE_DECISION_RECORD);
+        let item = create_test_item("ADR-001", builtin::ARCHITECTURE_DECISION_RECORD);
         let ctx = ItemContext::from_item(&item);
         let values = service.merge_values(EditOptions::new("ADR-001").with_name("Renamed"), &ctx);
 
