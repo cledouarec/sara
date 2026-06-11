@@ -5,14 +5,20 @@
 use std::fs;
 use std::path::PathBuf;
 
+use indexmap::IndexMap;
+
 use crate::error::SaraError;
 use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
 use crate::model::{
-    FieldChange, FieldName, Item, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
-    TraceabilityLinks,
+    FieldChange, Item, ItemAttributes, ItemBuilder, ItemId, ItemType, RelationshipType,
+    SourceLocation, TraceabilityLinks,
 };
 use crate::parser::update_frontmatter;
+use crate::schema::FieldType;
+
+use super::FieldInput;
+use super::init::init_field_value;
 
 /// Options for editing an item.
 #[derive(Debug, Clone, Default)]
@@ -23,20 +29,12 @@ pub struct EditOptions {
     pub name: Option<String>,
     /// New description (if provided).
     pub description: Option<String>,
-    /// New refines references (if provided).
-    pub refines: Option<Vec<String>>,
-    /// New derives_from references (if provided).
-    pub derives_from: Option<Vec<String>>,
-    /// New satisfies references (if provided).
-    pub satisfies: Option<Vec<String>>,
-    /// New depends_on references (if provided).
-    pub depends_on: Option<Vec<String>>,
-    /// New justifies references (if provided, for ADRs).
-    pub justifies: Option<Vec<String>>,
-    /// New specification (if provided).
-    pub specification: Option<String>,
-    /// New platform (if provided).
-    pub platform: Option<String>,
+    /// New relation targets, keyed by relation; a present entry replaces the
+    /// item's existing targets for that relation.
+    pub relations: IndexMap<RelationshipType, Vec<String>>,
+    /// New field values, keyed by field name; a present entry replaces the
+    /// item's current value for that field.
+    pub fields: IndexMap<String, FieldInput>,
 }
 
 impl EditOptions {
@@ -72,101 +70,40 @@ impl EditOptions {
         self
     }
 
-    /// Sets the refines references.
-    pub fn with_refines(mut self, refines: Vec<String>) -> Self {
-        self.refines = Some(refines);
+    /// Replaces the targets of a relation.
+    pub fn with_relation(mut self, relation: RelationshipType, ids: Vec<String>) -> Self {
+        self.relations.insert(relation, ids);
         self
     }
 
-    /// Sets the refines references if provided.
-    pub fn maybe_refines(mut self, refines: Option<Vec<String>>) -> Self {
-        self.refines = refines;
+    /// Replaces the targets of a relation if provided.
+    pub fn maybe_relation(self, relation: RelationshipType, ids: Option<Vec<String>>) -> Self {
+        match ids {
+            Some(ids) => self.with_relation(relation, ids),
+            None => self,
+        }
+    }
+
+    /// Replaces the value of a field.
+    pub fn with_field(mut self, name: impl Into<String>, input: FieldInput) -> Self {
+        self.fields.insert(name.into(), input);
         self
     }
 
-    /// Sets the derives_from references.
-    pub fn with_derives_from(mut self, derives_from: Vec<String>) -> Self {
-        self.derives_from = Some(derives_from);
-        self
-    }
-
-    /// Sets the derives_from references if provided.
-    pub fn maybe_derives_from(mut self, derives_from: Option<Vec<String>>) -> Self {
-        self.derives_from = derives_from;
-        self
-    }
-
-    /// Sets the satisfies references.
-    pub fn with_satisfies(mut self, satisfies: Vec<String>) -> Self {
-        self.satisfies = Some(satisfies);
-        self
-    }
-
-    /// Sets the satisfies references if provided.
-    pub fn maybe_satisfies(mut self, satisfies: Option<Vec<String>>) -> Self {
-        self.satisfies = satisfies;
-        self
-    }
-
-    /// Sets the depends_on references.
-    pub fn with_depends_on(mut self, depends_on: Vec<String>) -> Self {
-        self.depends_on = Some(depends_on);
-        self
-    }
-
-    /// Sets the depends_on references if provided.
-    pub fn maybe_depends_on(mut self, depends_on: Option<Vec<String>>) -> Self {
-        self.depends_on = depends_on;
-        self
-    }
-
-    /// Sets the justifies references.
-    pub fn with_justifies(mut self, justifies: Vec<String>) -> Self {
-        self.justifies = Some(justifies);
-        self
-    }
-
-    /// Sets the justifies references if provided.
-    pub fn maybe_justifies(mut self, justifies: Option<Vec<String>>) -> Self {
-        self.justifies = justifies;
-        self
-    }
-
-    /// Sets the specification.
-    pub fn with_specification(mut self, specification: impl Into<String>) -> Self {
-        self.specification = Some(specification.into());
-        self
-    }
-
-    /// Sets the specification if provided.
-    pub fn maybe_specification(mut self, specification: Option<String>) -> Self {
-        self.specification = specification;
-        self
-    }
-
-    /// Sets the platform.
-    pub fn with_platform(mut self, platform: impl Into<String>) -> Self {
-        self.platform = Some(platform.into());
-        self
-    }
-
-    /// Sets the platform if provided.
-    pub fn maybe_platform(mut self, platform: Option<String>) -> Self {
-        self.platform = platform;
-        self
+    /// Replaces the value of a text field if provided.
+    pub fn maybe_text_field(self, name: impl Into<String>, value: Option<String>) -> Self {
+        match value {
+            Some(value) => self.with_field(name, FieldInput::Text(value)),
+            None => self,
+        }
     }
 
     /// Returns true if any modification was requested.
     pub fn has_updates(&self) -> bool {
         self.name.is_some()
             || self.description.is_some()
-            || self.refines.is_some()
-            || self.derives_from.is_some()
-            || self.satisfies.is_some()
-            || self.depends_on.is_some()
-            || self.justifies.is_some()
-            || self.specification.is_some()
-            || self.platform.is_some()
+            || !self.relations.is_empty()
+            || !self.fields.is_empty()
     }
 }
 
@@ -177,12 +114,11 @@ pub struct EditedValues {
     pub name: String,
     /// Optional description.
     pub description: Option<String>,
-    /// Optional specification.
-    pub specification: Option<String>,
-    /// Optional platform.
-    pub platform: Option<String>,
     /// Traceability links.
     pub traceability: TraceabilityLinks,
+    /// The item's attributes after the edit: the current ones with the
+    /// edited fields overlaid; fields outside the edit pass through as-is.
+    pub attributes: ItemAttributes,
 }
 
 impl EditedValues {
@@ -191,9 +127,8 @@ impl EditedValues {
         Self {
             name: name.into(),
             description: None,
-            specification: None,
-            platform: None,
             traceability: TraceabilityLinks::default(),
+            attributes: ItemAttributes::new(),
         }
     }
 
@@ -203,21 +138,15 @@ impl EditedValues {
         self
     }
 
-    /// Sets the specification.
-    pub fn with_specification(mut self, specification: Option<String>) -> Self {
-        self.specification = specification;
-        self
-    }
-
-    /// Sets the platform.
-    pub fn with_platform(mut self, platform: Option<String>) -> Self {
-        self.platform = platform;
-        self
-    }
-
     /// Sets the traceability links.
     pub fn with_traceability(mut self, traceability: TraceabilityLinks) -> Self {
         self.traceability = traceability;
+        self
+    }
+
+    /// Sets the attributes carried over from the edited item.
+    pub fn with_attributes(mut self, attributes: ItemAttributes) -> Self {
+        self.attributes = attributes;
         self
     }
 }
@@ -256,12 +185,10 @@ pub struct ItemContext {
     pub name: String,
     /// The current description.
     pub description: Option<String>,
-    /// The current specification.
-    pub specification: Option<String>,
-    /// The current platform.
-    pub platform: Option<String>,
     /// The current traceability links.
     pub traceability: TraceabilityLinks,
+    /// The current attributes.
+    pub attributes: ItemAttributes,
     /// The file path.
     pub file_path: PathBuf,
 }
@@ -274,9 +201,8 @@ impl ItemContext {
             item_type: item.item_type,
             name: item.name.clone(),
             description: item.description.clone(),
-            specification: item.attributes.specification().map(ToOwned::to_owned),
-            platform: item.attributes.platform().map(ToOwned::to_owned),
             traceability: TraceabilityLinks::from_item(item),
+            attributes: item.attributes.clone(),
             file_path: item.source.full_path(),
         }
     }
@@ -312,17 +238,35 @@ impl EditService {
         opts: &EditOptions,
         item_type: ItemType,
     ) -> Result<(), SaraError> {
-        if opts.specification.is_some() && !item_type.requires_specification() {
-            return Err(SaraError::EditFailed(format!(
-                "--specification is only valid for requirement types, not {}",
-                item_type.display_name()
-            )));
+        for (name, input) in &opts.fields {
+            let Some(field) = item_type.declared_field(name) else {
+                return Err(SaraError::EditFailed(format!(
+                    "--{} is not a field declared by {}",
+                    name.replace('_', "-"),
+                    item_type.display_name()
+                )));
+            };
+            if let FieldType::Enum { values } = &field.field_type
+                && let FieldInput::Text(value) = input
+                && !values.contains(value)
+            {
+                return Err(SaraError::EditFailed(format!(
+                    "invalid value `{value}` for --{}, expected one of: {}",
+                    name.replace('_', "-"),
+                    values.join(", ")
+                )));
+            }
         }
 
-        if opts.platform.is_some() && item_type != ItemType::SYSTEM_ARCHITECTURE {
-            return Err(SaraError::EditFailed(
-                "--platform is only valid for System Architecture items".to_string(),
-            ));
+        let declared = item_type.declared_relations();
+        for relation in opts.relations.keys() {
+            if !declared.contains(relation) {
+                return Err(SaraError::EditFailed(format!(
+                    "--{} is not a relation declared by {}",
+                    relation.as_str().replace('_', "-"),
+                    item_type.display_name()
+                )));
+            }
         }
 
         Ok(())
@@ -330,39 +274,28 @@ impl EditService {
 
     /// Merges edit options with current item values.
     pub fn merge_values(&self, opts: &EditOptions, current: &ItemContext) -> EditedValues {
+        let mut traceability = current.traceability.clone();
+        for (relation, ids) in &opts.relations {
+            traceability.set(*relation, ids.clone());
+        }
+
+        let mut attributes = current.attributes.clone();
+        for (name, input) in &opts.fields {
+            if let Some(field) = current.item_type.declared_field(name)
+                && let Some(value) = init_field_value(field, Some(input))
+            {
+                attributes.insert(name.clone(), value);
+            }
+        }
+
         EditedValues {
             name: opts.name.clone().unwrap_or_else(|| current.name.clone()),
             description: opts
                 .description
                 .clone()
                 .or_else(|| current.description.clone()),
-            specification: opts
-                .specification
-                .clone()
-                .or_else(|| current.specification.clone()),
-            platform: opts.platform.clone().or_else(|| current.platform.clone()),
-            traceability: TraceabilityLinks {
-                refines: opts
-                    .refines
-                    .clone()
-                    .unwrap_or_else(|| current.traceability.refines.clone()),
-                derives_from: opts
-                    .derives_from
-                    .clone()
-                    .unwrap_or_else(|| current.traceability.derives_from.clone()),
-                satisfies: opts
-                    .satisfies
-                    .clone()
-                    .unwrap_or_else(|| current.traceability.satisfies.clone()),
-                depends_on: opts
-                    .depends_on
-                    .clone()
-                    .unwrap_or_else(|| current.traceability.depends_on.clone()),
-                justifies: opts
-                    .justifies
-                    .clone()
-                    .unwrap_or_else(|| current.traceability.justifies.clone()),
-            },
+            traceability,
+            attributes,
         }
     }
 
@@ -370,47 +303,34 @@ impl EditService {
     pub fn build_change_summary(&self, old: &ItemContext, new: &EditedValues) -> Vec<FieldChange> {
         let mut changes = Vec::new();
 
-        changes.push(FieldChange::new(FieldName::Name, &old.name, &new.name));
+        changes.push(FieldChange::new("Name", &old.name, &new.name));
         changes.push(FieldChange::new(
-            FieldName::Description,
+            "Description",
             old.description.as_deref().unwrap_or("(none)"),
             new.description.as_deref().unwrap_or("(none)"),
         ));
 
         // Traceability changes
-        self.add_traceability_change(
-            &mut changes,
-            FieldName::Refines,
-            &old.traceability.refines,
-            &new.traceability.refines,
-        );
-        self.add_traceability_change(
-            &mut changes,
-            FieldName::DerivesFrom,
-            &old.traceability.derives_from,
-            &new.traceability.derives_from,
-        );
-        self.add_traceability_change(
-            &mut changes,
-            FieldName::Satisfies,
-            &old.traceability.satisfies,
-            &new.traceability.satisfies,
-        );
-
-        // Type-specific
-        if old.specification.is_some() || new.specification.is_some() {
-            changes.push(FieldChange::new(
-                FieldName::Specification,
-                old.specification.as_deref().unwrap_or("(none)"),
-                new.specification.as_deref().unwrap_or("(none)"),
-            ));
+        for (relation, new_ids) in new.traceability.iter() {
+            self.add_traceability_change(
+                &mut changes,
+                relation.display_name(),
+                old.traceability.get(relation),
+                new_ids,
+            );
         }
 
-        if old.platform.is_some() || new.platform.is_some() {
+        // Declared field changes
+        for field in old.item_type.declared_fields() {
+            let old_value = old.attributes.get(&field.name);
+            let new_value = new.attributes.get(&field.name);
+            if old_value.is_none() && new_value.is_none() {
+                continue;
+            }
             changes.push(FieldChange::new(
-                FieldName::Platform,
-                old.platform.as_deref().unwrap_or("(none)"),
-                new.platform.as_deref().unwrap_or("(none)"),
+                &field.display_name,
+                old_value.map_or("(none)".to_string(), ToString::to_string),
+                new_value.map_or("(none)".to_string(), ToString::to_string),
             ));
         }
 
@@ -421,7 +341,7 @@ impl EditService {
     fn add_traceability_change(
         &self,
         changes: &mut Vec<FieldChange>,
-        field: FieldName,
+        field: &str,
         old: &[String],
         new: &[String],
     ) {
@@ -471,6 +391,10 @@ impl EditService {
     }
 
     /// Builds a temporary `Item` from edit values for frontmatter generation.
+    ///
+    /// Attributes are taken from the edited values as-is; any required field
+    /// still missing falls back to its schema placeholder so the item always
+    /// builds.
     fn build_item_from_values(
         &self,
         item_id: &str,
@@ -493,41 +417,23 @@ impl EditService {
             builder = builder.description(desc);
         }
 
-        // Build relationships from traceability links
-        let mut rels =
-            super::ids_to_relationships(&values.traceability.refines, RelationshipType::REFINES);
-        rels.extend(super::ids_to_relationships(
-            &values.traceability.derives_from,
-            RelationshipType::DERIVES_FROM,
-        ));
-        rels.extend(super::ids_to_relationships(
-            &values.traceability.satisfies,
-            RelationshipType::SATISFIES,
-        ));
-        rels.extend(super::ids_to_relationships(
-            &values.traceability.justifies,
-            RelationshipType::JUSTIFIES,
-        ));
+        let mut rels = Vec::new();
+        for (relation, ids) in values.traceability.iter() {
+            rels.extend(super::ids_to_relationships(ids, relation));
+        }
         builder = builder.relationships(rels);
 
-        // Type-specific attributes
-        if let Some(ref spec) = values.specification {
-            builder = builder.specification(spec);
+        let mut attributes = values.attributes.clone();
+        for field in item_type.declared_fields() {
+            if field.required
+                && attributes.get(&field.name).is_none()
+                && let Some(value) = init_field_value(field, None)
+            {
+                attributes.insert(field.name.clone(), value);
+            }
         }
-        if let Some(ref plat) = values.platform {
-            builder = builder.platform(plat);
-        }
-        for id in &values.traceability.depends_on {
-            builder = builder.depends_on(ItemId::new_unchecked(id));
-        }
-
-        // ADR types need status and deciders to build successfully.
-        // For edits, provide defaults since those fields are not
-        // part of EditedValues (they are preserved from the original).
-        if item_type == ItemType::ARCHITECTURE_DECISION_RECORD {
-            builder = builder
-                .status(crate::model::AdrStatus::Proposed)
-                .decider("TBD");
+        for (name, value) in attributes.iter() {
+            builder = builder.attribute(name.clone(), value.clone());
         }
 
         builder.build().expect("Failed to build item for edit")
@@ -575,7 +481,9 @@ impl EditService {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::test_utils::create_test_item_with_name;
+
+    use crate::schema::builtin;
+    use crate::test_utils::{create_test_item, create_test_item_with_name};
 
     #[test]
     fn test_edit_options_has_updates() {
@@ -584,50 +492,75 @@ mod tests {
 
         let opts_with_name = EditOptions::new("SOL-001").with_name("New Name");
         assert!(opts_with_name.has_updates());
+
+        let opts_with_relation =
+            EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]);
+        assert!(opts_with_relation.has_updates());
     }
 
     #[test]
     fn test_item_context_from_item() {
-        let item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "Test Solution");
+        let item = create_test_item_with_name("SOL-001", builtin::SOLUTION, "Test Solution");
         let ctx = ItemContext::from_item(&item);
 
         assert_eq!(ctx.id, "SOL-001");
         assert_eq!(ctx.name, "Test Solution");
-        assert_eq!(ctx.item_type, ItemType::SOLUTION);
+        assert_eq!(ctx.item_type, builtin::SOLUTION);
     }
 
     #[test]
-    fn test_validate_options_specification() {
+    fn test_validate_options_undeclared_field() {
         let service = EditService::new();
 
         // Valid: specification on requirement type
-        let opts = EditOptions::new("SYSREQ-001").with_specification("new spec");
+        let opts = EditOptions::new("SYSREQ-001")
+            .maybe_text_field("specification", Some("new spec".to_string()));
         assert!(
             service
-                .validate_options(&opts, ItemType::SYSTEM_REQUIREMENT)
+                .validate_options(&opts, builtin::SYSTEM_REQUIREMENT)
                 .is_ok()
         );
 
-        // Invalid: specification on solution type
-        let opts = EditOptions::new("SOL-001").with_specification("new spec");
-        assert!(service.validate_options(&opts, ItemType::SOLUTION).is_err());
+        // Invalid: specification on solution type (declares no fields)
+        let opts = EditOptions::new("SOL-001")
+            .maybe_text_field("specification", Some("new spec".to_string()));
+        assert!(service.validate_options(&opts, builtin::SOLUTION).is_err());
     }
 
     #[test]
-    fn test_validate_options_platform() {
+    fn test_validate_options_enum_value() {
         let service = EditService::new();
 
-        // Valid: platform on system architecture
-        let opts = EditOptions::new("SYSARCH-001").with_platform("AWS");
+        let opts =
+            EditOptions::new("ADR-001").maybe_text_field("status", Some("accepted".to_string()));
         assert!(
             service
-                .validate_options(&opts, ItemType::SYSTEM_ARCHITECTURE)
+                .validate_options(&opts, builtin::ARCHITECTURE_DECISION_RECORD)
                 .is_ok()
         );
 
-        // Invalid: platform on solution
-        let opts = EditOptions::new("SOL-001").with_platform("AWS");
-        assert!(service.validate_options(&opts, ItemType::SOLUTION).is_err());
+        let opts =
+            EditOptions::new("ADR-001").maybe_text_field("status", Some("bogus".to_string()));
+        assert!(
+            service
+                .validate_options(&opts, builtin::ARCHITECTURE_DECISION_RECORD)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn test_validate_options_undeclared_relation() {
+        let service = EditService::new();
+
+        // Valid: refines on use case
+        let opts =
+            EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]);
+        assert!(service.validate_options(&opts, builtin::USE_CASE).is_ok());
+
+        // Invalid: refines on solution (declares no relation)
+        let opts = EditOptions::new("SOL-001")
+            .with_relation(builtin::REFINES, vec!["SOL-002".to_string()]);
+        assert!(service.validate_options(&opts, builtin::SOLUTION).is_err());
     }
 
     #[test]
@@ -636,12 +569,11 @@ mod tests {
 
         let current = ItemContext {
             id: "SOL-001".to_string(),
-            item_type: ItemType::SOLUTION,
+            item_type: builtin::SOLUTION,
             name: "Old Name".to_string(),
             description: Some("Old Description".to_string()),
-            specification: None,
-            platform: None,
             traceability: TraceabilityLinks::default(),
+            attributes: ItemAttributes::new(),
             file_path: PathBuf::from("/test.md"),
         };
 
@@ -654,17 +586,54 @@ mod tests {
     }
 
     #[test]
+    fn test_merge_values_replaces_field() {
+        let service = EditService::new();
+
+        let item = create_test_item("SYSREQ-001", builtin::SYSTEM_REQUIREMENT);
+        let current = ItemContext::from_item(&item);
+
+        let opts = EditOptions::new("SYSREQ-001").maybe_text_field(
+            "specification",
+            Some("The system SHALL be edited.".to_string()),
+        );
+        let merged = service.merge_values(&opts, &current);
+
+        assert_eq!(
+            merged.attributes.get("specification"),
+            Some(&crate::model::FieldValue::Text(
+                "The system SHALL be edited.".to_string()
+            ))
+        );
+    }
+
+    #[test]
+    fn test_merge_values_replaces_relation() {
+        let service = EditService::new();
+
+        let item = create_test_item("UC-001", builtin::USE_CASE);
+        let mut current = ItemContext::from_item(&item);
+        current
+            .traceability
+            .set(builtin::REFINES, vec!["SOL-001".to_string()]);
+
+        let opts =
+            EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-002".to_string()]);
+        let merged = service.merge_values(&opts, &current);
+
+        assert_eq!(merged.traceability.get(builtin::REFINES), ["SOL-002"]);
+    }
+
+    #[test]
     fn test_build_change_summary() {
         let service = EditService::new();
 
         let old = ItemContext {
             id: "SOL-001".to_string(),
-            item_type: ItemType::SOLUTION,
+            item_type: builtin::SOLUTION,
             name: "Old Name".to_string(),
             description: None,
-            specification: None,
-            platform: None,
             traceability: TraceabilityLinks::default(),
+            attributes: ItemAttributes::new(),
             file_path: PathBuf::from("/test.md"),
         };
 
@@ -672,7 +641,7 @@ mod tests {
 
         let changes = service.build_change_summary(&old, &new);
 
-        let name_change = changes.iter().find(|c| c.field == FieldName::Name).unwrap();
+        let name_change = changes.iter().find(|c| c.field == "Name").unwrap();
         assert!(name_change.is_changed());
         assert_eq!(name_change.old_value, "Old Name");
         assert_eq!(name_change.new_value, "New Name");
@@ -685,11 +654,30 @@ mod tests {
         let values = EditedValues::new("Test Solution")
             .with_description(Some("A test solution".to_string()));
 
-        let yaml = service.build_frontmatter_yaml("SOL-001", ItemType::SOLUTION, &values);
+        let yaml = service.build_frontmatter_yaml("SOL-001", builtin::SOLUTION, &values);
 
         assert!(yaml.contains("id: \"SOL-001\""));
         assert!(yaml.contains("type: solution"));
         assert!(yaml.contains("name: \"Test Solution\""));
         assert!(yaml.contains("description: \"A test solution\""));
+    }
+
+    #[test]
+    fn test_build_frontmatter_yaml_preserves_attributes() {
+        let service = EditService::new();
+
+        let item =
+            crate::test_utils::create_test_item("ADR-001", builtin::ARCHITECTURE_DECISION_RECORD);
+        let ctx = ItemContext::from_item(&item);
+        let values = service.merge_values(&EditOptions::new("ADR-001").with_name("Renamed"), &ctx);
+
+        let yaml = service.build_frontmatter_yaml(
+            "ADR-001",
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            &values,
+        );
+
+        assert!(yaml.contains("name: \"Renamed\""));
+        assert!(yaml.contains("Test Decider"));
     }
 }

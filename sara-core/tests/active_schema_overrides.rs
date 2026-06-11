@@ -7,11 +7,12 @@
 
 use std::path::Path;
 
-use sara_core::model::{ItemType, RelationshipRules, RelationshipType};
+use sara_core::model::RelationshipRules;
+use sara_core::schema::builtin;
 use sara_core::schema::{self, Schema};
 
 /// Builds a schema based on the built-in default but with a custom prefix
-/// for [`ItemType::SOLUTION`]. Round-trips through YAML to also exercise
+/// for [`builtin::SOLUTION`]. Round-trips through YAML to also exercise
 /// the public loading path.
 fn modified_builtin() -> Schema {
     let yaml = Schema::builtin()
@@ -35,33 +36,33 @@ fn active_schema_overrides_propagate_to_domain_enums() {
 
     // Overridden type sees the custom prefix everywhere.
     assert_eq!(
-        ItemType::SOLUTION.prefix(),
+        builtin::SOLUTION.prefix(),
         "CUSTOM",
         "prefix() must reflect the active schema"
     );
     assert_eq!(
-        ItemType::SOLUTION.generate_id(Some(7)),
+        builtin::SOLUTION.generate_id(Some(7)),
         "CUSTOM-007",
         "generate_id must compose with the active schema's prefix"
     );
 
     // Unmodified types still return their built-in values.
-    assert_eq!(ItemType::USE_CASE.prefix(), "UC");
+    assert_eq!(builtin::USE_CASE.prefix(), "UC");
     assert_eq!(
-        ItemType::SYSTEM_REQUIREMENT.display_name(),
+        builtin::SYSTEM_REQUIREMENT.display_name(),
         "System Requirement"
     );
 
     // The relationship matrix is unchanged: UseCase still refines Solution
     // and the reverse direction is still invalid.
     assert!(RelationshipRules::is_valid_relationship(
-        ItemType::USE_CASE,
-        ItemType::SOLUTION,
-        RelationshipType::REFINES,
+        builtin::USE_CASE,
+        builtin::SOLUTION,
+        builtin::REFINES,
     ));
     assert!(!RelationshipRules::is_valid_relationship(
-        ItemType::SOLUTION,
-        ItemType::USE_CASE,
-        RelationshipType::REFINES,
+        builtin::SOLUTION,
+        builtin::USE_CASE,
+        builtin::REFINES,
     ));
 }

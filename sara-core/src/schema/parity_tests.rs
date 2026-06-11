@@ -2,23 +2,23 @@
 
 use std::path::Path;
 
-use super::{RelationDirection, Schema};
+use super::{RelationDirection, Schema, builtin};
 use crate::model::{ItemType, RelationshipRules, RelationshipType};
 
 /// All relationship types (no `all()` exists on the legacy enum).
 const ALL_RELATIONSHIPS: &[RelationshipType] = &[
-    RelationshipType::REFINES,
-    RelationshipType::IS_REFINED_BY,
-    RelationshipType::DERIVES,
-    RelationshipType::DERIVES_FROM,
-    RelationshipType::SATISFIES,
-    RelationshipType::IS_SATISFIED_BY,
-    RelationshipType::DEPENDS_ON,
-    RelationshipType::IS_REQUIRED_BY,
-    RelationshipType::JUSTIFIES,
-    RelationshipType::IS_JUSTIFIED_BY,
-    RelationshipType::SUPERSEDES,
-    RelationshipType::IS_SUPERSEDED_BY,
+    builtin::REFINES,
+    builtin::IS_REFINED_BY,
+    builtin::DERIVES,
+    builtin::DERIVES_FROM,
+    builtin::SATISFIES,
+    builtin::IS_SATISFIED_BY,
+    builtin::DEPENDS_ON,
+    builtin::IS_REQUIRED_BY,
+    builtin::JUSTIFIES,
+    builtin::IS_JUSTIFIED_BY,
+    builtin::SUPERSEDES,
+    builtin::IS_SUPERSEDED_BY,
 ];
 
 #[test]
@@ -74,14 +74,15 @@ fn traceability_configs_parity() {
     for item_type in ItemType::all() {
         let def = schema.item_type(item_type.as_str()).unwrap();
 
-        // Legacy traceability = upstream primary relations + the `depends_on`
-        // peer relation, in declaration order (matches the legacy `match`).
+        // Traceability = upstream relations + primary peer relations, in
+        // declaration order.
         let derived: Vec<(String, String)> = def
             .allowed_targets
             .iter()
             .filter(|t| {
                 let rel = schema.relation(&t.relation).unwrap();
-                rel.direction == RelationDirection::Upstream || t.relation == "depends_on"
+                rel.direction == RelationDirection::Upstream
+                    || (rel.direction == RelationDirection::Peer && rel.primary)
             })
             .flat_map(|t| {
                 t.targets

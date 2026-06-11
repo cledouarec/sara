@@ -70,20 +70,22 @@ fn validate_item_relationships(graph: &KnowledgeGraph, item: &Item) -> Vec<SaraE
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, Relationship};
+    use crate::model::{ItemId, Relationship};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_valid_relationship() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -100,14 +102,14 @@ mod tests {
     #[test]
     fn test_invalid_relationship() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             // Scenario trying to refine Solution directly (should be UseCase)
             .add_item(create_test_item_with_relationships(
                 "SCEN-001",
-                ItemType::SCENARIO,
+                builtin::SCENARIO,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -124,9 +126,9 @@ mod tests {
             ..
         } = &errors[0]
         {
-            assert_eq!(*from_type, ItemType::SCENARIO);
-            assert_eq!(*to_type, ItemType::SOLUTION);
-            assert_eq!(*rel_type, RelationshipType::REFINES);
+            assert_eq!(*from_type, builtin::SCENARIO);
+            assert_eq!(*to_type, builtin::SOLUTION);
+            assert_eq!(*rel_type, builtin::REFINES);
         } else {
             panic!("Expected InvalidRelationship error");
         }
@@ -137,13 +139,13 @@ mod tests {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_relationships(
                 "SOL-001",
-                ItemType::SOLUTION,
+                builtin::SOLUTION,
                 vec![Relationship::new(
                     ItemId::new_unchecked("UC-001"),
-                    RelationshipType::IS_REFINED_BY,
+                    builtin::IS_REFINED_BY,
                 )],
             ))
-            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
+            .add_item(create_test_item("UC-001", builtin::USE_CASE))
             .build()
             .unwrap();
 

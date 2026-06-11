@@ -50,7 +50,8 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::model::{ItemType, RelationshipType};
+
+    use crate::schema::builtin;
 
     const SOLUTION_MD: &str = r#"---
 id: "SOL-001"
@@ -76,11 +77,9 @@ Body content.
         .unwrap();
 
         assert_eq!(item.id.as_str(), "SOL-001");
-        assert_eq!(item.item_type, ItemType::SOLUTION);
+        assert_eq!(item.item_type, builtin::SOLUTION);
         assert_eq!(item.name, "Test Solution");
-        let is_refined_by: Vec<_> = item
-            .relationship_ids(RelationshipType::IS_REFINED_BY)
-            .collect();
+        let is_refined_by: Vec<_> = item.relationship_ids(builtin::IS_REFINED_BY).collect();
         assert_eq!(is_refined_by.len(), 1);
         assert_eq!(is_refined_by[0].as_str(), "UC-001");
     }

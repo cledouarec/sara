@@ -3,7 +3,7 @@
 use serde::Serialize;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::ItemType;
+use crate::model::{ItemType, RelationshipType};
 
 /// A row in the traceability matrix.
 #[derive(Debug, Clone, Serialize)]
@@ -84,19 +84,7 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        use crate::model::RelationshipType;
-
-        let upstream_types = [
-            RelationshipType::REFINES,
-            RelationshipType::DERIVES_FROM,
-            RelationshipType::SATISFIES,
-            RelationshipType::JUSTIFIES,
-        ];
-
-        for rel_type in &upstream_types {
-            let ids: Vec<_> = item.relationship_ids(*rel_type).cloned().collect();
-            Self::add_targets(&ids, rel_type.as_str(), graph, targets);
-        }
+        Self::collect_targets_by_direction(item, graph, targets, RelationshipType::is_upstream);
     }
 
     /// Collects downstream relationship targets.
@@ -105,17 +93,21 @@ impl TraceabilityMatrix {
         graph: &KnowledgeGraph,
         targets: &mut Vec<MatrixTarget>,
     ) {
-        use crate::model::RelationshipType;
+        Self::collect_targets_by_direction(item, graph, targets, RelationshipType::is_downstream);
+    }
 
-        let downstream_types = [
-            RelationshipType::IS_REFINED_BY,
-            RelationshipType::DERIVES,
-            RelationshipType::IS_SATISFIED_BY,
-            RelationshipType::IS_JUSTIFIED_BY,
-        ];
-
-        for rel_type in &downstream_types {
-            let ids: Vec<_> = item.relationship_ids(*rel_type).cloned().collect();
+    /// Collects targets of every active-schema relation matching a direction.
+    fn collect_targets_by_direction(
+        item: &crate::model::Item,
+        graph: &KnowledgeGraph,
+        targets: &mut Vec<MatrixTarget>,
+        matches_direction: fn(&RelationshipType) -> bool,
+    ) {
+        for rel_type in RelationshipType::all()
+            .into_iter()
+            .filter(matches_direction)
+        {
+            let ids: Vec<_> = item.relationship_ids(rel_type).cloned().collect();
             Self::add_targets(&ids, rel_type.as_str(), graph, targets);
         }
     }
@@ -139,13 +131,13 @@ impl TraceabilityMatrix {
         }
     }
 
-    /// Sorts rows by type order, then by ID.
+    /// Sorts rows by the active schema's type declaration order, then by ID.
     fn sort_rows(rows: &mut [MatrixRow]) {
+        let order = Self::build_columns();
+        let position = |name: &str| order.iter().position(|n| n == name).unwrap_or(order.len());
         rows.sort_by(|a, b| {
-            let type_order_a = Self::type_order(&a.source_type);
-            let type_order_b = Self::type_order(&b.source_type);
-            type_order_a
-                .cmp(&type_order_b)
+            position(&a.source_type)
+                .cmp(&position(&b.source_type))
                 .then(a.source_id.cmp(&b.source_id))
         });
     }
@@ -156,22 +148,6 @@ impl TraceabilityMatrix {
             .iter()
             .map(|t| t.display_name().to_string())
             .collect()
-    }
-
-    /// Returns the type order for sorting.
-    fn type_order(type_name: &str) -> usize {
-        match type_name {
-            "Solution" => 0,
-            "Use Case" => 1,
-            "Scenario" => 2,
-            "System Requirement" => 3,
-            "System Architecture" => 4,
-            "Hardware Requirement" => 5,
-            "Software Requirement" => 6,
-            "Hardware Detailed Design" => 7,
-            "Software Detailed Design" => 8,
-            _ => 9,
-        }
     }
 
     /// Converts the matrix to CSV format.
@@ -224,19 +200,21 @@ impl TraceabilityMatrix {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, Relationship, RelationshipType};
+    use crate::model::{ItemId, Relationship};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_matrix_generation() {
-        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
+        let sol = create_test_item("SOL-001", builtin::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::USE_CASE,
+            builtin::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
 
@@ -253,7 +231,7 @@ mod tests {
 
     #[test]
     fn test_matrix_csv() {
-        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
+        let sol = create_test_item("SOL-001", builtin::SOLUTION);
 
         let graph = KnowledgeGraphBuilder::new().add_item(sol).build().unwrap();
 

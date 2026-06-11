@@ -192,13 +192,25 @@ impl GraphDiff {
             });
         }
 
-        // Check specification change (for requirement types)
-        if old.attributes.specification() != new.attributes.specification() {
-            changes.push(FieldChange {
-                field: "specification".to_string(),
-                old_value: old.attributes.specification().cloned().unwrap_or_default(),
-                new_value: new.attributes.specification().cloned().unwrap_or_default(),
-            });
+        // Check attribute changes, over the union of both attribute sets
+        let mut field_names: Vec<&String> = old.attributes.iter().map(|(name, _)| name).collect();
+        let added_names: Vec<&String> = new
+            .attributes
+            .iter()
+            .map(|(name, _)| name)
+            .filter(|name| !field_names.contains(name))
+            .collect();
+        field_names.extend(added_names);
+        for name in field_names {
+            let old_value = old.attributes.get(name);
+            let new_value = new.attributes.get(name);
+            if old_value != new_value {
+                changes.push(FieldChange {
+                    field: name.clone(),
+                    old_value: old_value.map(ToString::to_string).unwrap_or_default(),
+                    new_value: new_value.map(ToString::to_string).unwrap_or_default(),
+                });
+            }
         }
 
         // Check file path change
@@ -273,13 +285,15 @@ impl GraphDiff {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::ItemType;
+    use crate::schema::builtin;
+
     use crate::test_utils::create_test_item_with_name;
 
     #[test]
     fn test_no_changes() {
-        let item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "Solution");
+        let item = create_test_item_with_name("SOL-001", builtin::SOLUTION, "Solution");
 
         let old_graph = KnowledgeGraphBuilder::new()
             .add_item(item.clone())
@@ -297,7 +311,7 @@ mod tests {
         let new_graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_name(
                 "SOL-001",
-                ItemType::SOLUTION,
+                builtin::SOLUTION,
                 "Solution",
             ))
             .build()
@@ -313,7 +327,7 @@ mod tests {
         let old_graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_name(
                 "SOL-001",
-                ItemType::SOLUTION,
+                builtin::SOLUTION,
                 "Solution",
             ))
             .build()
@@ -327,8 +341,8 @@ mod tests {
 
     #[test]
     fn test_modified_item() {
-        let old_item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "Old Name");
-        let new_item = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "New Name");
+        let old_item = create_test_item_with_name("SOL-001", builtin::SOLUTION, "Old Name");
+        let new_item = create_test_item_with_name("SOL-001", builtin::SOLUTION, "New Name");
 
         let old_graph = KnowledgeGraphBuilder::new()
             .add_item(old_item)

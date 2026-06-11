@@ -10,7 +10,7 @@
 //! the hexagonal boundary.
 
 mod active;
-mod builtin;
+pub mod builtin;
 mod yaml;
 
 #[cfg(test)]
@@ -161,9 +161,9 @@ impl Schema {
     ///   the destination among its targets.
     /// - **Downstream**: the inverse of an upstream relation; valid when the
     ///   corresponding upstream relation is valid in the opposite direction.
-    /// - **Peer**: type-level, not relation-specific (mirrors the legacy
-    ///   `valid_peer_for`): any peer relation is valid when the source type
-    ///   declares *some* peer target containing the destination.
+    /// - **Peer**: type-level, not relation-specific: any peer relation is
+    ///   valid when the source type declares *some* peer target containing
+    ///   the destination.
     ///
     /// Unknown type or relation ids yield `false`.
     #[must_use]

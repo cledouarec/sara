@@ -88,20 +88,22 @@ fn would_create_cycle(
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, Relationship, RelationshipType};
+    use crate::model::{ItemId, Relationship};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_cycles() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -117,18 +119,18 @@ mod tests {
         // Create a cycle: SCEN-001 -> SCEN-002 -> SCEN-001
         let scen1 = create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::SCENARIO,
+            builtin::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-002"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
         let scen2 = create_test_item_with_relationships(
             "SCEN-002",
-            ItemType::SCENARIO,
+            builtin::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
 
@@ -147,18 +149,18 @@ mod tests {
     fn test_peer_dependency_cycle_detected() {
         let req1 = create_test_item_with_relationships(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-002"),
-                RelationshipType::DEPENDS_ON,
+                builtin::DEPENDS_ON,
             )],
         );
         let req2 = create_test_item_with_relationships(
             "SYSREQ-002",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::DEPENDS_ON,
+                builtin::DEPENDS_ON,
             )],
         );
 
@@ -177,13 +179,13 @@ mod tests {
     fn test_peer_dependency_without_cycle_is_valid() {
         let req1 = create_test_item_with_relationships(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-002"),
-                RelationshipType::DEPENDS_ON,
+                builtin::DEPENDS_ON,
             )],
         );
-        let req2 = create_test_item("SYSREQ-002", ItemType::SYSTEM_REQUIREMENT);
+        let req2 = create_test_item("SYSREQ-002", builtin::SYSTEM_REQUIREMENT);
 
         let graph = KnowledgeGraphBuilder::new()
             .add_item(req1)
@@ -203,18 +205,18 @@ mod tests {
     fn test_supersession_cycle_detected() {
         let adr1 = create_test_item_with_relationships(
             "ADR-001",
-            ItemType::ARCHITECTURE_DECISION_RECORD,
+            builtin::ARCHITECTURE_DECISION_RECORD,
             vec![Relationship::new(
                 ItemId::new_unchecked("ADR-002"),
-                RelationshipType::SUPERSEDES,
+                builtin::SUPERSEDES,
             )],
         );
         let adr2 = create_test_item_with_relationships(
             "ADR-002",
-            ItemType::ARCHITECTURE_DECISION_RECORD,
+            builtin::ARCHITECTURE_DECISION_RECORD,
             vec![Relationship::new(
                 ItemId::new_unchecked("ADR-001"),
-                RelationshipType::SUPERSEDES,
+                builtin::SUPERSEDES,
             )],
         );
 
@@ -233,10 +235,10 @@ mod tests {
     fn test_peer_self_reference_detected() {
         let req = create_test_item_with_relationships(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::DEPENDS_ON,
+                builtin::DEPENDS_ON,
             )],
         );
 
@@ -252,13 +254,13 @@ mod tests {
 
     #[test]
     fn test_would_create_cycle() {
-        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
+        let sol = create_test_item("SOL-001", builtin::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::USE_CASE,
+            builtin::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
 

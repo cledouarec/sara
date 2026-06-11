@@ -10,8 +10,9 @@ use std::path::PathBuf;
 
 use sara_core::generator::{self, OutputFormat, TemplateOverride};
 use sara_core::model::{
-    FieldValue, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
+    FieldValue, Item, ItemBuilder, ItemId, ItemType, Relationship, SourceLocation,
 };
+use sara_core::schema::builtin;
 use sara_core::schema::{self, FieldDef, FieldType, Schema};
 
 /// Builds a schema based on the built-in default where the solution type
@@ -69,7 +70,7 @@ fn generation_follows_active_schema_and_overrides() {
 
     // A field added by the schema shows up in the generated frontmatter,
     // while the built-in document body for the type is untouched.
-    let mut solution = build_item("SOL-001", ItemType::SOLUTION, "Test Solution");
+    let mut solution = build_item("SOL-001", builtin::SOLUTION, "Test Solution");
     solution
         .attributes
         .insert("owner", FieldValue::Text("Alice".to_string()));
@@ -87,12 +88,12 @@ fn generation_follows_active_schema_and_overrides() {
     // frontmatter, including declared relations.
     let use_case = ItemBuilder::new()
         .id(ItemId::new_unchecked("UC-001"))
-        .item_type(ItemType::USE_CASE)
+        .item_type(builtin::USE_CASE)
         .name("Test Use Case")
         .source(test_source())
         .relationships(vec![Relationship::new(
             ItemId::new_unchecked("SOL-001"),
-            RelationshipType::REFINES,
+            builtin::REFINES,
         )])
         .build()
         .expect("build use case");
@@ -106,7 +107,7 @@ fn generation_follows_active_schema_and_overrides() {
     assert!(document.contains("- \"SOL-001\""));
 
     // Types without overrides keep their built-in bodies.
-    let scenario = build_item("SCEN-001", ItemType::SCENARIO, "Test Scenario");
+    let scenario = build_item("SCEN-001", builtin::SCENARIO, "Test Scenario");
     let document = generator::generate_document(&scenario, OutputFormat::Markdown);
     assert!(document.contains("# Scenario: Test Scenario"));
 }

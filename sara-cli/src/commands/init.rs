@@ -11,15 +11,14 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Arg, ArgAction, ArgMatches, Args, Command, FromArgMatches, value_parser};
-use sara_core::model::ItemType;
+use sara_core::model::{FIELD_DESCRIPTION, FIELD_ID, FIELD_NAME, ItemType};
 use sara_core::schema::FieldType;
 use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
 
 use sara_core::config::{Config, OutputConfig};
 
 use super::interactive::{
-    InteractiveSession, PrefilledFields, PromptError, handle_interactive_result,
-    run_interactive_session,
+    InteractiveSession, PromptError, handle_interactive_result, run_interactive_session,
 };
 use crate::output::{print_error, print_success, print_warning};
 
@@ -47,6 +46,12 @@ pub struct InitSubcommand {
     /// Field and relation inputs for the selected type.
     type_config: TypeConfig,
 }
+
+/// Argument id of the positional file path.
+const ARG_FILE: &str = "file";
+
+/// Argument id of the overwrite flag.
+const ARG_FORCE: &str = "force";
 
 /// Short flags preserved from the historical per-type commands.
 const SHORT_FLAGS: &[(&str, char)] = &[("status", 's'), ("justifies", 'j')];
@@ -78,31 +83,31 @@ fn type_command(item_type: ItemType) -> Command {
     let mut command = Command::new(subcommand_name(item_type))
         .about(format!("Create {article} {display_name}"))
         .arg(
-            Arg::new("file")
+            Arg::new(ARG_FILE)
                 .value_name("FILE")
                 .value_parser(value_parser!(PathBuf))
                 .required(true)
                 .help("Markdown file to initialize"),
         )
         .arg(
-            Arg::new("id")
-                .long("id")
+            Arg::new(FIELD_ID)
+                .long(FIELD_ID)
                 .help("Item identifier (auto-generated if not provided)"),
         )
         .arg(
-            Arg::new("name")
-                .long("name")
+            Arg::new(FIELD_NAME)
+                .long(FIELD_NAME)
                 .help("Item name (extracted from title if not provided)"),
         )
         .arg(
-            Arg::new("description")
-                .long("description")
+            Arg::new(FIELD_DESCRIPTION)
+                .long(FIELD_DESCRIPTION)
                 .short('d')
                 .help("Item description"),
         )
         .arg(
-            Arg::new("force")
-                .long("force")
+            Arg::new(ARG_FORCE)
+                .long(ARG_FORCE)
                 .action(ArgAction::SetTrue)
                 .help("Overwrite existing frontmatter"),
         );
@@ -145,7 +150,7 @@ fn type_command(item_type: ItemType) -> Command {
 }
 
 /// Returns the help text of a declared field, listing enum values when known.
-fn field_help(field: &sara_core::schema::FieldDef) -> String {
+pub(super) fn field_help(field: &sara_core::schema::FieldDef) -> String {
     match &field.field_type {
         FieldType::Enum { values } => {
             format!("{} ({})", field.display_name, values.join(", "))
@@ -190,13 +195,13 @@ impl InitSubcommand {
 
         Ok(Self {
             file: matches
-                .get_one::<PathBuf>("file")
+                .get_one::<PathBuf>(ARG_FILE)
                 .cloned()
                 .unwrap_or_default(),
-            id: matches.get_one::<String>("id").cloned(),
-            name: matches.get_one::<String>("name").cloned(),
-            description: matches.get_one::<String>("description").cloned(),
-            force: matches.get_flag("force"),
+            id: matches.get_one::<String>(FIELD_ID).cloned(),
+            name: matches.get_one::<String>(FIELD_NAME).cloned(),
+            description: matches.get_one::<String>(FIELD_DESCRIPTION).cloned(),
+            force: matches.get_flag(ARG_FORCE),
             type_config,
         })
     }
@@ -271,25 +276,8 @@ pub fn run(args: &InitArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>>
 }
 
 fn run_interactive(config: &Config) -> Result<ExitCode, Box<dyn Error>> {
-    let prefilled = PrefilledFields {
-        file: None,
-        item_type: None,
-        id: None,
-        name: None,
-        description: None,
-        refines: Vec::new(),
-        derives_from: Vec::new(),
-        satisfies: Vec::new(),
-        depends_on: Vec::new(),
-        specification: None,
-        platform: None,
-        deciders: Vec::new(),
-        justifies: Vec::new(),
-    };
-
     let mut session = InteractiveSession {
         graph: None,
-        prefilled,
         repositories: &config.repositories.paths,
         output: &config.output,
     };
@@ -321,12 +309,10 @@ fn build_type_config_from_interactive(input: &super::interactive::InteractiveInp
     for (name, field_input) in &input.type_specific {
         config = config.field(name.clone(), field_input.clone());
     }
+    for (relation, ids) in input.traceability.iter() {
+        config = config.relation(relation.as_str(), ids.to_vec());
+    }
     config
-        .relation("refines", input.traceability.refines.clone())
-        .relation("derives_from", input.traceability.derives_from.clone())
-        .relation("satisfies", input.traceability.satisfies.clone())
-        .relation("depends_on", input.traceability.depends_on.clone())
-        .relation("justifies", input.traceability.justifies.clone())
 }
 
 fn run_with_options(opts: InitOptions, config: &Config) -> Result<ExitCode, Box<dyn Error>> {

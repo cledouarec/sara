@@ -159,19 +159,21 @@ impl CoverageReport {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, Relationship, RelationshipType};
+    use crate::model::{ItemId, Relationship};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_coverage_report_complete() {
-        let sol = create_test_item("SOL-001", ItemType::SOLUTION);
+        let sol = create_test_item("SOL-001", builtin::SOLUTION);
         let uc = create_test_item_with_relationships(
             "UC-001",
-            ItemType::USE_CASE,
+            builtin::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
 
@@ -188,7 +190,7 @@ mod tests {
     #[test]
     fn test_coverage_report_incomplete() {
         // UseCase without upstream reference
-        let uc = create_test_item("UC-001", ItemType::USE_CASE);
+        let uc = create_test_item("UC-001", builtin::USE_CASE);
 
         let graph = KnowledgeGraphBuilder::new().add_item(uc).build().unwrap();
 

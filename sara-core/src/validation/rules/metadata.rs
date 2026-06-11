@@ -3,8 +3,11 @@
 use crate::config::ValidationConfig;
 use crate::error::SaraError;
 use crate::graph::KnowledgeGraph;
-use crate::model::Item;
+use crate::model::{FieldValue, Item};
 use crate::validation::rule::ValidationRule;
+
+/// Field whose text is checked for RFC2119 requirement keywords.
+const FIELD_SPECIFICATION: &str = "specification";
 
 /// RFC2119 keywords that should be present in requirement specifications.
 /// See: <https://www.ietf.org/rfc/rfc2119.txt>
@@ -26,8 +29,8 @@ const RFC2119_KEYWORDS: &[&str] = &[
 /// Validates metadata completeness for all items.
 /// Checks:
 /// - Required fields are present (id, type, name already enforced by parsing)
-/// - Specification field is present and non-empty for requirement types
-/// - Specification contains at least one RFC2119 keyword
+/// - Every field the schema marks as required carries a non-empty value
+/// - A specification text contains at least one RFC2119 keyword
 ///
 /// This rule supports pre-validation (fail-fast) since it only examines
 /// individual items without requiring graph context.
@@ -47,32 +50,50 @@ impl ValidationRule for MetadataRule {
 fn validate_item_metadata(item: &Item) -> Vec<SaraError> {
     let mut errors = Vec::new();
 
-    // Check specification requirement
-    if item.item_type.requires_specification() {
-        match item.attributes.specification() {
-            Some(spec) if spec.is_empty() => {
-                errors.push(SaraError::InvalidMetadata {
-                    file: item.source.file_path.display().to_string(),
-                    reason: format!(
-                        "{} requires a non-empty 'specification' field",
-                        item.item_type.display_name()
-                    ),
-                });
-            }
-            Some(spec) if !contains_rfc2119_keyword(spec) => {
-                errors.push(SaraError::InvalidMetadata {
-                    file: item.source.file_path.display().to_string(),
-                    reason: format!(
-                        "{} specification must contain at least one RFC2119 keyword (MUST, SHALL, SHOULD, etc.)",
-                        item.item_type.display_name()
-                    ),
-                });
-            }
-            _ => {}
+    // Every required declared field must carry a non-empty value.
+    for field in item
+        .item_type
+        .declared_fields()
+        .iter()
+        .filter(|f| f.required)
+    {
+        if item.attributes.get(&field.name).is_none_or(is_empty_value) {
+            errors.push(SaraError::InvalidMetadata {
+                file: item.source.file_path.display().to_string(),
+                reason: format!(
+                    "{} requires a non-empty '{}' field",
+                    item.item_type.display_name(),
+                    field.name
+                ),
+            });
         }
     }
 
+    // Requirement-writing quality: a specification text must state its
+    // obligation level with an RFC2119 keyword.
+    if let Some(FieldValue::Text(spec)) = item.attributes.get(FIELD_SPECIFICATION)
+        && !spec.is_empty()
+        && !contains_rfc2119_keyword(spec)
+    {
+        errors.push(SaraError::InvalidMetadata {
+            file: item.source.file_path.display().to_string(),
+            reason: format!(
+                "{} specification must contain at least one RFC2119 keyword (MUST, SHALL, SHOULD, etc.)",
+                item.item_type.display_name()
+            ),
+        });
+    }
+
     errors
+}
+
+/// Returns true when a field value carries no information.
+fn is_empty_value(value: &FieldValue) -> bool {
+    match value {
+        FieldValue::Text(s) | FieldValue::Enum(s) | FieldValue::Date(s) => s.is_empty(),
+        FieldValue::ItemRef(id) => id.as_str().is_empty(),
+        FieldValue::List(values) => values.is_empty(),
+    }
 }
 
 /// Checks if a specification text contains at least one RFC2119 keyword.
@@ -92,8 +113,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
     use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation};
+    use crate::schema::builtin;
 
     fn create_item_with_spec(id: &str, item_type: ItemType, spec: &str) -> crate::model::Item {
         let source = SourceLocation::new(PathBuf::from("/repo"), format!("{}.md", id));
@@ -105,11 +128,11 @@ mod tests {
 
         if matches!(
             item_type,
-            ItemType::SYSTEM_REQUIREMENT
-                | ItemType::SOFTWARE_REQUIREMENT
-                | ItemType::HARDWARE_REQUIREMENT
+            builtin::SYSTEM_REQUIREMENT
+                | builtin::SOFTWARE_REQUIREMENT
+                | builtin::HARDWARE_REQUIREMENT
         ) {
-            builder = builder.specification(spec);
+            builder = builder.attribute("specification", FieldValue::text(spec));
         }
 
         builder.build().unwrap()
@@ -119,7 +142,7 @@ mod tests {
     fn test_valid_metadata_with_rfc2119_keyword() {
         let item = create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             "The system SHALL respond within 100ms",
         );
         let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
@@ -131,7 +154,7 @@ mod tests {
 
     #[test]
     fn test_empty_specification_fails() {
-        let item = create_item_with_spec("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT, "");
+        let item = create_item_with_spec("SYSREQ-001", builtin::SYSTEM_REQUIREMENT, "");
         let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
 
         let rule = MetadataRule;
@@ -147,7 +170,7 @@ mod tests {
     fn test_specification_without_rfc2119_keyword_fails() {
         let item = create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             "The system responds within 100ms",
         );
         let graph = KnowledgeGraphBuilder::new().add_item(item).build().unwrap();
@@ -218,7 +241,7 @@ mod tests {
     fn test_pre_validate_valid_items() {
         let items = vec![create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             "The system SHALL respond within 100ms",
         )];
 
@@ -231,7 +254,7 @@ mod tests {
     fn test_pre_validate_empty_specification() {
         let items = vec![create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             "",
         )];
 
@@ -248,7 +271,7 @@ mod tests {
     fn test_pre_validate_missing_rfc2119_keyword() {
         let items = vec![create_item_with_spec(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             "The system responds within 100ms",
         )];
 
@@ -267,7 +290,7 @@ mod tests {
         let source = SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(source)
             .build()
@@ -286,17 +309,17 @@ mod tests {
         let items = vec![
             create_item_with_spec(
                 "SYSREQ-001",
-                ItemType::SYSTEM_REQUIREMENT,
+                builtin::SYSTEM_REQUIREMENT,
                 "The system SHALL respond within 100ms",
             ),
             create_item_with_spec(
                 "SYSREQ-002",
-                ItemType::SYSTEM_REQUIREMENT,
+                builtin::SYSTEM_REQUIREMENT,
                 "Missing keyword here", // Invalid
             ),
             create_item_with_spec(
                 "SYSREQ-003",
-                ItemType::SYSTEM_REQUIREMENT,
+                builtin::SYSTEM_REQUIREMENT,
                 "The system MUST be secure",
             ),
         ];

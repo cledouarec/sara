@@ -34,14 +34,16 @@ impl ValidationRule for OrphansRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, Relationship, RelationshipType};
+    use crate::model::{ItemId, Relationship};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_solution_not_orphan() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .build()
             .unwrap();
 
@@ -56,7 +58,7 @@ mod tests {
     #[test]
     fn test_use_case_orphan_detected() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
+            .add_item(create_test_item("UC-001", builtin::USE_CASE))
             .build()
             .unwrap();
 
@@ -66,7 +68,7 @@ mod tests {
 
         if let SaraError::OrphanItem { id, item_type, .. } = &errors[0] {
             assert_eq!(id.as_str(), "UC-001");
-            assert_eq!(*item_type, ItemType::USE_CASE);
+            assert_eq!(*item_type, builtin::USE_CASE);
         } else {
             panic!("Expected OrphanItem error");
         }
@@ -75,13 +77,13 @@ mod tests {
     #[test]
     fn test_linked_item_not_orphan() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()

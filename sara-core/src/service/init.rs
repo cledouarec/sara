@@ -431,7 +431,7 @@ fn remove_frontmatter(content: &str) -> &str {
 /// Required fields without usable input fall back to the schema placeholder
 /// (or the first allowed value for enums) so initialization always produces
 /// a buildable item; optional fields without input are simply omitted.
-fn init_field_value(field: &FieldDef, input: Option<&FieldInput>) -> Option<FieldValue> {
+pub(super) fn init_field_value(field: &FieldDef, input: Option<&FieldInput>) -> Option<FieldValue> {
     let required_fallback = || {
         field.required.then(|| {
             field
@@ -513,12 +513,14 @@ mod tests {
 
     use super::*;
 
+    use crate::schema::builtin;
+
     #[test]
     fn test_parse_item_type() {
-        assert_eq!(parse_item_type("solution"), Some(ItemType::SOLUTION));
-        assert_eq!(parse_item_type("SOL"), Some(ItemType::SOLUTION));
-        assert_eq!(parse_item_type("use_case"), Some(ItemType::USE_CASE));
-        assert_eq!(parse_item_type("UC"), Some(ItemType::USE_CASE));
+        assert_eq!(parse_item_type("solution"), Some(builtin::SOLUTION));
+        assert_eq!(parse_item_type("SOL"), Some(builtin::SOLUTION));
+        assert_eq!(parse_item_type("use_case"), Some(builtin::USE_CASE));
+        assert_eq!(parse_item_type("UC"), Some(builtin::USE_CASE));
         assert_eq!(parse_item_type("invalid"), None);
     }
 
@@ -534,7 +536,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(ItemType::SOLUTION))
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(builtin::SOLUTION))
             .with_id("SOL-001")
             .with_name("Test Solution");
 
@@ -559,7 +561,7 @@ mod tests {
         // Create existing file without frontmatter
         fs::write(&file_path, "# My Document\n\nSome content here.").unwrap();
 
-        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(ItemType::USE_CASE))
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(builtin::USE_CASE))
             .with_id("UC-001");
 
         let service = InitService::new();
@@ -584,7 +586,7 @@ mod tests {
         fs::write(&file_path, "---\nid: OLD-001\n---\n# Content").unwrap();
 
         let opts =
-            InitOptions::new(file_path, TypeConfig::new(ItemType::SOLUTION)).with_id("SOL-001");
+            InitOptions::new(file_path, TypeConfig::new(builtin::SOLUTION)).with_id("SOL-001");
 
         let service = InitService::new();
         let result = service.init(&opts);
@@ -600,7 +602,7 @@ mod tests {
         // Create existing file with frontmatter
         fs::write(&file_path, "---\nid: OLD-001\n---\n# Content").unwrap();
 
-        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(ItemType::SOLUTION))
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(builtin::SOLUTION))
             .with_id("SOL-001")
             .with_name("New Solution")
             .with_force(true);
@@ -622,7 +624,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let opts = InitOptions::new(file_path, TypeConfig::new(ItemType::SYSTEM_REQUIREMENT))
+        let opts = InitOptions::new(file_path, TypeConfig::new(builtin::SYSTEM_REQUIREMENT))
             .with_id("SYSREQ-001");
 
         let service = InitService::new();
@@ -636,7 +638,7 @@ mod tests {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
 
-        let type_config = TypeConfig::new(ItemType::SYSTEM_REQUIREMENT)
+        let type_config = TypeConfig::new(builtin::SYSTEM_REQUIREMENT)
             .text_field("specification", "The system SHALL do something");
 
         let opts = InitOptions::new(file_path, type_config).with_id("SYSREQ-001");

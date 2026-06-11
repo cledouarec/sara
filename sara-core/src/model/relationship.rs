@@ -10,40 +10,25 @@ use crate::schema::{self, RelationDef, RelationDirection};
 /// Wraps the interned snake_case id of a relation declared by the active
 /// schema (or the built-in default). Inverse, direction and primality are
 /// resolved against the schema, so relations introduced by a custom YAML
-/// schema behave exactly like the built-in ones. Constants are provided for
-/// the built-in relations; other relations are obtained through
+/// schema behave exactly like the built-in ones (handles for those live in
+/// [`crate::schema::builtin`]). Relations are obtained through
 /// [`RelationshipType::from_id`] or [`RelationshipType::all`].
 ///
-/// Equality and hashing compare the id by content, so a constant compares
-/// equal to the same relation resolved from a schema.
+/// Equality and hashing compare the id by content, so a handle built from a
+/// static id compares equal to the same relation resolved from a schema.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct RelationshipType(&'static str);
 
 impl RelationshipType {
-    /// Refinement: child refines parent (Scenario refines Use Case).
-    pub const REFINES: Self = Self("refines");
-    /// Inverse of refines: parent is refined by child.
-    pub const IS_REFINED_BY: Self = Self("is_refined_by");
-    /// Derivation: parent derives child (Scenario derives System Requirement).
-    pub const DERIVES: Self = Self("derives");
-    /// Inverse of derives: child derives from parent.
-    pub const DERIVES_FROM: Self = Self("derives_from");
-    /// Satisfaction: child satisfies parent.
-    pub const SATISFIES: Self = Self("satisfies");
-    /// Inverse of satisfies: parent is satisfied by child.
-    pub const IS_SATISFIED_BY: Self = Self("is_satisfied_by");
-    /// Dependency: an item depends on a peer of the same type.
-    pub const DEPENDS_ON: Self = Self("depends_on");
-    /// Inverse of depends_on: an item is required by a peer.
-    pub const IS_REQUIRED_BY: Self = Self("is_required_by");
-    /// Justification: an ADR justifies a design artifact.
-    pub const JUSTIFIES: Self = Self("justifies");
-    /// Inverse of justifies: a design artifact is justified by an ADR.
-    pub const IS_JUSTIFIED_BY: Self = Self("justified_by");
-    /// Supersession: a newer ADR supersedes an older ADR.
-    pub const SUPERSEDES: Self = Self("supersedes");
-    /// Inverse of supersedes: an older ADR is superseded by a newer one.
-    pub const IS_SUPERSEDED_BY: Self = Self("superseded_by");
+    /// Creates a handle from a static schema id, without resolving it.
+    ///
+    /// The id is not checked against the active schema: a handle whose id the
+    /// schema does not declare resolves to no metadata. Reserved for the
+    /// definition of well-known ids (see [`crate::schema::builtin`]); resolve
+    /// runtime ids through [`RelationshipType::from_id`].
+    pub(crate) const fn from_static(id: &'static str) -> Self {
+        Self(id)
+    }
 
     /// Returns all relations of the active schema, in catalog order.
     #[must_use]
@@ -170,18 +155,6 @@ impl Relationship {
             relationship_type,
         }
     }
-
-    /// Returns the target item ID.
-    #[must_use]
-    pub fn target(&self) -> &ItemId {
-        &self.to
-    }
-
-    /// Returns the relationship type.
-    #[must_use]
-    pub fn rel_type(&self) -> RelationshipType {
-        self.relationship_type
-    }
 }
 
 /// Valid relationship rules based on item types.
@@ -191,114 +164,6 @@ impl Relationship {
 pub struct RelationshipRules;
 
 impl RelationshipRules {
-    /// Returns the upstream relationship a type may establish and its allowed
-    /// targets.
-    ///
-    /// Built-in types have at most one upstream relation, but a custom schema
-    /// may declare several. Only the first upstream entry is returned, in
-    /// declaration order, to preserve the legacy single-relation API.
-    #[must_use]
-    pub fn valid_upstream_for(item_type: ItemType) -> Option<(RelationshipType, Vec<ItemType>)> {
-        let def = schema::item_type_def(item_type.as_str())?;
-        def.allowed_targets
-            .iter()
-            .filter_map(|t| {
-                let rel = schema::relation_def(&t.relation)?;
-                if rel.direction != RelationDirection::Upstream {
-                    return None;
-                }
-                let rel_type = RelationshipType::from_id(&t.relation)?;
-                let targets: Vec<ItemType> = t
-                    .targets
-                    .iter()
-                    .filter_map(|id| ItemType::from_id(id))
-                    .collect();
-                Some((rel_type, targets))
-            })
-            .next()
-    }
-
-    /// Returns the downstream relationship a type may receive and the source
-    /// types that may target it.
-    ///
-    /// Derived from every other type's upstream declarations: a type T is a
-    /// downstream target of type S when S declares an upstream relation
-    /// targeting T. The returned relation is the inverse of S's upstream
-    /// relation, matching the legacy single-entry API.
-    #[must_use]
-    pub fn valid_downstream_for(item_type: ItemType) -> Option<(RelationshipType, Vec<ItemType>)> {
-        let active = schema::active();
-        let to_id = item_type.as_str();
-
-        // Collect (inverse_rel, source_type) pairs grouped by inverse relation,
-        // preserving the order types are declared in the schema.
-        let mut entries: Vec<(RelationshipType, Vec<ItemType>)> = Vec::new();
-        for src_def in &active.item_types {
-            let Some(src_type) = ItemType::from_id(&src_def.id) else {
-                continue;
-            };
-            for target in &src_def.allowed_targets {
-                let Some(rel) = schema::relation_def(&target.relation) else {
-                    continue;
-                };
-                if rel.direction != RelationDirection::Upstream {
-                    continue;
-                }
-                if !target.targets.iter().any(|t| t == to_id) {
-                    continue;
-                }
-                let Some(inverse) = RelationshipType::from_id(&rel.inverse) else {
-                    continue;
-                };
-                if let Some(entry) = entries.iter_mut().find(|(r, _)| *r == inverse) {
-                    if !entry.1.contains(&src_type) {
-                        entry.1.push(src_type);
-                    }
-                } else {
-                    entries.push((inverse, vec![src_type]));
-                }
-            }
-        }
-        entries.into_iter().next()
-    }
-
-    /// Returns the peer dependency target a type may declare, if any.
-    ///
-    /// Mirrors the legacy type-level peer rule: peer relations are valid
-    /// between any two items of a peer-capable type, regardless of the
-    /// specific peer relation.
-    #[must_use]
-    pub fn valid_peer_for(item_type: ItemType) -> Option<ItemType> {
-        let def = schema::item_type_def(item_type.as_str())?;
-        def.allowed_targets
-            .iter()
-            .filter_map(|t| {
-                let rel = schema::relation_def(&t.relation)?;
-                if rel.direction != RelationDirection::Peer {
-                    return None;
-                }
-                t.targets.iter().find_map(|id| ItemType::from_id(id))
-            })
-            .next()
-    }
-
-    /// Returns the valid justification targets for ADRs.
-    ///
-    /// Derived from the ADR type's `justifies` upstream relation in the
-    /// active schema.
-    #[must_use]
-    pub fn valid_justification_targets() -> Vec<ItemType> {
-        let Some(def) = schema::item_type_def(ItemType::ARCHITECTURE_DECISION_RECORD.as_str())
-        else {
-            return Vec::new();
-        };
-        def.allowed_targets
-            .iter()
-            .filter(|t| t.relation == "justifies")
-            .flat_map(|t| t.targets.iter().filter_map(|id| ItemType::from_id(id)))
-            .collect()
-    }
-
     /// Checks if a relationship is valid between two item types.
     ///
     /// Delegates to [`crate::schema::Schema::is_valid_relationship`] on the
@@ -321,83 +186,73 @@ impl RelationshipRules {
 mod tests {
     use super::*;
 
+    use crate::schema::builtin;
+
     #[test]
     fn test_relationship_type_inverse() {
-        assert_eq!(
-            RelationshipType::REFINES.inverse(),
-            RelationshipType::IS_REFINED_BY
-        );
-        assert_eq!(
-            RelationshipType::DERIVES.inverse(),
-            RelationshipType::DERIVES_FROM
-        );
-        assert_eq!(
-            RelationshipType::SATISFIES.inverse(),
-            RelationshipType::IS_SATISFIED_BY
-        );
-        assert_eq!(
-            RelationshipType::DEPENDS_ON.inverse(),
-            RelationshipType::IS_REQUIRED_BY
-        );
+        assert_eq!(builtin::REFINES.inverse(), builtin::IS_REFINED_BY);
+        assert_eq!(builtin::DERIVES.inverse(), builtin::DERIVES_FROM);
+        assert_eq!(builtin::SATISFIES.inverse(), builtin::IS_SATISFIED_BY);
+        assert_eq!(builtin::DEPENDS_ON.inverse(), builtin::IS_REQUIRED_BY);
     }
 
     #[test]
     fn test_relationship_type_direction() {
-        assert!(RelationshipType::REFINES.is_upstream());
-        assert!(RelationshipType::DERIVES_FROM.is_upstream());
-        assert!(RelationshipType::SATISFIES.is_upstream());
+        assert!(builtin::REFINES.is_upstream());
+        assert!(builtin::DERIVES_FROM.is_upstream());
+        assert!(builtin::SATISFIES.is_upstream());
 
-        assert!(RelationshipType::IS_REFINED_BY.is_downstream());
-        assert!(RelationshipType::DERIVES.is_downstream());
-        assert!(RelationshipType::IS_SATISFIED_BY.is_downstream());
+        assert!(builtin::IS_REFINED_BY.is_downstream());
+        assert!(builtin::DERIVES.is_downstream());
+        assert!(builtin::IS_SATISFIED_BY.is_downstream());
 
-        assert!(RelationshipType::DEPENDS_ON.is_peer());
-        assert!(RelationshipType::IS_REQUIRED_BY.is_peer());
+        assert!(builtin::DEPENDS_ON.is_peer());
+        assert!(builtin::IS_REQUIRED_BY.is_peer());
     }
 
     #[test]
     fn test_valid_relationships() {
         // UseCase refines Solution
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::USE_CASE,
-            ItemType::SOLUTION,
-            RelationshipType::REFINES
+            builtin::USE_CASE,
+            builtin::SOLUTION,
+            builtin::REFINES
         ));
 
         // Scenario refines UseCase
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::SCENARIO,
-            ItemType::USE_CASE,
-            RelationshipType::REFINES
+            builtin::SCENARIO,
+            builtin::USE_CASE,
+            builtin::REFINES
         ));
 
         // SystemRequirement derives_from Scenario
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::SYSTEM_REQUIREMENT,
-            ItemType::SCENARIO,
-            RelationshipType::DERIVES_FROM
+            builtin::SYSTEM_REQUIREMENT,
+            builtin::SCENARIO,
+            builtin::DERIVES_FROM
         ));
 
         // Invalid: Solution refines nothing
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::SOLUTION,
-            ItemType::USE_CASE,
-            RelationshipType::REFINES
+            builtin::SOLUTION,
+            builtin::USE_CASE,
+            builtin::REFINES
         ));
     }
 
     #[test]
     fn test_peer_dependencies() {
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::SYSTEM_REQUIREMENT,
-            ItemType::SYSTEM_REQUIREMENT,
-            RelationshipType::DEPENDS_ON
+            builtin::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
+            builtin::DEPENDS_ON
         ));
 
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::SOLUTION,
-            ItemType::SOLUTION,
-            RelationshipType::DEPENDS_ON
+            builtin::SOLUTION,
+            builtin::SOLUTION,
+            builtin::DEPENDS_ON
         ));
     }
 
@@ -405,26 +260,26 @@ mod tests {
     fn test_adr_justifies_relationship() {
         // ADR can justify design artifacts
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::SYSTEM_ARCHITECTURE,
-            RelationshipType::JUSTIFIES
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::SYSTEM_ARCHITECTURE,
+            builtin::JUSTIFIES
         ));
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::SOFTWARE_DETAILED_DESIGN,
-            RelationshipType::JUSTIFIES
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::SOFTWARE_DETAILED_DESIGN,
+            builtin::JUSTIFIES
         ));
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::HARDWARE_DETAILED_DESIGN,
-            RelationshipType::JUSTIFIES
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::HARDWARE_DETAILED_DESIGN,
+            builtin::JUSTIFIES
         ));
 
         // ADR cannot justify non-design artifacts
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::SYSTEM_REQUIREMENT,
-            RelationshipType::JUSTIFIES
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::SYSTEM_REQUIREMENT,
+            builtin::JUSTIFIES
         ));
     }
 
@@ -432,32 +287,32 @@ mod tests {
     fn test_adr_supersession_relationship() {
         // ADR can supersede other ADRs (peer relationship)
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            RelationshipType::SUPERSEDES
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::SUPERSEDES
         ));
         assert!(RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            RelationshipType::IS_SUPERSEDED_BY
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::IS_SUPERSEDED_BY
         ));
 
         // ADR cannot supersede non-ADR items
         assert!(!RelationshipRules::is_valid_relationship(
-            ItemType::ARCHITECTURE_DECISION_RECORD,
-            ItemType::SYSTEM_ARCHITECTURE,
-            RelationshipType::SUPERSEDES
+            builtin::ARCHITECTURE_DECISION_RECORD,
+            builtin::SYSTEM_ARCHITECTURE,
+            builtin::SUPERSEDES
         ));
     }
 
     #[test]
     fn test_adr_relationship_direction() {
         // Justifies is upstream
-        assert!(RelationshipType::JUSTIFIES.is_upstream());
+        assert!(builtin::JUSTIFIES.is_upstream());
         // IsJustifiedBy is downstream
-        assert!(RelationshipType::IS_JUSTIFIED_BY.is_downstream());
+        assert!(builtin::IS_JUSTIFIED_BY.is_downstream());
         // Supersedes/IsSupersededBy are peer
-        assert!(RelationshipType::SUPERSEDES.is_peer());
-        assert!(RelationshipType::IS_SUPERSEDED_BY.is_peer());
+        assert!(builtin::SUPERSEDES.is_peer());
+        assert!(builtin::IS_SUPERSEDED_BY.is_peer());
     }
 }

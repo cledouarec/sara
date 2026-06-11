@@ -46,7 +46,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::model::{ItemBuilder, ItemId, ItemType, SourceLocation};
+
+    use crate::model::{ItemBuilder, ItemId, SourceLocation};
+    use crate::schema::builtin;
 
     fn test_source() -> SourceLocation {
         SourceLocation {
@@ -60,7 +62,7 @@ mod tests {
     fn test_generate_document_markdown() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()
@@ -76,7 +78,7 @@ mod tests {
     fn test_generate_metadata_markdown() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()

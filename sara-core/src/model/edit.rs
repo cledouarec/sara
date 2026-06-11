@@ -4,45 +4,9 @@
 
 use std::path::PathBuf;
 
-use super::FieldName;
+use indexmap::IndexMap;
 
-/// Fields to update via CLI flags (non-interactive mode).
-///
-/// Used for non-interactive editing where the user specifies which
-/// fields to update via command-line flags (FR-057, FR-058).
-#[derive(Debug, Default, Clone)]
-pub struct EditUpdates {
-    /// New name for the item.
-    pub name: Option<String>,
-    /// New description for the item.
-    pub description: Option<String>,
-    /// New refines links (for UseCase, Scenario).
-    pub refines: Option<Vec<String>>,
-    /// New derives_from links (for requirements).
-    pub derives_from: Option<Vec<String>>,
-    /// New satisfies links (for architectures, designs).
-    pub satisfies: Option<Vec<String>>,
-    /// New depends_on links (peer dependencies for requirements).
-    pub depends_on: Option<Vec<String>>,
-    /// New specification (for requirement types).
-    pub specification: Option<String>,
-    /// New platform (for SystemArchitecture).
-    pub platform: Option<String>,
-}
-
-impl EditUpdates {
-    /// Returns true if any field is set (triggers non-interactive mode).
-    pub fn has_updates(&self) -> bool {
-        self.name.is_some()
-            || self.description.is_some()
-            || self.refines.is_some()
-            || self.derives_from.is_some()
-            || self.satisfies.is_some()
-            || self.depends_on.is_some()
-            || self.specification.is_some()
-            || self.platform.is_some()
-    }
-}
+use super::{Item, RelationshipType};
 
 /// Summary of changes made during an edit operation.
 #[derive(Debug, Clone)]
@@ -70,8 +34,8 @@ impl EditSummary {
 /// A single field change in an edit operation.
 #[derive(Debug, Clone)]
 pub struct FieldChange {
-    /// The field that was changed.
-    pub field: FieldName,
+    /// Display label of the changed field or relation.
+    pub field: String,
     /// Previous value (for display in diff).
     pub old_value: String,
     /// New value (for display in diff).
@@ -81,12 +45,12 @@ pub struct FieldChange {
 impl FieldChange {
     /// Creates a new field change record.
     pub fn new(
-        field: FieldName,
+        field: impl Into<String>,
         old_value: impl Into<String>,
         new_value: impl Into<String>,
     ) -> Self {
         Self {
-            field,
+            field: field.into(),
             old_value: old_value.into(),
             new_value: new_value.into(),
         }
@@ -98,51 +62,62 @@ impl FieldChange {
     }
 }
 
-/// Traceability links as string IDs (for user input and editing).
+/// Relation targets keyed by relation, as plain ID strings.
 ///
-/// This struct represents traceability links using plain strings,
-/// suitable for CLI input, interactive prompts, and serialization.
+/// Suitable for CLI input, interactive prompts, and frontmatter rebuilding.
+/// Entries keep their insertion order; [`Self::from_item`] inserts them in
+/// the declaration order of the active schema, so downstream output remains
+/// stable.
 #[derive(Debug, Default, Clone)]
 pub struct TraceabilityLinks {
-    /// Items this item refines (for UseCase, Scenario).
-    pub refines: Vec<String>,
-    /// Items this item derives from (for requirements).
-    pub derives_from: Vec<String>,
-    /// Items this item satisfies (for architectures, designs).
-    pub satisfies: Vec<String>,
-    /// Peer dependencies (for requirement types).
-    pub depends_on: Vec<String>,
-    /// Design artifacts this ADR justifies (for ArchitectureDecisionRecord).
-    pub justifies: Vec<String>,
+    links: IndexMap<RelationshipType, Vec<String>>,
 }
 
 impl TraceabilityLinks {
-    /// Returns true if all traceability fields are empty.
-    pub fn is_empty(&self) -> bool {
-        self.refines.is_empty()
-            && self.derives_from.is_empty()
-            && self.satisfies.is_empty()
-            && self.depends_on.is_empty()
-            && self.justifies.is_empty()
+    /// Creates an empty set of links.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
     }
 
-    /// Creates traceability links from an Item's relationships and attributes.
-    pub fn from_item(item: &super::Item) -> Self {
-        use super::RelationshipType;
+    /// Returns the target IDs recorded for a relation.
+    #[must_use]
+    pub fn get(&self, relation: RelationshipType) -> &[String] {
+        self.links.get(&relation).map_or(&[], Vec::as_slice)
+    }
 
-        let collect_ids = |rel_type: RelationshipType| -> Vec<String> {
-            item.relationship_ids(rel_type)
-                .map(|id| id.as_str().to_string())
-                .collect()
-        };
+    /// Replaces the target IDs of a relation.
+    pub fn set(&mut self, relation: RelationshipType, ids: Vec<String>) {
+        self.links.insert(relation, ids);
+    }
 
-        Self {
-            refines: collect_ids(RelationshipType::REFINES),
-            derives_from: collect_ids(RelationshipType::DERIVES_FROM),
-            satisfies: collect_ids(RelationshipType::SATISFIES),
-            depends_on: collect_ids(RelationshipType::DEPENDS_ON),
-            justifies: collect_ids(RelationshipType::JUSTIFIES),
+    /// Appends target IDs to a relation, keeping existing ones.
+    pub fn extend(&mut self, relation: RelationshipType, ids: impl IntoIterator<Item = String>) {
+        self.links.entry(relation).or_default().extend(ids);
+    }
+
+    /// Returns `(relation, target IDs)` pairs in insertion order.
+    pub fn iter(&self) -> impl Iterator<Item = (RelationshipType, &[String])> {
+        self.links.iter().map(|(rel, ids)| (*rel, ids.as_slice()))
+    }
+
+    /// Returns true if no relation has any target.
+    pub fn is_empty(&self) -> bool {
+        self.links.values().all(Vec::is_empty)
+    }
+
+    /// Collects the item's targets for every relation its type declares.
+    pub fn from_item(item: &Item) -> Self {
+        let mut links = Self::new();
+        for relation in item.item_type.declared_relations() {
+            links.set(
+                relation,
+                item.relationship_ids(relation)
+                    .map(|id| id.as_str().to_string())
+                    .collect(),
+            );
         }
+        links
     }
 }
 
@@ -150,36 +125,17 @@ impl TraceabilityLinks {
 mod tests {
     use super::*;
 
-    #[test]
-    fn test_edit_updates_has_updates_empty() {
-        let updates = EditUpdates::default();
-        assert!(!updates.has_updates());
-    }
+    use crate::schema::builtin;
 
-    #[test]
-    fn test_edit_updates_has_updates_name() {
-        let updates = EditUpdates {
-            name: Some("New Name".to_string()),
-            ..Default::default()
-        };
-        assert!(updates.has_updates());
-    }
-
-    #[test]
-    fn test_edit_updates_has_updates_traceability() {
-        let updates = EditUpdates {
-            derives_from: Some(vec!["SCEN-001".to_string()]),
-            ..Default::default()
-        };
-        assert!(updates.has_updates());
-    }
+    use crate::model::{ItemId, Relationship};
+    use crate::test_utils::create_test_item_with_relationships;
 
     #[test]
     fn test_field_change_is_changed() {
-        let changed = FieldChange::new(FieldName::Name, "Old", "New");
+        let changed = FieldChange::new("Name", "Old", "New");
         assert!(changed.is_changed());
 
-        let unchanged = FieldChange::new(FieldName::Name, "Same", "Same");
+        let unchanged = FieldChange::new("Name", "Same", "Same");
         assert!(!unchanged.is_changed());
     }
 
@@ -189,8 +145,8 @@ mod tests {
             item_id: "SREQ-001".to_string(),
             file_path: PathBuf::from("test.md"),
             changes: vec![
-                FieldChange::new(FieldName::Name, "Old", "New"),
-                FieldChange::new(FieldName::Description, "Same", "Same"),
+                FieldChange::new("Name", "Old", "New"),
+                FieldChange::new("Description", "Same", "Same"),
             ],
         };
         assert!(summary.has_changes());
@@ -202,9 +158,36 @@ mod tests {
         let summary = EditSummary {
             item_id: "SREQ-001".to_string(),
             file_path: PathBuf::from("test.md"),
-            changes: vec![FieldChange::new(FieldName::Name, "Same", "Same")],
+            changes: vec![FieldChange::new("Name", "Same", "Same")],
         };
         assert!(!summary.has_changes());
         assert_eq!(summary.actual_changes().len(), 0);
+    }
+
+    #[test]
+    fn test_traceability_links_set_get() {
+        let mut links = TraceabilityLinks::new();
+        assert!(links.is_empty());
+        assert!(links.get(builtin::REFINES).is_empty());
+
+        links.set(builtin::REFINES, vec!["SOL-001".to_string()]);
+        links.extend(builtin::REFINES, ["SOL-002".to_string()]);
+        assert!(!links.is_empty());
+        assert_eq!(links.get(builtin::REFINES), ["SOL-001", "SOL-002"]);
+    }
+
+    #[test]
+    fn test_traceability_links_from_item() {
+        let item = create_test_item_with_relationships(
+            "UC-001",
+            builtin::USE_CASE,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                builtin::REFINES,
+            )],
+        );
+
+        let links = TraceabilityLinks::from_item(&item);
+        assert_eq!(links.get(builtin::REFINES), ["SOL-001"]);
     }
 }
