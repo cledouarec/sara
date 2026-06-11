@@ -6,7 +6,6 @@
 //!
 //! # Error Categories
 //!
-//! - **File Operations**: Reading and writing files
 //! - **Parsing**: Markdown and YAML frontmatter parsing
 //! - **Validation**: Graph structure and item validation
 //! - **Configuration**: Loading and validating configuration
@@ -59,8 +58,11 @@ use crate::model::{ItemId, ItemType, RelationshipType};
 /// use std::path::PathBuf;
 ///
 /// # fn example() -> Result<(), SaraError> {
-/// // File not found
-/// let err = SaraError::FileNotFound { path: PathBuf::from("missing.md") };
+/// // Missing item with fuzzy-match suggestions
+/// let err = SaraError::ItemNotFound {
+///     id: "SOL-999".to_string(),
+///     suggestions: vec!["SOL-001".to_string()],
+/// };
 ///
 /// // Parse error with context
 /// let err = SaraError::InvalidFrontmatter {
@@ -73,36 +75,6 @@ use crate::model::{ItemId, ItemType, RelationshipType};
 #[derive(Debug, Error, serde::Serialize)]
 #[serde(tag = "error_type", content = "details")]
 pub enum SaraError {
-    // ==================== File Operations ====================
-    /// Failed to read a file from the filesystem.
-    #[error("Failed to read file '{path}': {source}")]
-    FileRead {
-        /// Path to the file that couldn't be read.
-        path: PathBuf,
-        /// Underlying I/O error.
-        #[serde(skip)]
-        #[source]
-        source: std::io::Error,
-    },
-
-    /// File was not found at the specified path.
-    #[error("File not found: {path}")]
-    FileNotFound {
-        /// Path to the missing file.
-        path: PathBuf,
-    },
-
-    /// Failed to write a file to the filesystem.
-    #[error("Failed to write file '{path}': {source}")]
-    FileWrite {
-        /// Path to the file that couldn't be written.
-        path: PathBuf,
-        /// Underlying I/O error.
-        #[serde(skip)]
-        #[source]
-        source: std::io::Error,
-    },
-
     // ==================== Parsing ====================
     /// Invalid frontmatter in a Markdown file.
     #[error("Invalid frontmatter in {file}: {reason}")]
@@ -127,15 +99,6 @@ pub enum SaraError {
         file: PathBuf,
         /// YAML parsing error details.
         reason: String,
-    },
-
-    /// Invalid item type value in frontmatter.
-    #[error("Invalid item type '{value}' in {file}")]
-    InvalidItemType {
-        /// Path to the file with the invalid type.
-        file: PathBuf,
-        /// The invalid type value encountered.
-        value: String,
     },
 
     /// Missing required field in frontmatter.
@@ -213,15 +176,6 @@ pub enum SaraError {
         reason: String,
     },
 
-    /// Unrecognized field in frontmatter.
-    #[error("Unrecognized field '{field}' in {file}")]
-    UnrecognizedField {
-        /// The unrecognized field name.
-        field: String,
-        /// File containing the field.
-        file: String,
-    },
-
     /// Redundant relationship declared on both sides.
     #[error(
         "Redundant relationship: {from_id} and {to_id} both declare the relationship (only one is needed)"
@@ -252,13 +206,6 @@ pub enum SaraError {
         reason: String,
     },
 
-    /// Repository path does not exist or is not a directory.
-    #[error("Repository not found: {path}")]
-    RepositoryNotFound {
-        /// Path that was expected to be a repository.
-        path: PathBuf,
-    },
-
     // ==================== Queries ====================
     /// No parent items exist for the given item type.
     #[error(
@@ -280,41 +227,7 @@ pub enum SaraError {
         suggestions: Vec<String>,
     },
 
-    /// Query syntax or parameters are invalid.
-    #[error("Invalid query: {reason}")]
-    InvalidQuery {
-        /// Description of what's wrong with the query.
-        reason: String,
-    },
-
     // ==================== Git Operations ====================
-    /// Failed to open a Git repository.
-    #[error("Failed to open repository {path}: {reason}")]
-    GitOpenRepository {
-        /// Path to the repository.
-        path: PathBuf,
-        /// Underlying git error message.
-        reason: String,
-    },
-
-    /// Git reference (branch, tag, commit) is invalid.
-    #[error("Invalid Git reference: {reference}")]
-    InvalidGitReference {
-        /// The invalid reference string.
-        reference: String,
-    },
-
-    /// Failed to read a file from a Git reference.
-    #[error("Failed to read file {path} at {reference}: {reason}")]
-    GitReadFile {
-        /// Path to the file in the repository.
-        path: PathBuf,
-        /// Git reference (commit, branch, tag).
-        reference: String,
-        /// Error details.
-        reason: String,
-    },
-
     /// Generic Git operation error.
     #[error("Git operation failed: {0}")]
     Git(String),
@@ -325,17 +238,6 @@ pub enum SaraError {
         "Interactive mode requires a terminal. Use modification flags (--name, --description, etc.) to edit non-interactively."
     )]
     NonInteractiveTerminal,
-
-    /// User cancelled the operation.
-    #[error("User cancelled")]
-    Cancelled,
-
-    /// Traceability link points to non-existent item.
-    #[error("Invalid traceability link: {id} does not exist")]
-    InvalidLink {
-        /// The invalid item ID.
-        id: String,
-    },
 
     /// Edit operation failed with custom error message.
     #[error("Edit failed: {0}")]

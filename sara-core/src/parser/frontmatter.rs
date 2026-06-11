@@ -4,6 +4,20 @@ use std::path::Path;
 
 use crate::error::SaraError;
 
+/// Line that opens and closes a frontmatter block.
+const DELIMITER: &str = "---";
+
+/// Returns the index of the closing delimiter line, searching after the
+/// opening delimiter at index 0. Returns `None` when the block is unclosed.
+fn closing_delimiter_index(lines: &[&str]) -> Option<usize> {
+    lines
+        .iter()
+        .enumerate()
+        .skip(1)
+        .find(|(_, line)| line.trim() == DELIMITER)
+        .map(|(i, _)| i)
+}
+
 /// Extracts YAML frontmatter from Markdown content.
 ///
 /// Frontmatter must be at the start of the file, enclosed by `---` delimiters.
@@ -21,43 +35,23 @@ use crate::error::SaraError;
 pub fn extract_frontmatter(content: &str, file: &Path) -> Result<String, SaraError> {
     let lines: Vec<&str> = content.lines().collect();
 
-    if lines.is_empty() {
+    if lines.first().map(|line| line.trim()) != Some(DELIMITER) {
         return Err(SaraError::MissingFrontmatter {
             file: file.to_path_buf(),
         });
     }
 
-    // Check for opening delimiter
-    if lines[0].trim() != "---" {
-        return Err(SaraError::MissingFrontmatter {
-            file: file.to_path_buf(),
-        });
-    }
-
-    // Find closing delimiter
-    let mut end_idx = None;
-    for (i, line) in lines.iter().enumerate().skip(1) {
-        if line.trim() == "---" {
-            end_idx = Some(i);
-            break;
-        }
-    }
-
-    let end_idx = end_idx.ok_or_else(|| SaraError::InvalidFrontmatter {
+    let end_idx = closing_delimiter_index(&lines).ok_or_else(|| SaraError::InvalidFrontmatter {
         file: file.to_path_buf(),
         reason: "Missing closing `---` delimiter".to_string(),
     })?;
 
-    // Extract YAML content (lines between delimiters)
-    let yaml_lines: Vec<&str> = lines[1..end_idx].to_vec();
-    let yaml = yaml_lines.join("\n");
-
-    Ok(yaml)
+    Ok(lines[1..end_idx].join("\n"))
 }
 
 /// Checks if content has frontmatter (starts with `---`).
 pub fn has_frontmatter(content: &str) -> bool {
-    content.trim_start().starts_with("---")
+    content.trim_start().starts_with(DELIMITER)
 }
 
 /// Extracts just the body content after the frontmatter (FR-064).
@@ -67,25 +61,15 @@ pub fn has_frontmatter(content: &str) -> bool {
 pub fn extract_body(content: &str) -> String {
     let lines: Vec<&str> = content.lines().collect();
 
-    if lines.is_empty() || lines[0].trim() != "---" {
-        // No frontmatter, return original content
+    if lines.first().map(|line| line.trim()) != Some(DELIMITER) {
         return content.to_string();
     }
 
-    // Find closing delimiter
-    for (i, line) in lines.iter().enumerate().skip(1) {
-        if line.trim() == "---" {
-            // Return everything after the closing delimiter
-            if i + 1 < lines.len() {
-                return lines[i + 1..].join("\n");
-            } else {
-                return String::new();
-            }
-        }
+    match closing_delimiter_index(&lines) {
+        Some(end_idx) => lines[end_idx + 1..].join("\n"),
+        // No closing delimiter found, return original
+        None => content.to_string(),
     }
-
-    // No closing delimiter found, return original
-    content.to_string()
 }
 
 /// Updates the YAML frontmatter in content while preserving the body (FR-064).

@@ -330,16 +330,6 @@ impl ItemAttributes {
         Self::default()
     }
 
-    /// Creates default attributes for the given item type.
-    ///
-    /// In the map representation, "default" means an empty field set; the
-    /// builder and parsers populate the required entries as they construct
-    /// the item.
-    #[must_use]
-    pub fn for_type(_item_type: ItemType) -> Self {
-        Self::default()
-    }
-
     /// Returns the value for a field, if present.
     #[must_use]
     pub fn get(&self, name: &str) -> Option<&FieldValue> {
@@ -411,14 +401,6 @@ impl Item {
             .iter()
             .filter(move |r| r.relationship_type == rel_type)
             .map(|r| &r.to)
-    }
-
-    /// Returns true if this item has any relationships of the given type.
-    #[must_use]
-    pub fn has_relationship_type(&self, rel_type: RelationshipType) -> bool {
-        self.relationships
-            .iter()
-            .any(|r| r.relationship_type == rel_type)
     }
 
     /// Returns true if this item has any upstream relationships.
