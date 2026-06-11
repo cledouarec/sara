@@ -19,7 +19,9 @@ use tera::{Context, Tera};
 
 use crate::config::TemplatesConfig;
 use crate::error::SaraError;
-use crate::model::{FieldName, FieldValue, Item, RelationshipType};
+use crate::model::{
+    FIELD_DESCRIPTION, FIELD_ID, FIELD_NAME, FIELD_TYPE, FieldValue, Item, RelationshipType,
+};
 use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
 /// Tera registration name of the generic frontmatter partial.
@@ -322,11 +324,11 @@ fn build_context(item: &Item) -> Context {
     let mut context = Context::new();
     let type_id = item.item_type.as_str();
 
-    context.insert(FieldName::Id.as_str(), item.id.as_str());
-    context.insert(FieldName::Type.as_str(), type_id);
-    context.insert(FieldName::Name.as_str(), &escape_yaml_string(&item.name));
+    context.insert(FIELD_ID, item.id.as_str());
+    context.insert(FIELD_TYPE, type_id);
+    context.insert(FIELD_NAME, &escape_yaml_string(&item.name));
     if let Some(ref desc) = item.description {
-        context.insert(FieldName::Description.as_str(), &escape_yaml_string(desc));
+        context.insert(FIELD_DESCRIPTION, &escape_yaml_string(desc));
     }
 
     let Some(def) = schema::item_type_def(type_id) else {
@@ -443,8 +445,10 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
     use crate::model::SourceLocation;
-    use crate::model::{AdrStatus, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType};
+    use crate::model::{FieldValue, ItemBuilder, ItemId, Relationship};
+    use crate::schema::builtin;
 
     fn test_source() -> SourceLocation {
         SourceLocation {
@@ -458,7 +462,7 @@ mod tests {
     fn test_generate_document_solution() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()
@@ -475,12 +479,12 @@ mod tests {
     fn test_generate_document_use_case_with_refines() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("UC-001"))
-            .item_type(ItemType::USE_CASE)
+            .item_type(builtin::USE_CASE)
             .name("Test Use Case")
             .source(test_source())
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )])
             .build()
             .unwrap();
@@ -497,13 +501,13 @@ mod tests {
     fn test_generate_document_system_architecture_with_platform() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSARCH-001"))
-            .item_type(ItemType::SYSTEM_ARCHITECTURE)
+            .item_type(builtin::SYSTEM_ARCHITECTURE)
             .name("Web Platform Architecture")
             .source(test_source())
-            .platform("AWS Lambda")
+            .attribute("platform", FieldValue::text("AWS Lambda"))
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::SATISFIES,
+                builtin::SATISFIES,
             )])
             .build()
             .unwrap();
@@ -521,15 +525,18 @@ mod tests {
     fn test_generate_document_adr() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("ADR-001"))
-            .item_type(ItemType::ARCHITECTURE_DECISION_RECORD)
+            .item_type(builtin::ARCHITECTURE_DECISION_RECORD)
             .name("Use Microservices Architecture")
             .description("Decision to adopt microservices")
             .source(test_source())
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Alice Smith".to_string(), "Bob Jones".to_string()])
+            .attribute("status", FieldValue::Enum("proposed".to_string()))
+            .attribute(
+                "deciders",
+                FieldValue::text_list(["Alice Smith", "Bob Jones"]),
+            )
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SYSARCH-001"),
-                RelationshipType::JUSTIFIES,
+                builtin::JUSTIFIES,
             )])
             .build()
             .unwrap();
@@ -554,7 +561,7 @@ mod tests {
     fn test_generate_frontmatter_solution() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(test_source())
             .build()
@@ -574,13 +581,16 @@ mod tests {
     fn test_generate_document_system_requirement() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-001"))
-            .item_type(ItemType::SYSTEM_REQUIREMENT)
+            .item_type(builtin::SYSTEM_REQUIREMENT)
             .name("Performance Requirement")
             .source(test_source())
-            .specification("The system SHALL respond within 200ms.")
+            .attribute(
+                "specification",
+                FieldValue::text("The system SHALL respond within 200ms."),
+            )
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-001"),
-                RelationshipType::DERIVES_FROM,
+                builtin::DERIVES_FROM,
             )])
             .build()
             .unwrap();
@@ -598,15 +608,14 @@ mod tests {
     fn test_frontmatter_entry_order_matches_legacy_layout() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-002"))
-            .item_type(ItemType::SYSTEM_REQUIREMENT)
+            .item_type(builtin::SYSTEM_REQUIREMENT)
             .name("Ordered")
             .source(test_source())
-            .specification("Spec.")
-            .depends_on(ItemId::new_unchecked("SYSREQ-001"))
-            .relationships(vec![Relationship::new(
-                ItemId::new_unchecked("SCEN-001"),
-                RelationshipType::DERIVES_FROM,
-            )])
+            .attribute("specification", FieldValue::text("Spec."))
+            .relationships(vec![
+                Relationship::new(ItemId::new_unchecked("SYSREQ-001"), builtin::DEPENDS_ON),
+                Relationship::new(ItemId::new_unchecked("SCEN-001"), builtin::DERIVES_FROM),
+            ])
             .build()
             .unwrap();
 
@@ -622,10 +631,10 @@ mod tests {
     fn test_generic_body_renders_declared_text_fields() {
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-003"))
-            .item_type(ItemType::SYSTEM_REQUIREMENT)
+            .item_type(builtin::SYSTEM_REQUIREMENT)
             .name("Fallback")
             .source(test_source())
-            .specification("Spec.")
+            .attribute("specification", FieldValue::text("Spec."))
             .build()
             .unwrap();
 

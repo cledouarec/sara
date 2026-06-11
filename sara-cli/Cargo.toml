@@ -18,6 +18,7 @@ sara-core = { path = "../sara-core", version = "0.8.1" }
 clap.workspace = true
 colored.workspace = true
 console.workspace = true
+indexmap.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 serde.workspace = true

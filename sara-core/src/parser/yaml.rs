@@ -2,7 +2,8 @@
 //!
 //! Provides the input adapter for YAML frontmatter. Deserializes raw YAML
 //! strings into `RawFrontmatter` and converts them to core model types
-//! (`Relationship`, `ItemId`, etc.).
+//! (`Relationship`, `ItemId`, etc.) by resolving every field and relation
+//! name against the active schema.
 
 use std::path::Path;
 
@@ -15,8 +16,16 @@ use crate::schema::{self, FieldDef, FieldType};
 
 /// Raw frontmatter structure for deserialization.
 ///
-/// Represents the YAML frontmatter as it appears in Markdown files.
-/// All relationship fields accept both single values and arrays for flexibility.
+/// Represents the YAML frontmatter as it appears in Markdown files. Only the
+/// core identity fields have a dedicated member; every schema-declared field
+/// or relation is captured by name in [`Self::extra`] and resolved against
+/// the active schema, so custom types and relations parse exactly like the
+/// built-in ones.
+///
+/// The serde member names must mirror the canonical core field names
+/// (`crate::model::{FIELD_ID, FIELD_TYPE, FIELD_NAME, FIELD_DESCRIPTION}`) —
+/// serde attributes cannot reference constants, so a guard test pins the
+/// correspondence.
 #[derive(Debug, Clone, Deserialize)]
 pub struct RawFrontmatter {
     /// Unique identifier (required).
@@ -33,171 +42,38 @@ pub struct RawFrontmatter {
     #[serde(default)]
     pub description: Option<String>,
 
-    // Upstream references (toward Solution)
-    /// Items this item refines (for UseCase, Scenario).
-    #[serde(default)]
-    pub refines: Vec<String>,
-
-    /// Items this item derives from (for SystemRequirement, HW/SW Requirement).
-    #[serde(default)]
-    pub derives_from: Vec<String>,
-
-    /// Items this item satisfies (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default)]
-    pub satisfies: Vec<String>,
-
-    // Downstream references (toward Detailed Designs)
-    /// Items that refine this item (for Solution, UseCase).
-    #[serde(default)]
-    pub is_refined_by: Vec<String>,
-
-    /// Items derived from this item (for Scenario, SystemArchitecture).
-    #[serde(default)]
-    pub derives: Vec<String>,
-
-    /// Items that satisfy this item (for SystemRequirement, HW/SW Requirement).
-    #[serde(default)]
-    pub is_satisfied_by: Vec<String>,
-
-    // Type-specific attributes
-    /// Specification statement (required for requirement types).
-    #[serde(default)]
-    pub specification: Option<String>,
-
-    /// Peer dependencies (for requirement types).
-    #[serde(default)]
-    pub depends_on: Vec<String>,
-
-    /// Target platform (for SystemArchitecture).
-    #[serde(default)]
-    pub platform: Option<String>,
-
-    /// ADR links (for SystemArchitecture, HW/SW DetailedDesign).
-    #[serde(default)]
-    pub justified_by: Option<Vec<String>>,
-
-    /// ADR lifecycle status (required for ADR items).
-    #[serde(default)]
-    pub status: Option<String>,
-
-    /// ADR deciders (required for ADR items).
-    #[serde(default)]
-    pub deciders: Vec<String>,
-
-    /// Design artifacts this ADR justifies (for ADR items).
-    #[serde(default)]
-    pub justifies: Vec<String>,
-
-    /// Older ADRs this decision supersedes (for ADR items).
-    #[serde(default)]
-    pub supersedes: Vec<String>,
-
-    /// Newer ADR that supersedes this one.
-    #[serde(default)]
-    pub superseded_by: Option<String>,
-
-    /// Remaining frontmatter entries, keyed by field name.
-    ///
-    /// Captures the values of fields declared by a custom schema that have no
-    /// dedicated struct field above; read via [`Self::declared_field_value`].
+    /// Remaining frontmatter entries, keyed by field or relation name.
     #[serde(flatten)]
     pub extra: IndexMap<String, serde_yaml::Value>,
-}
-
-/// Extends a relationship vector with relationships built from a slice of ID strings.
-fn extend_rels(rels: &mut Vec<Relationship>, ids: &[String], rel_type: RelationshipType) {
-    rels.extend(
-        ids.iter()
-            .map(|id| Relationship::new(ItemId::new_unchecked(id), rel_type)),
-    );
 }
 
 impl RawFrontmatter {
     /// Returns the value of a schema-declared field as a typed [`FieldValue`].
     ///
-    /// Fields with a dedicated struct member (`specification`, `platform`,
-    /// `status`, `deciders`, `depends_on`, `supersedes`) are read from it;
-    /// any other declared field is read from the flattened remainder of the
-    /// frontmatter. Absent fields and empty lists yield `Ok(None)`.
+    /// Absent fields and empty lists yield `Ok(None)`.
     ///
     /// # Errors
     ///
     /// Returns a human-readable reason when the value does not match the
     /// declared type, e.g. an enum value outside the allowed set.
     pub fn declared_field_value(&self, field: &FieldDef) -> Result<Option<FieldValue>, String> {
-        match field.name.as_str() {
-            "specification" => Ok(self
-                .specification
-                .as_ref()
-                .map(|s| FieldValue::Text(s.clone()))),
-            "platform" => Ok(self.platform.as_ref().map(|s| FieldValue::Text(s.clone()))),
-            "status" => self
-                .status
-                .as_ref()
-                .map(|s| {
-                    field_value_from_yaml(&serde_yaml::Value::String(s.clone()), &field.field_type)
-                })
-                .transpose()
-                .map(Option::flatten),
-            "deciders" => Ok(non_empty_list(
-                self.deciders.iter().map(|s| FieldValue::Text(s.clone())),
-            )),
-            _ => self
-                .extra
-                .get(&field.name)
-                .map(|value| field_value_from_yaml(value, &field.field_type))
-                .transpose()
-                .map(Option::flatten),
-        }
+        self.extra
+            .get(&field.name)
+            .map(|value| field_value_from_yaml(value, &field.field_type))
+            .transpose()
+            .map(Option::flatten)
     }
 
-    /// Converts all relationship fields to a Vec of Relationships.
+    /// Converts all relation entries to a Vec of Relationships.
+    ///
+    /// Each relation of the active schema is read from the frontmatter entry
+    /// carrying its id; both a single id string and a sequence of ids are
+    /// accepted. Entries that match no relation of the schema are ignored.
     #[must_use]
     pub fn to_relationships(&self) -> Vec<Relationship> {
         let mut rels = Vec::new();
 
-        // Upstream relationships
-        extend_rels(&mut rels, &self.refines, RelationshipType::REFINES);
-        extend_rels(
-            &mut rels,
-            &self.derives_from,
-            RelationshipType::DERIVES_FROM,
-        );
-        extend_rels(&mut rels, &self.satisfies, RelationshipType::SATISFIES);
-        extend_rels(&mut rels, &self.justifies, RelationshipType::JUSTIFIES);
-
-        // Downstream relationships
-        extend_rels(
-            &mut rels,
-            &self.is_refined_by,
-            RelationshipType::IS_REFINED_BY,
-        );
-        extend_rels(&mut rels, &self.derives, RelationshipType::DERIVES);
-        extend_rels(
-            &mut rels,
-            &self.is_satisfied_by,
-            RelationshipType::IS_SATISFIED_BY,
-        );
-        if let Some(justified_by) = &self.justified_by {
-            extend_rels(&mut rels, justified_by, RelationshipType::IS_JUSTIFIED_BY);
-        }
-
-        // Peer relationships
-        extend_rels(&mut rels, &self.depends_on, RelationshipType::DEPENDS_ON);
-        extend_rels(&mut rels, &self.supersedes, RelationshipType::SUPERSEDES);
-        if let Some(id) = &self.superseded_by {
-            rels.push(Relationship::new(
-                ItemId::new_unchecked(id),
-                RelationshipType::IS_SUPERSEDED_BY,
-            ));
-        }
-
-        // Relations declared only by a custom schema have no dedicated struct
-        // field; read them from the flattened remainder.
         for def in &schema::active().relations {
-            if TYPED_RELATION_IDS.contains(&def.id.as_str()) {
-                continue;
-            }
             let Some(value) = self.extra.get(&def.id) else {
                 continue;
             };
@@ -221,22 +97,6 @@ impl RawFrontmatter {
         rels
     }
 }
-
-/// Relation ids carried by a dedicated [`RawFrontmatter`] struct field.
-const TYPED_RELATION_IDS: &[&str] = &[
-    "refines",
-    "is_refined_by",
-    "derives",
-    "derives_from",
-    "satisfies",
-    "is_satisfied_by",
-    "depends_on",
-    "is_required_by",
-    "justifies",
-    "justified_by",
-    "supersedes",
-    "superseded_by",
-];
 
 /// Parses a raw YAML string into a `RawFrontmatter`.
 pub fn parse_yaml_frontmatter(yaml: &str, file: &Path) -> Result<RawFrontmatter, SaraError> {
@@ -298,6 +158,8 @@ fn field_value_from_yaml(
 mod tests {
     use super::*;
 
+    use crate::schema::builtin;
+
     #[test]
     fn test_parse_yaml_frontmatter_solution() {
         let yaml = r#"
@@ -308,7 +170,7 @@ description: "A test solution"
 "#;
         let fm = parse_yaml_frontmatter(yaml, Path::new("test.md")).unwrap();
         assert_eq!(fm.id, "SOL-001");
-        assert_eq!(fm.item_type, ItemType::SOLUTION);
+        assert_eq!(fm.item_type, builtin::SOLUTION);
         assert_eq!(fm.name, "Test Solution");
         assert_eq!(fm.description, Some("A test solution".to_string()));
     }
@@ -326,7 +188,40 @@ refines:
         let rels = fm.to_relationships();
         assert_eq!(rels.len(), 1);
         assert_eq!(rels[0].to.as_str(), "SOL-001");
-        assert_eq!(rels[0].relationship_type, RelationshipType::REFINES);
+        assert_eq!(rels[0].relationship_type, builtin::REFINES);
+    }
+
+    #[test]
+    fn test_parse_yaml_frontmatter_single_id_relationship() {
+        let yaml = r#"
+id: "UC-001"
+type: use_case
+name: "Login"
+refines: "SOL-001"
+"#;
+        let fm = parse_yaml_frontmatter(yaml, Path::new("test.md")).unwrap();
+        let rels = fm.to_relationships();
+        assert_eq!(rels.len(), 1);
+        assert_eq!(rels[0].to.as_str(), "SOL-001");
+        assert_eq!(rels[0].relationship_type, builtin::REFINES);
+    }
+
+    #[test]
+    fn test_core_field_names_match_model_constants() {
+        use crate::model::{FIELD_DESCRIPTION, FIELD_ID, FIELD_NAME, FIELD_TYPE};
+
+        let yaml = format!(
+            "{FIELD_ID}: \"SOL-001\"\n{FIELD_TYPE}: solution\n{FIELD_NAME}: \"Named\"\n{FIELD_DESCRIPTION}: \"Described\"\n"
+        );
+        let fm = parse_yaml_frontmatter(&yaml, Path::new("test.md")).unwrap();
+        assert_eq!(fm.id, "SOL-001");
+        assert_eq!(fm.item_type, builtin::SOLUTION);
+        assert_eq!(fm.name, "Named");
+        assert_eq!(fm.description, Some("Described".to_string()));
+        assert!(
+            fm.extra.is_empty(),
+            "core fields must not leak into the flattened remainder"
+        );
     }
 
     #[test]
@@ -351,14 +246,24 @@ supersedes:
   - "ADR-000"
 "#;
         let fm = parse_yaml_frontmatter(yaml, Path::new("test.md")).unwrap();
-        assert_eq!(fm.status.as_deref(), Some("proposed"));
-        assert_eq!(fm.deciders, vec!["Alice"]);
-        assert_eq!(fm.justifies, vec!["SYSARCH-001"]);
-        assert_eq!(fm.supersedes, vec!["ADR-000"]);
+
+        let fields = builtin::ARCHITECTURE_DECISION_RECORD.declared_fields();
+        let status_field = fields.iter().find(|f| f.name == "status").unwrap();
+        let deciders_field = fields.iter().find(|f| f.name == "deciders").unwrap();
+        assert_eq!(
+            fm.declared_field_value(status_field).unwrap(),
+            Some(FieldValue::Enum("proposed".to_string()))
+        );
+        assert_eq!(
+            fm.declared_field_value(deciders_field).unwrap(),
+            Some(FieldValue::List(vec![FieldValue::Text(
+                "Alice".to_string()
+            )]))
+        );
 
         let rels = fm.to_relationships();
         assert_eq!(rels.len(), 2);
-        assert_eq!(rels[0].relationship_type, RelationshipType::JUSTIFIES);
-        assert_eq!(rels[1].relationship_type, RelationshipType::SUPERSEDES);
+        assert_eq!(rels[0].relationship_type, builtin::JUSTIFIES);
+        assert_eq!(rels[1].relationship_type, builtin::SUPERSEDES);
     }
 }

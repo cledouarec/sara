@@ -9,8 +9,9 @@
 use std::path::Path;
 
 use sara_core::generator::{self, OutputFormat};
-use sara_core::model::{ItemType, RelationshipRules, RelationshipType};
+use sara_core::model::{ItemType, RelationshipRules};
 use sara_core::parser::{InputFormat, parse_metadata};
+use sara_core::schema::builtin;
 use sara_core::schema::{self, Schema};
 use sara_core::service::{InitOptions, InitService, TypeConfig, parse_item_type};
 
@@ -73,7 +74,7 @@ fn custom_type_flows_through_the_whole_pipeline() {
     assert_eq!(custom.display_name(), "Stakeholder Requirement");
     assert_eq!(custom.prefix(), "STKREQ");
     assert_eq!(custom.generate_id(Some(4)), "STKREQ-004");
-    assert!(custom.requires_refines());
+    assert!(custom.declared_relations().contains(&builtin::REFINES));
     assert!(!custom.is_root());
     assert!(
         ItemType::all().contains(&custom),
@@ -87,19 +88,19 @@ fn custom_type_flows_through_the_whole_pipeline() {
     assert_eq!(parse_item_type("stkreq"), Some(custom));
     assert_eq!(
         parse_item_type("adr"),
-        Some(ItemType::ARCHITECTURE_DECISION_RECORD)
+        Some(builtin::ARCHITECTURE_DECISION_RECORD)
     );
 
     // Relationship validity is derived from the schema declaration.
     assert!(RelationshipRules::is_valid_relationship(
         custom,
-        ItemType::SOLUTION,
-        RelationshipType::REFINES,
+        builtin::SOLUTION,
+        builtin::REFINES,
     ));
     assert!(!RelationshipRules::is_valid_relationship(
-        ItemType::SOLUTION,
+        builtin::SOLUTION,
         custom,
-        RelationshipType::REFINES,
+        builtin::REFINES,
     ));
 
     // Parsing fills the declared fields and the relationships.
@@ -123,7 +124,7 @@ fn custom_type_flows_through_the_whole_pipeline() {
         .and_then(|v| v.as_date())
         .expect("review_date date field");
     assert_eq!(review_date, "2026-06-01");
-    let refines: Vec<_> = item.relationship_ids(RelationshipType::REFINES).collect();
+    let refines: Vec<_> = item.relationship_ids(builtin::REFINES).collect();
     assert_eq!(refines.len(), 1);
 
     // A required field missing from the frontmatter fails the build.

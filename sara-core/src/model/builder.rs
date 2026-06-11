@@ -2,22 +2,12 @@
 
 use std::path::PathBuf;
 
-use super::adr::AdrStatus;
 use super::field::FieldValue;
-use super::item::{Item, ItemAttributes, ItemId, ItemType};
+use super::item::{FIELD_ID, FIELD_NAME, FIELD_TYPE, Item, ItemAttributes, ItemId, ItemType};
 use super::metadata::SourceLocation;
-use super::relationship::{Relationship, RelationshipType};
+use super::relationship::Relationship;
 use crate::error::SaraError;
 use crate::schema;
-
-/// Field name used for the requirement specification text.
-const FIELD_SPECIFICATION: &str = "specification";
-/// Field name used for the system-architecture platform string.
-const FIELD_PLATFORM: &str = "platform";
-/// Field name used for the ADR lifecycle status.
-const FIELD_STATUS: &str = "status";
-/// Field name used for the ADR deciders list.
-const FIELD_DECIDERS: &str = "deciders";
 
 /// Builder for constructing `Item` instances from parsed frontmatter.
 ///
@@ -77,65 +67,6 @@ impl ItemBuilder {
         self
     }
 
-    /// Sets the specification text (for requirement types).
-    pub fn specification(mut self, spec: impl Into<String>) -> Self {
-        self.attributes
-            .insert(FIELD_SPECIFICATION, FieldValue::Text(spec.into()));
-        self
-    }
-
-    /// Sets the platform (for `SystemArchitecture`).
-    pub fn platform(mut self, platform: impl Into<String>) -> Self {
-        self.attributes
-            .insert(FIELD_PLATFORM, FieldValue::Text(platform.into()));
-        self
-    }
-
-    /// Adds a peer dependency relationship.
-    pub fn depends_on(mut self, id: ItemId) -> Self {
-        self.relationships
-            .push(Relationship::new(id, RelationshipType::DEPENDS_ON));
-        self
-    }
-
-    /// Sets the ADR status.
-    pub fn status(mut self, status: AdrStatus) -> Self {
-        self.attributes
-            .insert(FIELD_STATUS, FieldValue::Enum(status.as_str().to_string()));
-        self
-    }
-
-    /// Adds a decider (for ADR).
-    pub fn decider(mut self, decider: impl Into<String>) -> Self {
-        push_text(&mut self.attributes, FIELD_DECIDERS, decider.into());
-        self
-    }
-
-    /// Sets the deciders (for ADR).
-    pub fn deciders(mut self, deciders: Vec<String>) -> Self {
-        self.attributes.insert(
-            FIELD_DECIDERS,
-            FieldValue::List(deciders.into_iter().map(FieldValue::Text).collect()),
-        );
-        self
-    }
-
-    /// Adds a supersession relationship toward an older peer.
-    pub fn supersedes(mut self, id: ItemId) -> Self {
-        self.relationships
-            .push(Relationship::new(id, RelationshipType::SUPERSEDES));
-        self
-    }
-
-    /// Adds supersession relationships toward several older peers.
-    pub fn supersedes_all(mut self, ids: Vec<ItemId>) -> Self {
-        self.relationships.extend(
-            ids.into_iter()
-                .map(|id| Relationship::new(id, RelationshipType::SUPERSEDES)),
-        );
-        self
-    }
-
     /// Sets the value of a declared field by name.
     pub fn attribute(mut self, name: impl Into<String>, value: FieldValue) -> Self {
         self.attributes.insert(name, value);
@@ -186,7 +117,7 @@ impl ItemBuilder {
     /// name, source, or type-specific attributes) is not set.
     pub fn build(self) -> Result<Item, SaraError> {
         let id = self.id.clone().ok_or_else(|| SaraError::MissingField {
-            field: "id".to_string(),
+            field: FIELD_ID.to_string(),
             file: self
                 .source
                 .as_ref()
@@ -195,7 +126,7 @@ impl ItemBuilder {
         })?;
 
         let item_type = self.item_type.ok_or_else(|| SaraError::MissingField {
-            field: "type".to_string(),
+            field: FIELD_TYPE.to_string(),
             file: self
                 .source
                 .as_ref()
@@ -204,7 +135,7 @@ impl ItemBuilder {
         })?;
 
         let name = self.name.clone().ok_or_else(|| SaraError::MissingField {
-            field: "name".to_string(),
+            field: FIELD_NAME.to_string(),
             file: self
                 .source
                 .as_ref()
@@ -232,33 +163,11 @@ impl ItemBuilder {
     }
 }
 
-/// Appends a `Text` value to the list stored under `field`, creating the
-/// list entry if it does not yet exist.
-fn push_text(attrs: &mut ItemAttributes, field: &str, text: String) {
-    push_value(attrs, field, FieldValue::Text(text));
-}
-
-/// Appends a [`FieldValue`] to the list stored under `field`. If the field
-/// already holds a non-list value, it is replaced with a new single-element
-/// list — matching the prior builder semantics where typed setters always
-/// appended into the same logical collection.
-fn push_value(attrs: &mut ItemAttributes, field: &str, value: FieldValue) {
-    match attrs.get(field) {
-        Some(FieldValue::List(existing)) => {
-            let mut updated = existing.clone();
-            updated.push(value);
-            attrs.insert(field.to_string(), FieldValue::List(updated));
-        }
-        _ => {
-            attrs.insert(field.to_string(), FieldValue::List(vec![value]));
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::relationship::RelationshipType;
+
+    use crate::schema::builtin;
 
     #[test]
     fn test_item_builder() {
@@ -270,7 +179,7 @@ mod tests {
 
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(source)
             .build();
@@ -291,17 +200,17 @@ mod tests {
 
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("UC-001"))
-            .item_type(ItemType::USE_CASE)
+            .item_type(builtin::USE_CASE)
             .name("Test Use Case")
             .source(source)
             .relationships(vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )])
             .build()
             .unwrap();
 
-        let refines: Vec<_> = item.relationship_ids(RelationshipType::REFINES).collect();
+        let refines: Vec<_> = item.relationship_ids(builtin::REFINES).collect();
         assert_eq!(refines.len(), 1);
         assert_eq!(refines[0].as_str(), "SOL-001");
     }

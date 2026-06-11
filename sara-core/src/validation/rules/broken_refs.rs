@@ -33,20 +33,22 @@ impl ValidationRule for BrokenReferencesRule {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemId, ItemType, Relationship, RelationshipType};
+    use crate::model::{ItemId, Relationship};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_broken_refs() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -62,10 +64,10 @@ mod tests {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-MISSING"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()

@@ -700,7 +700,7 @@ mod edit_command {
         let test_file = temp_dir.path().join("SOL-EDIT-001.md");
         fs::copy(&original, &test_file).unwrap();
 
-        // --specification is only valid for requirements, not solutions
+        // Solution declares no specification field
         sara()
             .current_dir(temp_dir.path())
             .arg("edit")
@@ -709,7 +709,7 @@ mod edit_command {
             .arg("Invalid specification for solution")
             .assert()
             .failure()
-            .stdout(predicate::str::contains("only valid for requirement"));
+            .stdout(predicate::str::contains("not a field declared by Solution"));
     }
 
     #[test]
@@ -964,6 +964,110 @@ mod custom_schema {
         let content = fs::read_to_string(&test_file).unwrap();
         assert!(content.contains("type: stakeholder_requirement"));
         assert!(content.contains("rationale: \"TBD\""));
+    }
+
+    /// YAML appended to an exported built-in model to declare a type linked
+    /// through a custom relation pair.
+    const CUSTOM_RELATION_TYPE_YAML: &str = r#"- id: test_case
+  display_name: Test Case
+  prefix: TC
+  id_format: "{prefix}-{seq:03}"
+  parent_types:
+  - system_requirement
+  fields: []
+  allowed_targets:
+  - relation: verifies
+    targets:
+    - system_requirement
+"#;
+
+    /// YAML appended to the exported relations to declare the custom pair.
+    const CUSTOM_RELATION_YAML: &str = r#"- id: verifies
+  display_name: Verifies
+  inverse: is_verified_by
+  direction: upstream
+  primary: true
+- id: is_verified_by
+  display_name: Is verified by
+  inverse: verifies
+  direction: downstream
+  primary: false
+"#;
+
+    /// Exports the built-in model, appends a custom relation and its type,
+    /// and returns the config path referencing the extended schema.
+    fn write_schema_with_custom_relation(temp_dir: &TempDir) -> std::path::PathBuf {
+        let schema_path = temp_dir.path().join("model.yaml");
+        sara()
+            .arg("schema")
+            .arg("-o")
+            .arg(&schema_path)
+            .assert()
+            .success();
+
+        let exported = fs::read_to_string(&schema_path).unwrap();
+        let mut extended = exported.replace(
+            "\nrelations:",
+            &format!("\n{CUSTOM_RELATION_TYPE_YAML}relations:"),
+        );
+        extended.push_str(CUSTOM_RELATION_YAML);
+        fs::write(&schema_path, extended).unwrap();
+
+        let config_path = temp_dir.path().join("sara.toml");
+        fs::write(
+            &config_path,
+            format!("model_schema = \"{}\"\n", schema_path.display()),
+        )
+        .unwrap();
+        config_path
+    }
+
+    #[test]
+    fn test_edit_flag_for_custom_relation() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_schema_with_custom_relation(&temp_dir);
+
+        // The relation appears as an edit flag.
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("edit")
+            .arg("--help")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("--verifies"));
+
+        fs::write(
+            temp_dir.path().join("TC-001.md"),
+            "---\nid: \"TC-001\"\ntype: test_case\nname: \"Latency check\"\nverifies:\n  - \"SYSREQ-001\"\n---\n# Test Case: Latency check\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("SYSREQ-001.md"),
+            "---\nid: \"SYSREQ-001\"\ntype: system_requirement\nname: \"Latency budget\"\nspecification: \"The system SHALL respond within 200ms.\"\n---\n",
+        )
+        .unwrap();
+        fs::write(
+            temp_dir.path().join("SYSREQ-002.md"),
+            "---\nid: \"SYSREQ-002\"\ntype: system_requirement\nname: \"Throughput budget\"\nspecification: \"The system SHALL sustain 100 rps.\"\n---\n",
+        )
+        .unwrap();
+
+        sara()
+            .current_dir(temp_dir.path())
+            .arg("--config")
+            .arg(&config_path)
+            .arg("edit")
+            .arg("TC-001")
+            .arg("--verifies")
+            .arg("SYSREQ-002")
+            .assert()
+            .success();
+
+        let content = fs::read_to_string(temp_dir.path().join("TC-001.md")).unwrap();
+        assert!(content.contains("verifies:"));
+        assert!(content.contains("- \"SYSREQ-002\""));
+        assert!(!content.contains("SYSREQ-001"));
     }
 
     #[test]

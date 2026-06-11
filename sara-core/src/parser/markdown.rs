@@ -79,7 +79,9 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
-    use crate::model::{AdrStatus, ItemType, RelationshipType};
+
+    use crate::model::FieldValue;
+    use crate::schema::builtin;
 
     const SOLUTION_MD: &str = r#"---
 id: "SOL-001"
@@ -117,12 +119,10 @@ is_satisfied_by:
         .unwrap();
 
         assert_eq!(item.id.as_str(), "SOL-001");
-        assert_eq!(item.item_type, ItemType::SOLUTION);
+        assert_eq!(item.item_type, builtin::SOLUTION);
         assert_eq!(item.name, "Test Solution");
         assert_eq!(item.description, Some("A test solution".to_string()));
-        let is_refined_by: Vec<_> = item
-            .relationship_ids(RelationshipType::IS_REFINED_BY)
-            .collect();
+        let is_refined_by: Vec<_> = item.relationship_ids(builtin::IS_REFINED_BY).collect();
         assert_eq!(is_refined_by.len(), 1);
         assert_eq!(is_refined_by[0].as_str(), "UC-001");
     }
@@ -137,17 +137,13 @@ is_satisfied_by:
         .unwrap();
 
         assert_eq!(item.id.as_str(), "SYSREQ-001");
-        assert_eq!(item.item_type, ItemType::SYSTEM_REQUIREMENT);
+        assert_eq!(item.item_type, builtin::SYSTEM_REQUIREMENT);
         assert_eq!(
-            item.attributes.specification().map(String::as_str),
-            Some("The system SHALL respond within 100ms.")
+            item.attributes.get("specification"),
+            Some(&FieldValue::text("The system SHALL respond within 100ms."))
         );
-        let derives_from: Vec<_> = item
-            .relationship_ids(RelationshipType::DERIVES_FROM)
-            .collect();
-        let is_satisfied_by: Vec<_> = item
-            .relationship_ids(RelationshipType::IS_SATISFIED_BY)
-            .collect();
+        let derives_from: Vec<_> = item.relationship_ids(builtin::DERIVES_FROM).collect();
+        let is_satisfied_by: Vec<_> = item.relationship_ids(builtin::IS_SATISFIED_BY).collect();
         assert_eq!(derives_from.len(), 1);
         assert_eq!(is_satisfied_by.len(), 1);
     }
@@ -213,24 +209,26 @@ Chosen option: Microservices, because it provides better scalability.
         .unwrap();
 
         assert_eq!(item.id.as_str(), "ADR-001");
-        assert_eq!(item.item_type, ItemType::ARCHITECTURE_DECISION_RECORD);
+        assert_eq!(item.item_type, builtin::ARCHITECTURE_DECISION_RECORD);
         assert_eq!(item.name, "Use Microservices Architecture");
         assert_eq!(
             item.description,
             Some("Decision to adopt microservices".to_string())
         );
 
-        assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
-        assert_eq!(item.attributes.deciders().len(), 2);
-        let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
+        assert_eq!(
+            item.attributes.get("status"),
+            Some(&FieldValue::Enum("proposed".to_string()))
+        );
+        assert_eq!(
+            item.attributes.get("deciders"),
+            Some(&FieldValue::text_list(["Alice Smith", "Bob Jones"]))
+        );
+        let justifies: Vec<_> = item.relationship_ids(builtin::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 2);
         assert_eq!(justifies[0].as_str(), "SYSARCH-001");
         assert_eq!(justifies[1].as_str(), "SWDD-001");
-        assert!(
-            item.relationship_ids(RelationshipType::SUPERSEDES)
-                .next()
-                .is_none()
-        );
+        assert!(item.relationship_ids(builtin::SUPERSEDES).next().is_none());
     }
 
     #[test]
@@ -285,12 +283,10 @@ supersedes:
         )
         .unwrap();
 
-        let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
+        let justifies: Vec<_> = item.relationship_ids(builtin::JUSTIFIES).collect();
         assert_eq!(justifies.len(), 1);
         assert_eq!(justifies[0].as_str(), "SYSARCH-001");
-        let supersedes: Vec<_> = item
-            .relationship_ids(RelationshipType::SUPERSEDES)
-            .collect();
+        let supersedes: Vec<_> = item.relationship_ids(builtin::SUPERSEDES).collect();
         assert_eq!(supersedes.len(), 2);
         assert_eq!(supersedes[0].as_str(), "ADR-001");
         assert_eq!(supersedes[1].as_str(), "ADR-002");

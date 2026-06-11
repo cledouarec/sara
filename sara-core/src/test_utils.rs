@@ -5,9 +5,25 @@
 
 use std::path::PathBuf;
 
-use crate::model::{
-    AdrStatus, Item, ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
-};
+use crate::model::{FieldValue, Item, ItemBuilder, ItemId, ItemType, Relationship, SourceLocation};
+use crate::schema::builtin;
+
+/// Fills the required fields declared by the item's type with deterministic
+/// test values, so fixtures build for any type of the active schema.
+fn with_required_defaults(mut builder: ItemBuilder, item_type: ItemType) -> ItemBuilder {
+    for field in item_type.declared_fields().iter().filter(|f| f.required) {
+        builder = match field.name.as_str() {
+            "specification" => builder.attribute(
+                &field.name,
+                FieldValue::text("The system SHALL meet this test specification"),
+            ),
+            "status" => builder.attribute(&field.name, FieldValue::Enum("proposed".to_string())),
+            "deciders" => builder.attribute(&field.name, FieldValue::text_list(["Test Decider"])),
+            _ => builder,
+        };
+    }
+    builder
+}
 
 /// Creates a test item with the given ID and type.
 ///
@@ -21,8 +37,8 @@ use crate::model::{
 /// use sara_core::test_utils::create_test_item;
 /// use sara_core::model::ItemType;
 ///
-/// let solution = create_test_item("SOL-001", ItemType::SOLUTION);
-/// let requirement = create_test_item("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT);
+/// let solution = create_test_item("SOL-001", builtin::SOLUTION);
+/// let requirement = create_test_item("SYSREQ-001", builtin::SYSTEM_REQUIREMENT);
 /// ```
 #[must_use]
 pub fn create_test_item(id: &str, item_type: ItemType) -> Item {
@@ -40,29 +56,18 @@ pub fn create_test_item(id: &str, item_type: ItemType) -> Item {
 /// use sara_core::test_utils::create_test_item_with_name;
 /// use sara_core::model::ItemType;
 ///
-/// let solution = create_test_item_with_name("SOL-001", ItemType::SOLUTION, "My Custom Name");
+/// let solution = create_test_item_with_name("SOL-001", builtin::SOLUTION, "My Custom Name");
 /// ```
 #[must_use]
 pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let mut builder = ItemBuilder::new()
+    let builder = ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
         .name(name)
         .source(source);
 
-    // Add required fields based on item type
-    if item_type.requires_specification() {
-        builder = builder.specification("The system SHALL meet this test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
+    with_required_defaults(builder, item_type)
         .build()
         .expect("Test item should build successfully")
 }
@@ -77,8 +82,8 @@ pub fn create_test_item_with_name(id: &str, item_type: ItemType, name: &str) -> 
 ///
 /// let use_case = create_test_item_with_relationships(
 ///     "UC-001",
-///     ItemType::USE_CASE,
-///     vec![Relationship::new(ItemId::new_unchecked("SOL-001"), RelationshipType::REFINES)],
+///     builtin::USE_CASE,
+///     vec![Relationship::new(ItemId::new_unchecked("SOL-001"), builtin::REFINES)],
 /// );
 /// ```
 #[must_use]
@@ -88,25 +93,14 @@ pub fn create_test_item_with_relationships(
     relationships: Vec<Relationship>,
 ) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
-    let mut builder = ItemBuilder::new()
+    let builder = ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
         .name(format!("Test {id}"))
         .source(source)
         .relationships(relationships);
 
-    // Add required fields based on item type
-    if item_type.requires_specification() {
-        builder = builder.specification("The system SHALL meet this test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
+    with_required_defaults(builder, item_type)
         .build()
         .expect("Test item should build successfully")
 }
@@ -126,23 +120,22 @@ pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Ite
     let source = SourceLocation::new(PathBuf::from("/test-repo"), format!("{id}.md"));
     let relationships: Vec<Relationship> = justifies
         .iter()
-        .map(|s| Relationship::new(ItemId::new_unchecked(*s), RelationshipType::JUSTIFIES))
-        .collect();
-
-    ItemBuilder::new()
-        .id(ItemId::new_unchecked(id))
-        .item_type(ItemType::ARCHITECTURE_DECISION_RECORD)
-        .name(format!("Test {id}"))
-        .source(source)
-        .relationships(relationships)
-        .status(AdrStatus::Proposed)
-        .deciders(vec!["Test Decider".to_string()])
-        .supersedes_all(
+        .map(|s| Relationship::new(ItemId::new_unchecked(*s), builtin::JUSTIFIES))
+        .chain(
             supersedes
                 .iter()
-                .map(|s| ItemId::new_unchecked(*s))
-                .collect(),
+                .map(|s| Relationship::new(ItemId::new_unchecked(*s), builtin::SUPERSEDES)),
         )
+        .collect();
+
+    let builder = ItemBuilder::new()
+        .id(ItemId::new_unchecked(id))
+        .item_type(builtin::ARCHITECTURE_DECISION_RECORD)
+        .name(format!("Test {id}"))
+        .source(source)
+        .relationships(relationships);
+
+    with_required_defaults(builder, builtin::ARCHITECTURE_DECISION_RECORD)
         .build()
         .expect("Test ADR should build successfully")
 }
@@ -153,23 +146,13 @@ pub fn create_test_adr(id: &str, justifies: &[&str], supersedes: &[&str]) -> Ite
 #[must_use]
 pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> Item {
     let source = SourceLocation::new(PathBuf::from("/test-repo"), PathBuf::from(file_path));
-    let mut builder = ItemBuilder::new()
+    let builder = ItemBuilder::new()
         .id(ItemId::new_unchecked(id))
         .item_type(item_type)
         .name(format!("Test {id}"))
         .source(source);
 
-    if item_type.requires_specification() {
-        builder = builder.specification("The system SHALL meet this test specification");
-    }
-
-    if item_type.requires_deciders() {
-        builder = builder
-            .status(AdrStatus::Proposed)
-            .deciders(vec!["Test Decider".to_string()]);
-    }
-
-    builder
+    with_required_defaults(builder, item_type)
         .build()
         .expect("Test item should build successfully")
 }
@@ -180,21 +163,21 @@ pub fn create_test_item_at(id: &str, item_type: ItemType, file_path: &str) -> It
 #[must_use]
 pub fn create_simple_hierarchy() -> Vec<Item> {
     vec![
-        create_test_item("SOL-001", ItemType::SOLUTION),
+        create_test_item("SOL-001", builtin::SOLUTION),
         create_test_item_with_relationships(
             "UC-001",
-            ItemType::USE_CASE,
+            builtin::USE_CASE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SOL-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         ),
         create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::SCENARIO,
+            builtin::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("UC-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         ),
     ]
@@ -206,37 +189,37 @@ mod tests {
 
     #[test]
     fn test_create_test_item_solution() {
-        let item = create_test_item("SOL-001", ItemType::SOLUTION);
+        let item = create_test_item("SOL-001", builtin::SOLUTION);
         assert_eq!(item.id.as_str(), "SOL-001");
-        assert_eq!(item.item_type, ItemType::SOLUTION);
+        assert_eq!(item.item_type, builtin::SOLUTION);
     }
 
     #[test]
     fn test_create_test_item_requirement() {
-        let item = create_test_item("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT);
+        let item = create_test_item("SYSREQ-001", builtin::SYSTEM_REQUIREMENT);
         assert_eq!(item.id.as_str(), "SYSREQ-001");
-        assert!(item.attributes.specification().is_some());
+        assert!(item.attributes.get("specification").is_some());
     }
 
     #[test]
     fn test_create_test_adr() {
         let item = create_test_adr("ADR-001", &["SYSARCH-001"], &["ADR-000"]);
         assert_eq!(item.id.as_str(), "ADR-001");
-        assert_eq!(item.attributes.status(), Some(AdrStatus::Proposed));
-        let justifies: Vec<_> = item.relationship_ids(RelationshipType::JUSTIFIES).collect();
-        assert_eq!(justifies.len(), 1);
         assert_eq!(
-            item.relationship_ids(RelationshipType::SUPERSEDES).count(),
-            1
+            item.attributes.get("status"),
+            Some(&FieldValue::Enum("proposed".to_string()))
         );
+        let justifies: Vec<_> = item.relationship_ids(builtin::JUSTIFIES).collect();
+        assert_eq!(justifies.len(), 1);
+        assert_eq!(item.relationship_ids(builtin::SUPERSEDES).count(), 1);
     }
 
     #[test]
     fn test_create_simple_hierarchy() {
         let items = create_simple_hierarchy();
         assert_eq!(items.len(), 3);
-        assert_eq!(items[0].item_type, ItemType::SOLUTION);
-        assert_eq!(items[1].item_type, ItemType::USE_CASE);
-        assert_eq!(items[2].item_type, ItemType::SCENARIO);
+        assert_eq!(items[0].item_type, builtin::SOLUTION);
+        assert_eq!(items[1].item_type, builtin::USE_CASE);
+        assert_eq!(items[2].item_type, builtin::SCENARIO);
     }
 }

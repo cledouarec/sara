@@ -139,23 +139,23 @@ mod tests {
     use std::path::PathBuf;
 
     use super::*;
+
     use crate::error::SaraError;
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{
-        ItemBuilder, ItemId, ItemType, Relationship, RelationshipType, SourceLocation,
-    };
+    use crate::model::{FieldValue, ItemBuilder, ItemId, Relationship, SourceLocation};
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_valid_graph() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -171,10 +171,10 @@ mod tests {
         let graph = KnowledgeGraphBuilder::new()
             .add_item(create_test_item_with_relationships(
                 "UC-001",
-                ItemType::USE_CASE,
+                builtin::USE_CASE,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-MISSING"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn test_orphan_warning() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
+            .add_item(create_test_item("UC-001", builtin::USE_CASE))
             .build()
             .unwrap();
 
@@ -204,7 +204,7 @@ mod tests {
     #[test]
     fn test_orphan_error_strict() {
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("UC-001", ItemType::USE_CASE))
+            .add_item(create_test_item("UC-001", builtin::USE_CASE))
             .build()
             .unwrap();
 
@@ -219,18 +219,18 @@ mod tests {
         // Create a cycle
         let scen1 = create_test_item_with_relationships(
             "SCEN-001",
-            ItemType::SCENARIO,
+            builtin::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-002"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
         let scen2 = create_test_item_with_relationships(
             "SCEN-002",
-            ItemType::SCENARIO,
+            builtin::SCENARIO,
             vec![Relationship::new(
                 ItemId::new_unchecked("SCEN-001"),
-                RelationshipType::REFINES,
+                builtin::REFINES,
             )],
         );
 
@@ -248,13 +248,13 @@ mod tests {
     fn test_invalid_relationship() {
         // Scenario trying to refine Solution directly (invalid)
         let graph = KnowledgeGraphBuilder::new()
-            .add_item(create_test_item("SOL-001", ItemType::SOLUTION))
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
             .add_item(create_test_item_with_relationships(
                 "SCEN-001",
-                ItemType::SCENARIO,
+                builtin::SCENARIO,
                 vec![Relationship::new(
                     ItemId::new_unchecked("SOL-001"),
-                    RelationshipType::REFINES,
+                    builtin::REFINES,
                 )],
             ))
             .build()
@@ -272,10 +272,13 @@ mod tests {
         let source = SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-001"))
-            .item_type(ItemType::SYSTEM_REQUIREMENT)
+            .item_type(builtin::SYSTEM_REQUIREMENT)
             .name("Test Requirement")
             .source(source)
-            .specification("The system SHALL respond within 100ms")
+            .attribute(
+                "specification",
+                FieldValue::text("The system SHALL respond within 100ms"),
+            )
             .build()
             .unwrap();
 
@@ -296,10 +299,13 @@ mod tests {
         let source = SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-001"))
-            .item_type(ItemType::SYSTEM_REQUIREMENT)
+            .item_type(builtin::SYSTEM_REQUIREMENT)
             .name("Test Requirement")
             .source(source)
-            .specification("The system responds within 100ms") // Missing RFC2119 keyword
+            .attribute(
+                "specification",
+                FieldValue::text("The system responds within 100ms"),
+            ) // Missing RFC2119 keyword
             .build()
             .unwrap();
 
@@ -321,10 +327,10 @@ mod tests {
         let source = SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SYSREQ-001"))
-            .item_type(ItemType::SYSTEM_REQUIREMENT)
+            .item_type(builtin::SYSTEM_REQUIREMENT)
             .name("Test Requirement")
             .source(source)
-            .specification(String::new())
+            .attribute("specification", FieldValue::text(String::new()))
             .build()
             .unwrap();
 
@@ -343,7 +349,7 @@ mod tests {
         let source = SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md");
         let item = ItemBuilder::new()
             .id(ItemId::new_unchecked("SOL-001"))
-            .item_type(ItemType::SOLUTION)
+            .item_type(builtin::SOLUTION)
             .name("Test Solution")
             .source(source)
             .build()
@@ -359,23 +365,26 @@ mod tests {
         let items = vec![
             ItemBuilder::new()
                 .id(ItemId::new_unchecked("SYSREQ-001"))
-                .item_type(ItemType::SYSTEM_REQUIREMENT)
+                .item_type(builtin::SYSTEM_REQUIREMENT)
                 .name("Valid Requirement")
                 .source(SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-001.md"))
-                .specification("The system SHALL respond")
+                .attribute(
+                    "specification",
+                    FieldValue::text("The system SHALL respond"),
+                )
                 .build()
                 .unwrap(),
             ItemBuilder::new()
                 .id(ItemId::new_unchecked("SYSREQ-002"))
-                .item_type(ItemType::SYSTEM_REQUIREMENT)
+                .item_type(builtin::SYSTEM_REQUIREMENT)
                 .name("Invalid Requirement")
                 .source(SourceLocation::new(PathBuf::from("/repo"), "SYSREQ-002.md"))
-                .specification("Missing keyword") // Invalid
+                .attribute("specification", FieldValue::text("Missing keyword")) // Invalid
                 .build()
                 .unwrap(),
             ItemBuilder::new()
                 .id(ItemId::new_unchecked("SOL-001"))
-                .item_type(ItemType::SOLUTION)
+                .item_type(builtin::SOLUTION)
                 .name("Solution")
                 .source(SourceLocation::new(PathBuf::from("/repo"), "SOL-001.md"))
                 .build()

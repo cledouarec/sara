@@ -11,11 +11,12 @@ use std::path::{Path, PathBuf};
 use sara_core::generator::{self, OutputFormat};
 use sara_core::graph::KnowledgeGraphBuilder;
 use sara_core::model::{
-    ItemBuilder, ItemId, ItemType, RelationshipRules, RelationshipType, SourceLocation,
+    FieldValue, ItemBuilder, ItemId, ItemType, RelationshipRules, RelationshipType, SourceLocation,
 };
 use sara_core::parser::{InputFormat, parse_metadata};
+use sara_core::schema::builtin;
 use sara_core::schema::{self, Schema};
-use sara_core::service::{InitOptions, InitService, TypeConfig};
+use sara_core::service::{EditOptions, EditService, InitOptions, InitService, TypeConfig};
 
 /// YAML definition of a type whose traceability uses a custom relation.
 const CUSTOM_TYPE_YAML: &str = "- id: test_case
@@ -102,11 +103,11 @@ fn custom_relation_flows_through_the_whole_pipeline() {
     let test_case = ItemType::from_id("test_case").expect("type known to schema");
     assert!(RelationshipRules::is_valid_relationship(
         test_case,
-        ItemType::SYSTEM_REQUIREMENT,
+        builtin::SYSTEM_REQUIREMENT,
         verifies,
     ));
     assert!(!RelationshipRules::is_valid_relationship(
-        ItemType::SYSTEM_REQUIREMENT,
+        builtin::SYSTEM_REQUIREMENT,
         test_case,
         verifies,
     ));
@@ -126,10 +127,13 @@ fn custom_relation_flows_through_the_whole_pipeline() {
     // The graph links both items through the custom relation.
     let requirement = ItemBuilder::new()
         .id(ItemId::new_unchecked("SYSREQ-001"))
-        .item_type(ItemType::SYSTEM_REQUIREMENT)
+        .item_type(builtin::SYSTEM_REQUIREMENT)
         .name("Latency budget")
         .source(test_source())
-        .specification("The system SHALL respond within 200ms.")
+        .attribute(
+            "specification",
+            FieldValue::text("The system SHALL respond within 200ms."),
+        )
         .build()
         .expect("build requirement");
     let graph = KnowledgeGraphBuilder::new()
@@ -158,4 +162,27 @@ fn custom_relation_flows_through_the_whole_pipeline() {
     let content = std::fs::read_to_string(&file).expect("read generated file");
     assert!(content.contains("verifies:"));
     assert!(content.contains("- \"SYSREQ-001\""));
+
+    // Editing replaces the custom relation's targets and rejects relations
+    // the type does not declare.
+    let service = EditService::new();
+    let ctx = service.get_item_context(&item);
+    assert_eq!(ctx.traceability.get(verifies), ["SYSREQ-001"]);
+
+    let edit = EditOptions::new("TC-001").with_relation(verifies, vec!["SYSREQ-002".to_string()]);
+    service
+        .validate_options(&edit, test_case)
+        .expect("verifies is declared by test_case");
+    let merged = service.merge_values(&edit, &ctx);
+    let yaml = service.build_frontmatter_yaml("TC-001", test_case, &merged);
+    assert!(yaml.contains("verifies:"));
+    assert!(yaml.contains("- \"SYSREQ-002\""));
+    assert!(!yaml.contains("SYSREQ-001"));
+
+    let invalid =
+        EditOptions::new("TC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]);
+    assert!(
+        service.validate_options(&invalid, test_case).is_err(),
+        "test_case declares no refines relation"
+    );
 }

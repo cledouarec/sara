@@ -73,20 +73,22 @@ fn make_pair_key(id1: &ItemId, id2: &ItemId) -> (String, String) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
     use crate::graph::KnowledgeGraphBuilder;
-    use crate::model::{ItemType, Relationship, RelationshipType};
+    use crate::model::Relationship;
+    use crate::schema::builtin;
     use crate::test_utils::{create_test_item, create_test_item_with_relationships};
 
     #[test]
     fn test_no_redundancy() {
         // SARCH satisfies SYSREQ, but SYSREQ doesn't declare is_satisfied_by
-        let sysreq = create_test_item("SYSREQ-001", ItemType::SYSTEM_REQUIREMENT);
+        let sysreq = create_test_item("SYSREQ-001", builtin::SYSTEM_REQUIREMENT);
         let sarch = create_test_item_with_relationships(
             "SARCH-001",
-            ItemType::SYSTEM_ARCHITECTURE,
+            builtin::SYSTEM_ARCHITECTURE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::SATISFIES,
+                builtin::SATISFIES,
             )],
         );
 
@@ -106,18 +108,18 @@ mod tests {
         // Both declare the relationship - this is redundant
         let sysreq = create_test_item_with_relationships(
             "SYSREQ-001",
-            ItemType::SYSTEM_REQUIREMENT,
+            builtin::SYSTEM_REQUIREMENT,
             vec![Relationship::new(
                 ItemId::new_unchecked("SARCH-001"),
-                RelationshipType::IS_SATISFIED_BY,
+                builtin::IS_SATISFIED_BY,
             )],
         );
         let sarch = create_test_item_with_relationships(
             "SARCH-001",
-            ItemType::SYSTEM_ARCHITECTURE,
+            builtin::SYSTEM_ARCHITECTURE,
             vec![Relationship::new(
                 ItemId::new_unchecked("SYSREQ-001"),
-                RelationshipType::SATISFIES,
+                builtin::SATISFIES,
             )],
         );
 

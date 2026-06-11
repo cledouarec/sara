@@ -38,14 +38,16 @@ impl ValidationRule for DuplicatesRule {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::model::ItemType;
+
+    use crate::schema::builtin;
+
     use crate::test_utils::create_test_item_at;
 
     #[test]
     fn test_no_duplicates() {
         let items = vec![
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol1.md"),
-            create_test_item_at("SOL-002", ItemType::SOLUTION, "sol2.md"),
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol1.md"),
+            create_test_item_at("SOL-002", builtin::SOLUTION, "sol2.md"),
         ];
 
         let rule = DuplicatesRule;
@@ -56,8 +58,8 @@ mod tests {
     #[test]
     fn test_duplicate_detected() {
         let items = vec![
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol1.md"),
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol2.md"), // Duplicate ID
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol1.md"),
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol2.md"), // Duplicate ID
         ];
 
         let rule = DuplicatesRule;
@@ -74,9 +76,9 @@ mod tests {
     #[test]
     fn test_multiple_duplicates_same_id() {
         let items = vec![
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol1.md"),
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol2.md"),
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol3.md"),
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol1.md"),
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol2.md"),
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol3.md"),
         ];
 
         let rule = DuplicatesRule;
@@ -87,10 +89,10 @@ mod tests {
     #[test]
     fn test_multiple_different_duplicates() {
         let items = vec![
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol1.md"),
-            create_test_item_at("SOL-001", ItemType::SOLUTION, "sol2.md"), // Duplicate of SOL-001
-            create_test_item_at("SOL-002", ItemType::SOLUTION, "sol3.md"),
-            create_test_item_at("SOL-002", ItemType::SOLUTION, "sol4.md"), // Duplicate of SOL-002
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol1.md"),
+            create_test_item_at("SOL-001", builtin::SOLUTION, "sol2.md"), // Duplicate of SOL-001
+            create_test_item_at("SOL-002", builtin::SOLUTION, "sol3.md"),
+            create_test_item_at("SOL-002", builtin::SOLUTION, "sol4.md"), // Duplicate of SOL-002
         ];
 
         let rule = DuplicatesRule;

@@ -11,7 +11,7 @@ use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use sara_core::error::SaraError;
 use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
-use sara_core::model::{ItemType, RelationshipType, TraceabilityLinks};
+use sara_core::model::{FieldValue, ItemAttributes, ItemType, RelationshipType, TraceabilityLinks};
 use sara_core::repository::parse_repositories;
 use sara_core::schema::{FieldDef, FieldType};
 use sara_core::service::FieldInput;
@@ -19,31 +19,10 @@ use thiserror::Error;
 
 use crate::output::{OutputConfig, print_error};
 
-/// Fields pre-provided via CLI arguments (FR-050).
-#[derive(Debug, Default)]
-pub struct PrefilledFields {
-    pub file: Option<PathBuf>,
-    pub item_type: Option<ItemType>,
-    pub id: Option<String>,
-    pub name: Option<String>,
-    pub description: Option<String>,
-    pub refines: Vec<String>,
-    pub derives_from: Vec<String>,
-    pub satisfies: Vec<String>,
-    pub depends_on: Vec<String>,
-    pub specification: Option<String>,
-    pub platform: Option<String>,
-    pub deciders: Vec<String>,
-    pub justifies: Vec<String>,
-}
-
 /// Configuration for an interactive init session.
 pub struct InteractiveSession<'a> {
     /// Pre-parsed knowledge graph for traceability lookups.
     pub graph: Option<KnowledgeGraph>,
-
-    /// Pre-provided fields from CLI arguments (skip prompts for these).
-    pub prefilled: PrefilledFields,
 
     /// Repository paths for graph building.
     pub repositories: &'a [PathBuf],
@@ -146,11 +125,7 @@ impl StringValidator for NameValidator {
 }
 
 /// Prompts for item type selection (FR-041).
-fn prompt_item_type(prefilled: Option<ItemType>) -> Result<ItemType, PromptError> {
-    if let Some(item_type) = prefilled {
-        return Ok(item_type);
-    }
-
+fn prompt_item_type() -> Result<ItemType, PromptError> {
     let options: Vec<ItemType> = ItemType::all();
     let selection = Select::new("Select item type:", options)
         .with_help_message("Use arrow keys to navigate, Enter to select")
@@ -161,16 +136,8 @@ fn prompt_item_type(prefilled: Option<ItemType>) -> Result<ItemType, PromptError
 
 /// Prompts for item name (FR-042, FR-056).
 ///
-/// If `prefilled` is Some, returns that value without prompting.
 /// If `default` is Some, shows that value as the default in the prompt.
-pub fn prompt_name(
-    prefilled: Option<&String>,
-    default: Option<&str>,
-) -> Result<String, PromptError> {
-    if let Some(name) = prefilled {
-        return Ok(name.clone());
-    }
-
+pub fn prompt_name(default: Option<&str>) -> Result<String, PromptError> {
     let mut prompt = Text::new("Item name:")
         .with_validator(NameValidator)
         .with_help_message("Enter a human-readable name for this item");
@@ -185,16 +152,8 @@ pub fn prompt_name(
 
 /// Prompts for item description (FR-043, FR-056).
 ///
-/// If `prefilled` is Some, returns that value without prompting.
 /// If `default` is Some, shows that value as the default in the prompt.
-pub fn prompt_description(
-    prefilled: Option<&String>,
-    default: Option<&str>,
-) -> Result<Option<String>, PromptError> {
-    if let Some(desc) = prefilled {
-        return Ok(Some(desc.clone()));
-    }
-
+pub fn prompt_description(default: Option<&str>) -> Result<Option<String>, PromptError> {
     let mut prompt = Text::new("Description (optional):")
         .with_help_message("Brief summary of the item (press Enter to skip)");
 
@@ -215,12 +174,7 @@ pub fn prompt_description(
 fn prompt_identifier(
     item_type: ItemType,
     graph: Option<&KnowledgeGraph>,
-    prefilled: Option<&String>,
 ) -> Result<String, PromptError> {
-    if let Some(id) = prefilled {
-        return Ok(id.clone());
-    }
-
     let suggested = item_type.suggest_next_id(graph);
     let existing_ids: HashSet<String> = graph
         .map(|g| g.items().map(|item| item.id.as_str().to_string()).collect())
@@ -279,36 +233,9 @@ fn compute_default_indices(options: &[SelectOption], preselected: &[String]) -> 
         .collect()
 }
 
-/// The type of traceability relationship (CLI-specific enum for prompt handling).
-#[derive(Debug, Clone, Copy)]
-enum TraceabilityKind {
-    Refines,
-    DerivesFrom,
-    Satisfies,
-    DependsOn,
-    Justifies,
-}
-
-impl TraceabilityKind {
-    /// Maps a relation to the prompt bucket carrying its selections.
-    ///
-    /// Relations introduced by a custom schema have no dedicated bucket yet
-    /// and are skipped by the prompts.
-    fn from_relationship(relationship: RelationshipType) -> Option<Self> {
-        match relationship.as_str() {
-            "refines" => Some(Self::Refines),
-            "derives_from" => Some(Self::DerivesFrom),
-            "satisfies" => Some(Self::Satisfies),
-            "depends_on" => Some(Self::DependsOn),
-            "justifies" => Some(Self::Justifies),
-            _ => None,
-        }
-    }
-}
-
 /// Configuration for a traceability prompt (CLI-specific).
 struct TraceabilityPromptConfig {
-    kind: TraceabilityKind,
+    relationship: RelationshipType,
     target_type: ItemType,
     prompt_message: String,
 }
@@ -316,14 +243,13 @@ struct TraceabilityPromptConfig {
 /// Returns the traceability prompt configurations for an item type.
 ///
 /// Uses core's `ItemType::traceability_configs()` for domain logic,
-/// adds CLI-specific prompt messages.
+/// adds CLI-specific prompt messages. Relations introduced by a custom
+/// schema get their prompt exactly like the built-in ones.
 fn get_traceability_prompt_configs(item_type: ItemType) -> Vec<TraceabilityPromptConfig> {
     item_type
         .traceability_configs()
         .into_iter()
-        .filter_map(|config| {
-            let kind = TraceabilityKind::from_relationship(config.relationship)?;
-
+        .map(|config| {
             let prompt_message = format!(
                 "Select {} this {} {}:",
                 config.target_type.display_name(),
@@ -331,40 +257,13 @@ fn get_traceability_prompt_configs(item_type: ItemType) -> Vec<TraceabilityPromp
                 config.relationship.as_str().replace('_', " ")
             );
 
-            Some(TraceabilityPromptConfig {
-                kind,
+            TraceabilityPromptConfig {
+                relationship: config.relationship,
                 target_type: config.target_type,
                 prompt_message,
-            })
+            }
         })
         .collect()
-}
-
-/// Gets the prefilled values for a traceability kind.
-fn get_prefilled_for_kind(prefilled: &PrefilledFields, kind: TraceabilityKind) -> &[String] {
-    match kind {
-        TraceabilityKind::Refines => &prefilled.refines,
-        TraceabilityKind::DerivesFrom => &prefilled.derives_from,
-        TraceabilityKind::Satisfies => &prefilled.satisfies,
-        TraceabilityKind::DependsOn => &prefilled.depends_on,
-        TraceabilityKind::Justifies => &prefilled.justifies,
-    }
-}
-
-/// Gets the preselected values for a traceability kind.
-fn get_preselected_for_kind(
-    preselected: Option<&PreselectedTraceability>,
-    kind: TraceabilityKind,
-) -> Vec<String> {
-    preselected
-        .map(|p| match kind {
-            TraceabilityKind::Refines => p.refines.clone(),
-            TraceabilityKind::DerivesFrom => p.derives_from.clone(),
-            TraceabilityKind::Satisfies => p.satisfies.clone(),
-            TraceabilityKind::DependsOn => p.depends_on.clone(),
-            TraceabilityKind::Justifies => p.justifies.clone(),
-        })
-        .unwrap_or_default()
 }
 
 /// Prompts for selecting parent items and returns the selected IDs.
@@ -386,118 +285,62 @@ fn prompt_target_selection(
     Ok(selected.into_iter().map(|s| s.id).collect())
 }
 
-/// Applies selected IDs to the appropriate field in TraceabilityLinks.
-/// Uses extend to accumulate selections across multiple prompts for the same kind.
-fn apply_selection_to_input(
-    input: &mut TraceabilityLinks,
-    kind: TraceabilityKind,
-    ids: Vec<String>,
-) {
-    match kind {
-        TraceabilityKind::Refines => input.refines.extend(ids),
-        TraceabilityKind::DerivesFrom => input.derives_from.extend(ids),
-        TraceabilityKind::Satisfies => input.satisfies.extend(ids),
-        TraceabilityKind::DependsOn => input.depends_on.extend(ids),
-        TraceabilityKind::Justifies => input.justifies.extend(ids),
-    }
-}
-
 /// Prompts for traceability relationships (FR-045, FR-056).
 ///
-/// If `preselected` is Some, those items will be pre-checked in the MultiSelect.
-/// Requirement types prompt for both hierarchical (derives_from) and peer (depends_on) links.
-/// If `exclude_id` is Some, that item will be filtered out of the selection list
-/// (used during edit to prevent self-references in peer dependencies).
+/// One prompt runs per `(relation, target type)` pair the item type declares;
+/// selections for the same relation accumulate across its prompts. Starting
+/// from `preselected` (the item's current links during an edit), prompted
+/// relations are replaced by the selections — pre-checked in the MultiSelect —
+/// while unprompted relations pass through untouched. If `exclude_id` is Some,
+/// that item is filtered out of the selection list (used during edit to
+/// prevent self-references in peer links).
 pub fn prompt_traceability(
     item_type: ItemType,
     graph: Option<&KnowledgeGraph>,
-    prefilled: &PrefilledFields,
     preselected: Option<&PreselectedTraceability>,
     exclude_id: Option<&str>,
 ) -> Result<TraceabilityLinks, PromptError> {
-    let mut input = TraceabilityLinks::default();
+    let mut input = preselected.cloned().unwrap_or_default();
 
     let configs = get_traceability_prompt_configs(item_type);
-    if configs.is_empty() {
-        return Ok(input);
+    for config in &configs {
+        input.set(config.relationship, Vec::new());
     }
 
     for config in configs {
-        let prefilled_values = get_prefilled_for_kind(prefilled, config.kind);
-        if !prefilled_values.is_empty() {
-            apply_selection_to_input(&mut input, config.kind, prefilled_values.to_vec());
-            continue;
-        }
-
         let options = get_items_of_type(graph, config.target_type, exclude_id);
-        let preselected_ids = get_preselected_for_kind(preselected, config.kind);
+        let preselected_ids = preselected
+            .map(|p| p.get(config.relationship).to_vec())
+            .unwrap_or_default();
         let selected = prompt_target_selection(options, &config.prompt_message, &preselected_ids)?;
-        apply_selection_to_input(&mut input, config.kind, selected);
+        input.extend(config.relationship, selected);
     }
 
     Ok(input)
 }
 
-/// Prompts for specification (FR-046, FR-056, for requirement types).
+/// Prompts for each declared text field with the current value as default
+/// (FR-046, FR-056).
 ///
-/// If `prefilled` is Some, returns that value without prompting.
-/// If `default` is Some, shows that value as the default in the prompt.
-pub fn prompt_specification(
+/// Returns the new value per field; `None` clears an optional field. Other
+/// field kinds (enums, lists, dates, item references) pass through the edit
+/// untouched.
+pub fn prompt_field_edits(
     item_type: ItemType,
-    prefilled: Option<&String>,
-    default: Option<&str>,
-) -> Result<Option<String>, PromptError> {
-    if !item_type.requires_specification() {
-        return Ok(None);
+    attributes: &ItemAttributes,
+) -> Result<Vec<(String, Option<String>)>, PromptError> {
+    let mut edits = Vec::new();
+
+    for field in item_type.declared_fields() {
+        if !matches!(field.field_type, FieldType::Text) {
+            continue;
+        }
+        let current = attributes.get(&field.name).and_then(FieldValue::as_text);
+        let value = prompt_text_field(field, current.map(String::as_str))?;
+        edits.push((field.name.clone(), value));
     }
 
-    if let Some(spec) = prefilled {
-        return Ok(Some(spec.clone()));
-    }
-
-    let mut prompt = Text::new("Specification:")
-        .with_help_message("Enter the SHALL statement (e.g., 'The system SHALL...')")
-        .with_validator(NameValidator); // Reuse for non-empty
-
-    if let Some(def) = default {
-        prompt = prompt.with_default(def);
-    }
-
-    let spec = prompt.prompt()?;
-    Ok(Some(spec.trim().to_string()))
-}
-
-/// Prompts for platform (FR-046, FR-056, for system_architecture).
-///
-/// If `prefilled` is Some, returns that value without prompting.
-/// If `default` is Some, shows that value as the default in the prompt.
-pub fn prompt_platform(
-    item_type: ItemType,
-    prefilled: Option<&String>,
-    default: Option<&str>,
-) -> Result<Option<String>, PromptError> {
-    if !item_type.accepts_platform() {
-        return Ok(None);
-    }
-
-    if let Some(platform) = prefilled {
-        return Ok(Some(platform.clone()));
-    }
-
-    let mut prompt = Text::new("Target platform (optional):")
-        .with_help_message("e.g., AWS, STM32, Linux (press Enter to skip)");
-
-    if let Some(def) = default {
-        prompt = prompt.with_default(def);
-    }
-
-    let platform = prompt.prompt()?;
-    let trimmed = platform.trim();
-    if trimmed.is_empty() {
-        Ok(None)
-    } else {
-        Ok(Some(trimmed.to_string()))
-    }
+    Ok(edits)
 }
 
 /// Displays a summary and prompts for confirmation (FR-048).
@@ -520,41 +363,12 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
         .map(|d| format!("\n  Description: {}", d))
         .unwrap_or_default();
 
-    let refines = if input.traceability.refines.is_empty() {
-        String::new()
-    } else {
-        format!("\n  Refines: {}", input.traceability.refines.join(", "))
-    };
-
-    let derives_from = if input.traceability.derives_from.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\n  Derives from: {}",
-            input.traceability.derives_from.join(", ")
-        )
-    };
-
-    let satisfies = if input.traceability.satisfies.is_empty() {
-        String::new()
-    } else {
-        format!("\n  Satisfies: {}", input.traceability.satisfies.join(", "))
-    };
-
-    let depends_on = if input.traceability.depends_on.is_empty() {
-        String::new()
-    } else {
-        format!(
-            "\n  Depends on: {}",
-            input.traceability.depends_on.join(", ")
-        )
-    };
-
-    let justifies = if input.traceability.justifies.is_empty() {
-        String::new()
-    } else {
-        format!("\n  Justifies: {}", input.traceability.justifies.join(", "))
-    };
+    let traceability: String = input
+        .traceability
+        .iter()
+        .filter(|(_, ids)| !ids.is_empty())
+        .map(|(relation, ids)| format!("\n  {}: {}", relation.display_name(), ids.join(", ")))
+        .collect();
 
     let type_specific_info: String = input
         .type_specific
@@ -575,17 +389,13 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
          \x20 Type: {}\n\
          \x20 ID:   {}\n\
          \x20 Name: {}\n\
-         \x20 File: {}{}{}{}{}{}{}{}\n",
+         \x20 File: {}{}{}{}\n",
         input.item_type.display_name(),
         input.id,
         input.name,
         input.file.display(),
         description,
-        refines,
-        derives_from,
-        satisfies,
-        depends_on,
-        justifies,
+        traceability,
         type_specific_info,
     )
 }
@@ -599,18 +409,10 @@ fn field_display_name(item_type: ItemType, name: &str) -> String {
         .map_or_else(|| name.to_string(), |f| f.display_name.clone())
 }
 
-/// Prompts for file path if not provided, suggesting a file named after the
-/// item identifier inside the first configured repository so the new item is
-/// found by later scans, or the current directory when none is configured.
-fn prompt_file(
-    prefilled: Option<&PathBuf>,
-    id: &str,
-    repositories: &[PathBuf],
-) -> Result<PathBuf, PromptError> {
-    if let Some(file) = prefilled {
-        return Ok(file.clone());
-    }
-
+/// Prompts for file path, suggesting a file named after the item identifier
+/// inside the first configured repository so the new item is found by later
+/// scans, or the current directory when none is configured.
+fn prompt_file(id: &str, repositories: &[PathBuf]) -> Result<PathBuf, PromptError> {
     let file_name = format!("{id}.md");
     let default_file = repositories.first().map_or_else(
         || file_name.clone(),
@@ -640,7 +442,7 @@ pub fn run_interactive_session(
     require_tty()?;
     ensure_graph_loaded(session);
 
-    let item_type = prompt_item_type(session.prefilled.item_type)?;
+    let item_type = prompt_item_type()?;
     if let Some(graph) = &session.graph {
         graph.check_parent_exists(item_type)?;
     }
@@ -688,22 +490,12 @@ fn collect_item_input(
     session: &InteractiveSession<'_>,
     item_type: ItemType,
 ) -> Result<InteractiveInput, PromptError> {
-    let name = prompt_name(session.prefilled.name.as_ref(), None)?;
-    let id = prompt_identifier(
-        item_type,
-        session.graph.as_ref(),
-        session.prefilled.id.as_ref(),
-    )?;
-    let description = prompt_description(session.prefilled.description.as_ref(), None)?;
-    let traceability = prompt_traceability(
-        item_type,
-        session.graph.as_ref(),
-        &session.prefilled,
-        None,
-        Some(&id),
-    )?;
-    let type_specific = collect_type_specific_input(session, item_type)?;
-    let file = prompt_file(session.prefilled.file.as_ref(), &id, session.repositories)?;
+    let name = prompt_name(None)?;
+    let id = prompt_identifier(item_type, session.graph.as_ref())?;
+    let description = prompt_description(None)?;
+    let traceability = prompt_traceability(item_type, session.graph.as_ref(), None, Some(&id))?;
+    let type_specific = collect_type_specific_input(item_type)?;
+    let file = prompt_file(&id, session.repositories)?;
 
     Ok(InteractiveInput {
         file,
@@ -724,7 +516,6 @@ fn collect_item_input(
 /// references) are left to their schema defaults, like the peer-reference
 /// lists already covered by the traceability prompts.
 fn collect_type_specific_input(
-    session: &InteractiveSession<'_>,
     item_type: ItemType,
 ) -> Result<Vec<(String, FieldInput)>, PromptError> {
     let mut inputs = Vec::new();
@@ -732,14 +523,12 @@ fn collect_type_specific_input(
     for field in item_type.declared_fields() {
         match &field.field_type {
             FieldType::Text => {
-                let prefilled = prefilled_text(&session.prefilled, &field.name);
-                if let Some(value) = prompt_text_field(field, prefilled)? {
+                if let Some(value) = prompt_text_field(field, None)? {
                     inputs.push((field.name.clone(), FieldInput::Text(value)));
                 }
             }
             FieldType::List(inner) if matches!(**inner, FieldType::Text) => {
-                let prefilled = prefilled_list(&session.prefilled, &field.name);
-                let values = prompt_list_field(field, prefilled)?;
+                let values = prompt_list_field(field)?;
                 if !values.is_empty() {
                     inputs.push((field.name.clone(), FieldInput::List(values)));
                 }
@@ -756,41 +545,32 @@ fn collect_type_specific_input(
     Ok(inputs)
 }
 
-/// Returns the prefilled value for a text field, if any.
-fn prefilled_text(prefilled: &PrefilledFields, name: &str) -> Option<String> {
-    match name {
-        "specification" => prefilled.specification.clone(),
-        "platform" => prefilled.platform.clone(),
-        _ => None,
-    }
-}
-
-/// Returns the prefilled values for a text-list field.
-fn prefilled_list(prefilled: &PrefilledFields, name: &str) -> Vec<String> {
-    match name {
-        "deciders" => prefilled.deciders.clone(),
-        _ => Vec::new(),
-    }
-}
-
 /// Prompts for a single text field; required fields must be non-empty.
+///
+/// If `default` is Some, shows that value as the default in the prompt. The
+/// schema placeholder, when declared, serves as the help message.
 fn prompt_text_field(
     field: &FieldDef,
-    prefilled: Option<String>,
+    default: Option<&str>,
 ) -> Result<Option<String>, PromptError> {
-    if prefilled.is_some() {
-        return Ok(prefilled);
-    }
-
     if field.required {
-        let value = Text::new(&format!("{}:", field.display_name))
-            .with_validator(NameValidator)
-            .prompt()?;
+        let message = format!("{}:", field.display_name);
+        let mut prompt = Text::new(&message).with_validator(NameValidator);
+        if let Some(placeholder) = &field.placeholder {
+            prompt = prompt.with_help_message(placeholder);
+        }
+        if let Some(def) = default {
+            prompt = prompt.with_default(def);
+        }
+        let value = prompt.prompt()?;
         Ok(Some(value.trim().to_string()))
     } else {
-        let value = Text::new(&format!("{} (optional):", field.display_name))
-            .with_help_message("Press Enter to skip")
-            .prompt()?;
+        let message = format!("{} (optional):", field.display_name);
+        let mut prompt = Text::new(&message).with_help_message("Press Enter to skip");
+        if let Some(def) = default {
+            prompt = prompt.with_default(def);
+        }
+        let value = prompt.prompt()?;
         let trimmed = value.trim();
         if trimmed.is_empty() {
             Ok(None)
@@ -821,11 +601,7 @@ fn prompt_enum_field(field: &FieldDef, values: &[String]) -> Result<Option<Strin
 }
 
 /// Prompts for a text-list field, one entry at a time until an empty answer.
-fn prompt_list_field(field: &FieldDef, prefilled: Vec<String>) -> Result<Vec<String>, PromptError> {
-    if !prefilled.is_empty() {
-        return Ok(prefilled);
-    }
-
+fn prompt_list_field(field: &FieldDef) -> Result<Vec<String>, PromptError> {
     let mut values: Vec<String> = Vec::new();
     loop {
         let message = if values.is_empty() {
@@ -893,9 +669,11 @@ pub fn handle_interactive_result(
 mod tests {
     use super::*;
 
+    use sara_core::schema::builtin;
+
     #[test]
     fn test_suggest_next_id_no_graph() {
-        let id = ItemType::SOLUTION.suggest_next_id(None);
+        let id = builtin::SOLUTION.suggest_next_id(None);
         assert!(id.starts_with("SOL-"));
     }
 
@@ -943,31 +721,14 @@ mod tests {
 
     #[test]
     fn test_required_parent_type() {
-        assert_eq!(ItemType::SOLUTION.required_parent_type(), None);
+        assert_eq!(builtin::SOLUTION.required_parent_type(), None);
         assert_eq!(
-            ItemType::USE_CASE.required_parent_type(),
-            Some(ItemType::SOLUTION)
+            builtin::USE_CASE.required_parent_type(),
+            Some(builtin::SOLUTION)
         );
         assert_eq!(
-            ItemType::SCENARIO.required_parent_type(),
-            Some(ItemType::USE_CASE)
-        );
-    }
-
-    #[test]
-    fn test_traceability_field() {
-        assert_eq!(ItemType::SOLUTION.traceability_field(), None);
-        assert_eq!(
-            ItemType::USE_CASE.traceability_field(),
-            Some(RelationshipType::REFINES)
-        );
-        assert_eq!(
-            ItemType::SYSTEM_REQUIREMENT.traceability_field(),
-            Some(RelationshipType::DERIVES_FROM)
-        );
-        assert_eq!(
-            ItemType::SYSTEM_ARCHITECTURE.traceability_field(),
-            Some(RelationshipType::SATISFIES)
+            builtin::SCENARIO.required_parent_type(),
+            Some(builtin::USE_CASE)
         );
     }
 }
