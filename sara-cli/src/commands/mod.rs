@@ -17,9 +17,10 @@ use std::process::ExitCode;
 
 use clap::Subcommand;
 use sara_core::config::Config;
-use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
+use sara_core::graph::KnowledgeGraph;
 use sara_core::model::Item;
 use sara_core::repository::{GitReader, GitRef, parse_repositories};
+use sara_core::service::load_graph;
 
 use self::check::CheckArgs;
 use self::diff::DiffArgs;
@@ -50,8 +51,8 @@ fn parse_items(config: &Config) -> Result<Vec<Item>, Box<dyn Error>> {
 
 /// Builds the knowledge graph from the items of the configured repositories.
 fn build_graph(config: &Config) -> Result<KnowledgeGraph, Box<dyn Error>> {
-    let items = parse_items(config)?;
-    Ok(KnowledgeGraphBuilder::new().add_items(items).build()?)
+    let repos = resolve_repositories(config)?;
+    Ok(load_graph(&repos)?)
 }
 
 /// Parses items from the configured repositories at a specific Git reference.

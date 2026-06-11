@@ -10,11 +10,10 @@ use std::path::PathBuf;
 use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
 use sara_core::error::SaraError;
-use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
+use sara_core::graph::KnowledgeGraph;
 use sara_core::model::{FieldValue, ItemAttributes, ItemType, RelationshipType, TraceabilityLinks};
-use sara_core::repository::parse_repositories;
 use sara_core::schema::{FieldDef, FieldType};
-use sara_core::service::FieldInput;
+use sara_core::service::{FieldInput, load_graph};
 use thiserror::Error;
 
 use crate::output::{OutputConfig, print_error};
@@ -197,19 +196,18 @@ fn prompt_identifier(
     Ok(id.trim().to_string())
 }
 
-/// Gets items of specific types for traceability selection.
+/// Maps the relation candidates of a type to prompt options.
 ///
-/// If `exclude_id` is provided, that item will be filtered out (to prevent self-references).
-fn get_items_of_type(
+/// An absent graph yields no options.
+fn relation_candidate_options(
     graph: Option<&KnowledgeGraph>,
     item_type: ItemType,
     exclude_id: Option<&str>,
 ) -> Vec<SelectOption> {
     graph
         .map(|g| {
-            g.items()
-                .filter(|item| item.item_type == item_type)
-                .filter(|item| exclude_id.is_none_or(|id| item.id.as_str() != id))
+            g.relation_candidates(item_type, exclude_id)
+                .into_iter()
                 .map(|item| SelectOption {
                     id: item.id.as_str().to_string(),
                     name: item.name.clone(),
@@ -308,7 +306,7 @@ pub fn prompt_traceability(
     }
 
     for config in configs {
-        let options = get_items_of_type(graph, config.target_type, exclude_id);
+        let options = relation_candidate_options(graph, config.target_type, exclude_id);
         let preselected_ids = preselected
             .map(|p| p.get(config.relationship).to_vec())
             .unwrap_or_default();
@@ -458,30 +456,15 @@ fn ensure_graph_loaded(session: &mut InteractiveSession<'_>) {
         return;
     }
 
-    match build_graph_from_repositories(session.repositories) {
+    match load_graph(session.repositories) {
         Ok(graph) => {
             session.graph = Some(graph);
         }
-        Err(msg) => {
-            print_error(session.output, msg);
+        Err(e) => {
+            tracing::warn!("Failed to load knowledge graph: {}", e);
+            print_error(session.output, "Failed to load knowledge graph");
         }
     }
-}
-
-/// Builds the knowledge graph from repositories.
-fn build_graph_from_repositories(repositories: &[PathBuf]) -> Result<KnowledgeGraph, &'static str> {
-    let items = parse_repositories(repositories).map_err(|e| {
-        tracing::warn!("Parse error: {}", e);
-        "Failed to parse repositories"
-    })?;
-
-    KnowledgeGraphBuilder::new()
-        .add_items(items)
-        .build()
-        .map_err(|e| {
-            tracing::warn!("Graph build error: {}", e);
-            "Failed to build graph"
-        })
 }
 
 /// Collects all item input through prompts.
