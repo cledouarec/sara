@@ -1196,10 +1196,23 @@ mod global_options {
 
 mod custom_schema {
     use std::fs;
+    use std::path::Path;
 
     use tempfile::TempDir;
 
     use super::*;
+
+    /// Renders the `model_schema` config line for a sara.toml.
+    ///
+    /// The path is written with forward slashes: backslashes in Windows
+    /// temp-dir paths would start escape sequences inside a TOML basic
+    /// string and break parsing.
+    fn model_schema_config(schema_path: &Path) -> String {
+        format!(
+            "model_schema = \"{}\"\n",
+            schema_path.display().to_string().replace('\\', "/")
+        )
+    }
 
     /// YAML appended to an exported built-in model to declare a new type.
     const CUSTOM_TYPE_YAML: &str = r#"- id: stakeholder_requirement
@@ -1236,11 +1249,7 @@ mod custom_schema {
         fs::write(&schema_path, extended).unwrap();
 
         let config_path = temp_dir.path().join("sara.toml");
-        fs::write(
-            &config_path,
-            format!("model_schema = \"{}\"\n", schema_path.display()),
-        )
-        .unwrap();
+        fs::write(&config_path, model_schema_config(&schema_path)).unwrap();
         config_path
     }
 
@@ -1375,11 +1384,7 @@ mod custom_schema {
         fs::write(&schema_path, extended).unwrap();
 
         let config_path = temp_dir.path().join("sara.toml");
-        fs::write(
-            &config_path,
-            format!("model_schema = \"{}\"\n", schema_path.display()),
-        )
-        .unwrap();
+        fs::write(&config_path, model_schema_config(&schema_path)).unwrap();
         config_path
     }
 
@@ -1450,11 +1455,7 @@ relations: []
         )
         .unwrap();
         let config_path = temp_dir.path().join("sara.toml");
-        fs::write(
-            &config_path,
-            format!("model_schema = \"{}\"\n", schema_path.display()),
-        )
-        .unwrap();
+        fs::write(&config_path, model_schema_config(&schema_path)).unwrap();
 
         // The custom type exists...
         let note_file = temp_dir.path().join("NOTE-001.md");
