@@ -1,5 +1,7 @@
 //! Traceability matrix generation.
 
+use std::collections::HashMap;
+
 use serde::Serialize;
 
 use crate::graph::KnowledgeGraph;
@@ -45,9 +47,10 @@ pub struct TraceabilityMatrix {
 impl TraceabilityMatrix {
     /// Generates a traceability matrix from a knowledge graph.
     pub fn generate(graph: &KnowledgeGraph) -> Self {
+        let relation_types = RelationshipType::all();
         let mut rows: Vec<MatrixRow> = graph
             .items()
-            .map(|item| Self::build_row(item, graph))
+            .map(|item| Self::build_row(item, graph, &relation_types))
             .collect();
 
         let total_relationships = rows.iter().map(|r| r.targets.len()).sum();
@@ -64,11 +67,27 @@ impl TraceabilityMatrix {
     }
 
     /// Builds a matrix row for an item.
-    fn build_row(item: &crate::model::Item, graph: &KnowledgeGraph) -> MatrixRow {
+    fn build_row(
+        item: &crate::model::Item,
+        graph: &KnowledgeGraph,
+        relation_types: &[RelationshipType],
+    ) -> MatrixRow {
         let mut targets = Vec::new();
 
-        Self::collect_upstream_targets(item, graph, &mut targets);
-        Self::collect_downstream_targets(item, graph, &mut targets);
+        Self::collect_targets_by_direction(
+            item,
+            graph,
+            relation_types,
+            &mut targets,
+            RelationshipType::is_upstream,
+        );
+        Self::collect_targets_by_direction(
+            item,
+            graph,
+            relation_types,
+            &mut targets,
+            RelationshipType::is_downstream,
+        );
 
         MatrixRow {
             source_id: item.id.as_str().to_string(),
@@ -78,35 +97,15 @@ impl TraceabilityMatrix {
         }
     }
 
-    /// Collects upstream relationship targets.
-    fn collect_upstream_targets(
-        item: &crate::model::Item,
-        graph: &KnowledgeGraph,
-        targets: &mut Vec<MatrixTarget>,
-    ) {
-        Self::collect_targets_by_direction(item, graph, targets, RelationshipType::is_upstream);
-    }
-
-    /// Collects downstream relationship targets.
-    fn collect_downstream_targets(
-        item: &crate::model::Item,
-        graph: &KnowledgeGraph,
-        targets: &mut Vec<MatrixTarget>,
-    ) {
-        Self::collect_targets_by_direction(item, graph, targets, RelationshipType::is_downstream);
-    }
-
     /// Collects targets of every active-schema relation matching a direction.
     fn collect_targets_by_direction(
         item: &crate::model::Item,
         graph: &KnowledgeGraph,
+        relation_types: &[RelationshipType],
         targets: &mut Vec<MatrixTarget>,
         matches_direction: fn(&RelationshipType) -> bool,
     ) {
-        for rel_type in RelationshipType::all()
-            .into_iter()
-            .filter(matches_direction)
-        {
+        for rel_type in relation_types.iter().copied().filter(matches_direction) {
             let ids: Vec<_> = item.relationship_ids(rel_type).cloned().collect();
             Self::add_targets(&ids, rel_type.as_str(), graph, targets);
         }
@@ -134,7 +133,11 @@ impl TraceabilityMatrix {
     /// Sorts rows by the active schema's type declaration order, then by ID.
     fn sort_rows(rows: &mut [MatrixRow]) {
         let order = Self::build_columns();
-        let position = |name: &str| order.iter().position(|n| n == name).unwrap_or(order.len());
+        let mut positions: HashMap<&str, usize> = HashMap::with_capacity(order.len());
+        for (index, name) in order.iter().enumerate() {
+            positions.entry(name.as_str()).or_insert(index);
+        }
+        let position = |name: &str| positions.get(name).copied().unwrap_or(order.len());
         rows.sort_by(|a, b| {
             position(&a.source_type)
                 .cmp(&position(&b.source_type))
