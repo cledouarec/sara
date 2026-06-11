@@ -95,6 +95,18 @@ impl KnowledgeGraph {
             .collect()
     }
 
+    /// Returns the items of a type that can serve as relation targets.
+    ///
+    /// When `exclude_id` is provided, the item with that ID is filtered out
+    /// so an item never offers itself as a target.
+    pub fn relation_candidates(&self, item_type: ItemType, exclude_id: Option<&str>) -> Vec<&Item> {
+        self.graph
+            .node_weights()
+            .filter(|item| item.item_type == item_type)
+            .filter(|item| exclude_id.is_none_or(|id| item.id.as_str() != id))
+            .collect()
+    }
+
     /// Returns the count of items by type.
     pub fn count_by_type(&self) -> HashMap<ItemType, usize> {
         let mut counts = HashMap::new();
@@ -372,6 +384,22 @@ mod tests {
 
         let use_cases = graph.items_by_type(builtin::USE_CASE);
         assert_eq!(use_cases.len(), 2);
+    }
+
+    #[test]
+    fn test_relation_candidates_excludes_self() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("UC-001", builtin::USE_CASE))
+            .add_item(create_test_item("UC-002", builtin::USE_CASE))
+            .build()
+            .unwrap();
+
+        let all = graph.relation_candidates(builtin::USE_CASE, None);
+        assert_eq!(all.len(), 2);
+
+        let candidates = graph.relation_candidates(builtin::USE_CASE, Some("UC-001"));
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].id.as_str(), "UC-002");
     }
 
     #[test]
