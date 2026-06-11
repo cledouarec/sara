@@ -16,7 +16,7 @@ use sara_core::schema::{FieldDef, FieldType};
 use sara_core::service::{FieldInput, load_graph};
 use thiserror::Error;
 
-use crate::output::{OutputConfig, print_error};
+use crate::output::{OutputConfig, print_error, print_warning};
 
 /// Configuration for an interactive init session.
 pub struct InteractiveSession<'a> {
@@ -457,7 +457,10 @@ fn ensure_graph_loaded(session: &mut InteractiveSession<'_>) {
     }
 
     match load_graph(session.repositories) {
-        Ok(graph) => {
+        Ok((graph, warnings)) => {
+            for warning in &warnings {
+                print_warning(session.output, &warning.to_string());
+            }
             session.graph = Some(graph);
         }
         Err(e) => {

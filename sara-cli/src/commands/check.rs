@@ -14,7 +14,7 @@ use serde::Serialize;
 
 use sara_core::config::{Config, OutputConfig};
 
-use crate::output::{format_error, format_success, format_warning, print_warning};
+use crate::output::{format_error, format_success, format_warning, print_error, print_warning};
 
 /// Output format for check command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -76,17 +76,32 @@ pub fn run(args: &CheckArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>
     let start = Instant::now();
     let output_config = &config.output;
 
-    let items = match args.at.as_deref() {
-        Some(git_ref) => super::parse_items_at(config, git_ref)?,
+    let (items, scan_warnings) = match args.at.as_deref() {
+        Some(git_ref) => (super::parse_items_at(config, git_ref)?, Vec::new()),
         None => super::parse_items(config)?,
     };
+
+    for warning in &scan_warnings {
+        print_warning(output_config, &warning.to_string());
+    }
+
+    let strict = args.strict || config.validation.strict_mode;
+
+    if strict && !scan_warnings.is_empty() {
+        print_error(
+            output_config,
+            &format!(
+                "Check failed: {} path(s) skipped during scan",
+                scan_warnings.len()
+            ),
+        );
+        return Ok(ExitCode::FAILURE);
+    }
 
     if items.is_empty() {
         print_warning(output_config, "No items found in repositories");
         return Ok(ExitCode::SUCCESS);
     }
-
-    let strict = args.strict || config.validation.strict_mode;
 
     let pre_report = pre_validate(&items, strict);
     if !pre_report.is_valid() {

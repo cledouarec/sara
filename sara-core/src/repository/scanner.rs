@@ -1,5 +1,6 @@
 //! File scanner for discovering Markdown files.
 
+use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -7,7 +8,7 @@ use rayon::prelude::*;
 
 use crate::error::SaraError;
 use crate::model::Item;
-use crate::parser::InputFormat;
+use crate::parser::{InputFormat, has_frontmatter, parse_metadata};
 
 /// Scans a directory for Markdown files and returns their paths.
 pub fn scan_directory(path: &Path) -> Result<Vec<PathBuf>, SaraError> {
@@ -47,11 +48,31 @@ fn scan_directory_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), 
     Ok(())
 }
 
-/// Parses all Markdown files in a directory and returns items.
+/// A path skipped during a scan, together with the reason.
 ///
-/// Uses parallel parsing with rayon for improved performance on large directories.
-pub fn parse_directory(repository_path: &Path) -> Result<Vec<Item>, SaraError> {
-    parse_directory_parallel(repository_path)
+/// Unreadable or unparseable files do not abort a scan; each one is recorded
+/// so callers can report the problem instead of silently dropping items.
+#[derive(Debug, Clone)]
+pub struct ScanWarning {
+    /// The file or repository path that was skipped.
+    pub path: PathBuf,
+    /// Why the path was skipped.
+    pub reason: String,
+}
+
+impl fmt::Display for ScanWarning {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "skipped {}: {}", self.path.display(), self.reason)
+    }
+}
+
+/// Items collected by a scan, along with the paths that were skipped.
+#[derive(Debug, Default)]
+pub struct ScanResult {
+    /// Items parsed successfully.
+    pub items: Vec<Item>,
+    /// One warning per skipped file or repository path.
+    pub warnings: Vec<ScanWarning>,
 }
 
 /// Result of parsing a single file.
@@ -64,15 +85,16 @@ enum ParseResult {
     /// Error reading file.
     ReadError(std::io::Error),
     /// Error parsing file.
-    ParseError(crate::error::SaraError),
+    ParseError(SaraError),
 }
 
-/// Parses files in parallel using rayon for improved performance.
+/// Parses all Markdown files in a directory.
 ///
-/// This function uses rayon's parallel iterator to parse multiple files
-/// concurrently, significantly improving performance on large document sets.
-/// Target: 500 documents in <1 second (SC-001).
-pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, SaraError> {
+/// Files are parsed in parallel with rayon, significantly improving
+/// performance on large document sets. Target: 500 documents in <1 second
+/// (SC-001). Files that cannot be read or parsed are skipped and reported
+/// in [`ScanResult::warnings`].
+pub fn parse_directory(repository_path: &Path) -> Result<ScanResult, SaraError> {
     let files = scan_directory(repository_path)?;
 
     // Parse files in parallel
@@ -86,7 +108,7 @@ pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, Sar
             };
 
             // Skip files without frontmatter
-            if !crate::parser::has_frontmatter(&content) {
+            if !has_frontmatter(&content) {
                 return ParseResult::Skipped;
             }
 
@@ -97,7 +119,7 @@ pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, Sar
                 .to_path_buf();
 
             // Parse the markdown file
-            match crate::parser::parse_metadata(
+            match parse_metadata(
                 &content,
                 &relative_path,
                 repository_path,
@@ -109,67 +131,77 @@ pub fn parse_directory_parallel(repository_path: &Path) -> Result<Vec<Item>, Sar
         })
         .collect();
 
-    // Collect items and errors
-    let mut items = Vec::new();
-    let mut parse_errors = Vec::new();
-
-    for result in results {
+    let mut scan = ScanResult::default();
+    for (file_path, result) in files.iter().zip(results) {
         match result {
-            ParseResult::Item(item) => items.push(*item),
+            ParseResult::Item(item) => scan.items.push(*item),
             ParseResult::Skipped => {}
             ParseResult::ReadError(e) => {
-                tracing::warn!("Failed to read file: {}", e);
+                tracing::warn!("Failed to read file {}: {}", file_path.display(), e);
+                scan.warnings.push(ScanWarning {
+                    path: file_path.clone(),
+                    reason: e.to_string(),
+                });
             }
-            ParseResult::ParseError(e) => parse_errors.push(e),
+            ParseResult::ParseError(e) => {
+                tracing::warn!("Parse error: {}", e);
+                scan.warnings.push(ScanWarning {
+                    path: file_path.clone(),
+                    reason: e.to_string(),
+                });
+            }
         }
     }
 
-    // Log parse errors but don't fail unless all files failed
-    for error in &parse_errors {
-        tracing::warn!("Parse error: {}", error);
-    }
-
-    if !parse_errors.is_empty() && items.is_empty() {
-        return Err(parse_errors.remove(0));
-    }
-
-    Ok(items)
+    Ok(scan)
 }
 
-/// Parses multiple repository paths and returns all items.
+/// Parses multiple repository paths and collects all items.
 ///
-/// Uses parallel parsing across repositories for improved performance.
-pub fn parse_repositories(paths: &[PathBuf]) -> Result<Vec<Item>, SaraError> {
+/// Repository paths that do not exist or cannot be scanned are skipped and
+/// reported in [`ScanResult::warnings`], together with the warnings from
+/// every scanned repository.
+pub fn parse_repositories(paths: &[PathBuf]) -> ScanResult {
+    let mut scan = ScanResult::default();
+
+    let mut valid_paths = Vec::new();
+    for path in paths {
+        if path.exists() {
+            valid_paths.push(path);
+        } else {
+            tracing::warn!("Repository path does not exist: {}", path.display());
+            scan.warnings.push(ScanWarning {
+                path: path.clone(),
+                reason: "repository path does not exist".to_string(),
+            });
+        }
+    }
+
     // For small number of repositories, parallelism at file level is more efficient
     // For larger numbers, we could parallelize at the repository level too
-    let valid_paths: Vec<&PathBuf> = paths
-        .iter()
-        .filter(|path| {
-            if !path.exists() {
-                tracing::warn!("Repository path does not exist: {}", path.display());
-                false
-            } else {
-                true
-            }
-        })
-        .collect();
-
-    // Parse all repositories in parallel at the file level
-    let results: Vec<Result<Vec<Item>, SaraError>> = valid_paths
+    let results: Vec<Result<ScanResult, SaraError>> = valid_paths
         .par_iter()
         .map(|path| parse_directory(path))
         .collect();
 
     // Combine results
-    let mut all_items = Vec::new();
-    for result in results {
+    for (path, result) in valid_paths.iter().zip(results) {
         match result {
-            Ok(items) => all_items.extend(items),
-            Err(e) => tracing::warn!("Failed to parse repository: {}", e),
+            Ok(repo_scan) => {
+                scan.items.extend(repo_scan.items);
+                scan.warnings.extend(repo_scan.warnings);
+            }
+            Err(e) => {
+                tracing::warn!("Failed to parse repository: {}", e);
+                scan.warnings.push(ScanWarning {
+                    path: (*path).clone(),
+                    reason: e.to_string(),
+                });
+            }
         }
     }
 
-    Ok(all_items)
+    scan
 }
 
 #[cfg(test)]
@@ -194,5 +226,39 @@ mod tests {
                     .all(|f| f.extension().is_some_and(|e| e == "md"))
             );
         }
+    }
+
+    #[test]
+    fn test_parse_directory_reports_skipped_files() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            temp_dir.path().join("good.md"),
+            "---\nid: \"SOL-001\"\ntype: solution\nname: \"Good\"\n---\n# Good\n",
+        )
+        .unwrap();
+        std::fs::write(
+            temp_dir.path().join("bad.md"),
+            "---\nid: \"SOL-002\ntype: solution\n---\n# Bad\n",
+        )
+        .unwrap();
+
+        let scan = parse_directory(temp_dir.path()).unwrap();
+
+        assert_eq!(scan.items.len(), 1);
+        assert_eq!(scan.items[0].id.as_str(), "SOL-001");
+        assert_eq!(scan.warnings.len(), 1);
+        assert!(scan.warnings[0].path.ends_with("bad.md"));
+        assert!(scan.warnings[0].to_string().starts_with("skipped "));
+    }
+
+    #[test]
+    fn test_parse_repositories_reports_missing_path() {
+        let missing = PathBuf::from("/nonexistent/sara-repository");
+
+        let scan = parse_repositories(std::slice::from_ref(&missing));
+
+        assert!(scan.items.is_empty());
+        assert_eq!(scan.warnings.len(), 1);
+        assert_eq!(scan.warnings[0].path, missing);
     }
 }
