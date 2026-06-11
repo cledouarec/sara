@@ -168,27 +168,18 @@ fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) 
 }
 
 fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
-    // Print upstream (requires)
-    let parents = graph.parents(&item.id);
-    if !parents.is_empty() {
-        let label = colorize(config, "Requires:", Color::None, Style::Bold);
+    for (rel_type, related) in graph.direct_relationships(&item.id) {
+        let label = colorize(
+            config,
+            &format!("{}:", rel_type.display_name()),
+            Color::None,
+            Style::Bold,
+        );
         println!("\n   {label}");
-        for (i, parent) in parents.iter().enumerate() {
-            let branch = format_tree_branch(i == parents.len() - 1);
-            let id = colorize(config, parent.id.as_str(), Color::Cyan, Style::None);
-            println!("     {branch} {id}: {name}", name = parent.name);
-        }
-    }
-
-    // Print downstream (realized by)
-    let children = graph.children(&item.id);
-    if !children.is_empty() {
-        let label = colorize(config, "Realized by:", Color::None, Style::Bold);
-        println!("\n   {label}");
-        for (i, child) in children.iter().enumerate() {
-            let branch = format_tree_branch(i == children.len() - 1);
-            let id = colorize(config, child.id.as_str(), Color::Cyan, Style::None);
-            println!("     {branch} {id}: {name}", name = child.name);
+        for (i, related_item) in related.iter().enumerate() {
+            let branch = format_tree_branch(i == related.len() - 1);
+            let id = colorize(config, related_item.id.as_str(), Color::Cyan, Style::None);
+            println!("     {branch} {id}: {name}", name = related_item.name);
         }
     }
 }
