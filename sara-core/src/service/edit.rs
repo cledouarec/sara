@@ -273,27 +273,27 @@ impl EditService {
     }
 
     /// Merges edit options with current item values.
-    pub fn merge_values(&self, opts: &EditOptions, current: &ItemContext) -> EditedValues {
+    ///
+    /// The current values are cloned rather than consumed so the context
+    /// stays available as the "before" side of the change summary.
+    pub fn merge_values(&self, opts: EditOptions, current: &ItemContext) -> EditedValues {
         let mut traceability = current.traceability.clone();
-        for (relation, ids) in &opts.relations {
-            traceability.set(*relation, ids.clone());
+        for (relation, ids) in opts.relations {
+            traceability.set(relation, ids);
         }
 
         let mut attributes = current.attributes.clone();
-        for (name, input) in &opts.fields {
-            if let Some(field) = current.item_type.declared_field(name)
-                && let Some(value) = init_field_value(field, Some(input))
+        for (name, input) in opts.fields {
+            if let Some(field) = current.item_type.declared_field(&name)
+                && let Some(value) = init_field_value(field, Some(&input))
             {
-                attributes.insert(name.clone(), value);
+                attributes.insert(name, value);
             }
         }
 
         EditedValues {
-            name: opts.name.clone().unwrap_or_else(|| current.name.clone()),
-            description: opts
-                .description
-                .clone()
-                .or_else(|| current.description.clone()),
+            name: opts.name.unwrap_or_else(|| current.name.clone()),
+            description: opts.description.or_else(|| current.description.clone()),
             traceability,
             attributes,
         }
@@ -440,17 +440,13 @@ impl EditService {
     }
 
     /// Performs a non-interactive edit operation.
-    pub fn edit(
-        &self,
-        graph: &KnowledgeGraph,
-        opts: &EditOptions,
-    ) -> Result<EditResult, SaraError> {
+    pub fn edit(&self, graph: &KnowledgeGraph, opts: EditOptions) -> Result<EditResult, SaraError> {
         // Look up the item
         let item = self.lookup_item(graph, &opts.item_id)?;
         let item_ctx = self.get_item_context(item);
 
         // Validate options
-        self.validate_options(opts, item_ctx.item_type)?;
+        self.validate_options(&opts, item_ctx.item_type)?;
 
         // Merge values
         let new_values = self.merge_values(opts, &item_ctx);
@@ -579,7 +575,7 @@ mod tests {
 
         let opts = EditOptions::new("SOL-001").with_name("New Name");
 
-        let merged = service.merge_values(&opts, &current);
+        let merged = service.merge_values(opts, &current);
 
         assert_eq!(merged.name, "New Name");
         assert_eq!(merged.description, Some("Old Description".to_string()));
@@ -596,7 +592,7 @@ mod tests {
             "specification",
             Some("The system SHALL be edited.".to_string()),
         );
-        let merged = service.merge_values(&opts, &current);
+        let merged = service.merge_values(opts, &current);
 
         assert_eq!(
             merged.attributes.get("specification"),
@@ -618,7 +614,7 @@ mod tests {
 
         let opts =
             EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-002".to_string()]);
-        let merged = service.merge_values(&opts, &current);
+        let merged = service.merge_values(opts, &current);
 
         assert_eq!(merged.traceability.get(builtin::REFINES), ["SOL-002"]);
     }
@@ -669,7 +665,7 @@ mod tests {
         let item =
             crate::test_utils::create_test_item("ADR-001", builtin::ARCHITECTURE_DECISION_RECORD);
         let ctx = ItemContext::from_item(&item);
-        let values = service.merge_values(&EditOptions::new("ADR-001").with_name("Renamed"), &ctx);
+        let values = service.merge_values(EditOptions::new("ADR-001").with_name("Renamed"), &ctx);
 
         let yaml = service.build_frontmatter_yaml(
             "ADR-001",

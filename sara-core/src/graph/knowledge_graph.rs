@@ -156,15 +156,12 @@ impl KnowledgeGraph {
     }
 
     /// Returns all relationships in the graph.
-    pub fn relationships(&self) -> Vec<(ItemId, ItemId, RelationshipType)> {
-        self.graph
-            .edge_references()
-            .filter_map(|edge| {
-                let from = self.graph.node_weight(edge.source())?;
-                let to = self.graph.node_weight(edge.target())?;
-                Some((from.id.clone(), to.id.clone(), *edge.weight()))
-            })
-            .collect()
+    pub fn relationships(&self) -> impl Iterator<Item = (&ItemId, &ItemId, RelationshipType)> {
+        self.graph.edge_references().filter_map(|edge| {
+            let from = self.graph.node_weight(edge.source())?;
+            let to = self.graph.node_weight(edge.target())?;
+            Some((&from.id, &to.id, *edge.weight()))
+        })
     }
 
     /// Looks up an item by ID.
