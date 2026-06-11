@@ -27,7 +27,7 @@ use super::init::field_help;
 use super::interactive::{
     PromptError, prompt_description, prompt_field_edits, prompt_name, prompt_traceability,
 };
-use crate::output::{print_error, print_success};
+use crate::output::{Color, Style, colorize, print_error, print_success};
 
 /// Help heading of the static item property flags.
 const HEADING_PROPERTIES: &str = "Item Properties";
@@ -193,7 +193,10 @@ pub fn run(args: &EditArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>>
         Err(e) => {
             print_error(&config.output, &format!("{}", e));
             if let Some(suggestions) = e.format_suggestions() {
-                println!("{}", suggestions);
+                println!(
+                    "{}",
+                    colorize(&config.output, &suggestions, Color::None, Style::Dimmed)
+                );
             }
             return Ok(ExitCode::from(1));
         }
@@ -243,7 +246,7 @@ fn run_interactive_edit(
         return Ok(ExitCode::from(1));
     }
 
-    display_edit_header(&item.id, item.item_type);
+    display_edit_header(config, &item.id, item.item_type);
 
     match run_edit_prompts(graph, item) {
         Ok(new_values) => process_edit_changes(service, item, &new_values, config),
@@ -260,7 +263,7 @@ fn process_edit_changes(
 ) -> Result<ExitCode, Box<dyn Error>> {
     let changes = service.build_change_summary(item, new_values);
 
-    display_change_summary(&changes);
+    display_change_summary(config, &changes);
 
     if !changes.iter().any(|c| c.is_changed()) {
         println!("\nNo changes to apply.");
@@ -339,12 +342,10 @@ fn print_cancelled() {
 }
 
 /// Displays the edit header with immutable fields (FR-059, FR-060).
-fn display_edit_header(item_id: &str, item_type: ItemType) {
-    println!(
-        "\n  Editing {} ({})\n  ────────────────────────────────────\n",
-        item_id,
-        item_type.display_name()
-    );
+fn display_edit_header(config: &OutputConfig, item_id: &str, item_type: ItemType) {
+    let id = colorize(config, item_id, Color::Cyan, Style::Bold);
+    let item_type = colorize(config, item_type.display_name(), Color::None, Style::Dimmed);
+    println!("\n  Editing {id} ({item_type})");
 }
 
 /// Runs all edit prompts with defaults (FR-056).
@@ -381,8 +382,9 @@ fn run_edit_prompts(
 }
 
 /// Displays the change summary with diff-style output (FR-063).
-fn display_change_summary(changes: &[FieldChange]) {
-    println!("\n  Changes to apply:\n  ────────────────────────────────────");
+fn display_change_summary(config: &OutputConfig, changes: &[FieldChange]) {
+    let header = colorize(config, "Changes to apply:", Color::None, Style::Bold);
+    println!("\n  {header}");
 
     for change in changes {
         if change.is_changed() {
@@ -391,7 +393,8 @@ fn display_change_summary(changes: &[FieldChange]) {
                 change.field, change.old_value, change.new_value
             );
         } else {
-            println!("  {}: (unchanged)", change.field);
+            let unchanged = colorize(config, "(unchanged)", Color::None, Style::Dimmed);
+            println!("  {}: {unchanged}", change.field);
         }
     }
 

@@ -20,7 +20,7 @@ use sara_core::config::{Config, OutputConfig};
 use super::interactive::{
     InteractiveSession, PromptError, handle_interactive_result, run_interactive_session,
 };
-use crate::output::{print_error, print_success, print_warning};
+use crate::output::{Color, Style, colorize, print_error, print_success, print_warning};
 
 /// Arguments for the init command.
 #[derive(Args, Debug)]
@@ -379,15 +379,19 @@ fn print_result(config: &OutputConfig, result: &InitResult) {
 }
 
 /// Prints item information after initialization.
-fn print_item_info(_config: &OutputConfig, result: &InitResult) {
-    let output = format!(
-        "\n  ID:   {}\n  Name: {}\n  Type: {}",
-        result.id,
-        result.name,
-        result.item_type.display_name()
+fn print_item_info(config: &OutputConfig, result: &InitResult) {
+    let id = colorize(config, &result.id, Color::Cyan, Style::Bold);
+    let item_type = colorize(
+        config,
+        result.item_type.display_name(),
+        Color::None,
+        Style::Dimmed,
     );
 
-    println!("{}", output);
+    println!(
+        "\n  ID:   {id}\n  Name: {name}\n  Type: {item_type}",
+        name = result.name,
+    );
 }
 
 #[cfg(test)]
