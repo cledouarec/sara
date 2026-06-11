@@ -142,6 +142,46 @@ impl KnowledgeGraph {
             .collect()
     }
 
+    /// Returns the items directly related to an item, grouped by relation.
+    ///
+    /// Outgoing edges are grouped under their own relation and incoming
+    /// edges under their relation's inverse, so a declared link appears
+    /// from both sides even when the builder materialized no inverse edge.
+    /// Groups follow the active schema's relation declaration order; within
+    /// a group, items are sorted by ID and duplicates from materialized
+    /// inverse edges are collapsed.
+    pub fn direct_relationships(&self, id: &ItemId) -> Vec<(RelationshipType, Vec<&Item>)> {
+        let Some(idx) = self.index.get(id) else {
+            return Vec::new();
+        };
+
+        let mut related: Vec<(RelationshipType, &Item)> = Vec::new();
+        for edge in self.graph.edges_directed(*idx, Direction::Outgoing) {
+            if let Some(target) = self.graph.node_weight(edge.target()) {
+                related.push((*edge.weight(), target));
+            }
+        }
+        for edge in self.graph.edges_directed(*idx, Direction::Incoming) {
+            if let Some(source) = self.graph.node_weight(edge.source()) {
+                related.push((edge.weight().inverse(), source));
+            }
+        }
+
+        RelationshipType::all()
+            .into_iter()
+            .filter_map(|rel_type| {
+                let mut items: Vec<&Item> = related
+                    .iter()
+                    .filter(|(rel, _)| *rel == rel_type)
+                    .map(|(_, item)| *item)
+                    .collect();
+                items.sort_by_key(|item| item.id.as_str());
+                items.dedup_by(|a, b| a.id == b.id);
+                (!items.is_empty()).then_some((rel_type, items))
+            })
+            .collect()
+    }
+
     /// Returns all items with no upstream parents (potential orphans).
     pub fn orphans(&self) -> Vec<&Item> {
         self.graph
@@ -488,6 +528,79 @@ mod tests {
         // ADR-002 -> Supersedes -> ADR-001
         // ADR-001 -> IsSupersededBy -> ADR-002
         assert_eq!(graph.relationship_count(), 2);
+    }
+
+    /// Reduces relation groups to (relation id, item ids) pairs for assertions.
+    fn group_ids<'a>(groups: &'a [(RelationshipType, Vec<&Item>)]) -> Vec<(&'a str, Vec<&'a str>)> {
+        groups
+            .iter()
+            .map(|(rel_type, items)| {
+                (
+                    rel_type.as_str(),
+                    items.iter().map(|item| item.id.as_str()).collect(),
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn test_direct_relationships_groups_by_relation() {
+        let swreq = create_test_item("SWREQ-001", builtin::SOFTWARE_REQUIREMENT);
+        let swdd = create_test_item_with_relationships(
+            "SWDD-001",
+            builtin::SOFTWARE_DETAILED_DESIGN,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SWREQ-001"),
+                builtin::SATISFIES,
+            )],
+        );
+        let adr = create_test_adr("ADR-001", &["SWDD-001"], &[]);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(swreq)
+            .add_item(swdd)
+            .add_item(adr)
+            .build()
+            .unwrap();
+
+        // The design groups its declared link and the incoming justification
+        // under their own relations, in schema declaration order.
+        let groups = graph.direct_relationships(&ItemId::new_unchecked("SWDD-001"));
+        assert_eq!(
+            group_ids(&groups),
+            vec![
+                ("satisfies", vec!["SWREQ-001"]),
+                ("justified_by", vec!["ADR-001"]),
+            ]
+        );
+
+        // The requirement sees the declared link through the inverse relation
+        // even though no inverse edge was materialized for it.
+        let groups = graph.direct_relationships(&ItemId::new_unchecked("SWREQ-001"));
+        assert_eq!(
+            group_ids(&groups),
+            vec![("is_satisfied_by", vec!["SWDD-001"])]
+        );
+    }
+
+    #[test]
+    fn test_direct_relationships_collapses_materialized_inverse_edges() {
+        let adr_old = create_test_adr("ADR-001", &[], &[]);
+        let adr_new = create_test_adr("ADR-002", &[], &["ADR-001"]);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(adr_old)
+            .add_item(adr_new)
+            .build()
+            .unwrap();
+
+        // The peer link is materialized in both directions; each side still
+        // reports the other exactly once, under the matching relation.
+        let groups = graph.direct_relationships(&ItemId::new_unchecked("ADR-002"));
+        assert_eq!(group_ids(&groups), vec![("supersedes", vec!["ADR-001"])]);
+
+        let groups = graph.direct_relationships(&ItemId::new_unchecked("ADR-001"));
+        assert_eq!(group_ids(&groups), vec![("superseded_by", vec!["ADR-002"])]);
     }
 
     #[test]

@@ -175,6 +175,53 @@ mod query_command {
     }
 
     #[test]
+    fn test_query_labels_relationships_by_relation() {
+        let fixtures = fixtures_path().join("query_relations");
+
+        // The design declares `satisfies` and receives an incoming
+        // `justifies`; each related item is listed under the display name
+        // of its own relation, not under a generic direction label.
+        sara()
+            .current_dir(&fixtures)
+            .arg("--no-color")
+            .arg("query")
+            .arg("SWDD-QR-001")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Satisfies:"))
+            .stdout(predicate::str::contains("SWREQ-QR-001"))
+            .stdout(predicate::str::contains("Justified by:"))
+            .stdout(predicate::str::contains("ADR-QR-001"))
+            .stdout(predicate::str::contains("Requires:").not())
+            .stdout(predicate::str::contains("Realized by").not());
+    }
+
+    #[test]
+    fn test_query_shows_peer_relationships() {
+        let fixtures = fixtures_path().join("query_relations");
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("--no-color")
+            .arg("query")
+            .arg("SWREQ-QR-002")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Depends on:"))
+            .stdout(predicate::str::contains("SWREQ-QR-001"));
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("--no-color")
+            .arg("query")
+            .arg("SWREQ-QR-001")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Is required by:"))
+            .stdout(predicate::str::contains("SWREQ-QR-002"));
+    }
+
+    #[test]
     fn test_query_upstream() {
         let fixtures = fixtures_path().join("valid_graph");
 
