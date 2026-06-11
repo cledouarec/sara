@@ -215,7 +215,7 @@ fn main() -> ExitCode {
         Err(e) => {
             let config = cli.output_config(file_config.as_ref());
             output::print_error(&config, &format!("{}", e));
-            ExitCode::from(1)
+            ExitCode::FAILURE
         }
     }
 }

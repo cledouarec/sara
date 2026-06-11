@@ -23,6 +23,7 @@ use sara_core::service::{EditOptions, EditService, EditedValues, FieldInput, Ite
 
 use sara_core::config::{Config, OutputConfig};
 
+use super::EXIT_CANCELLED;
 use super::init::field_help;
 use super::interactive::{
     PromptError, prompt_description, prompt_field_edits, prompt_name, prompt_traceability,
@@ -198,7 +199,7 @@ pub fn run(args: &EditArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>>
                     colorize(&config.output, &suggestions, Color::None, Style::Dimmed)
                 );
             }
-            return Ok(ExitCode::from(1));
+            return Ok(ExitCode::FAILURE);
         }
     };
 
@@ -243,7 +244,7 @@ fn run_interactive_edit(
 ) -> Result<ExitCode, Box<dyn Error>> {
     if let Err(e) = require_tty_for_edit() {
         print_error(config, &format!("{}", e));
-        return Ok(ExitCode::from(1));
+        return Ok(ExitCode::FAILURE);
     }
 
     display_edit_header(config, &item.id, item.item_type);
@@ -285,7 +286,7 @@ fn confirm_and_apply_changes(
         Ok(true) => apply_and_report_changes(service, item, new_values, changes, config),
         Ok(false) | Err(_) => {
             print_cancelled();
-            Ok(ExitCode::from(130))
+            Ok(ExitCode::from(EXIT_CANCELLED))
         }
     }
 }
@@ -327,11 +328,11 @@ fn handle_prompt_error(
     match error {
         PromptError::Cancelled | PromptError::InquireError(InquireError::OperationInterrupted) => {
             print_cancelled();
-            Ok(ExitCode::from(130))
+            Ok(ExitCode::from(EXIT_CANCELLED))
         }
         e => {
             print_error(config, &format!("{}", e));
-            Ok(ExitCode::from(1))
+            Ok(ExitCode::FAILURE)
         }
     }
 }
@@ -417,7 +418,7 @@ fn run_non_interactive_edit(
     // Validate type-specific fields (FR-058)
     if let Err(e) = service.validate_options(&opts, item.item_type) {
         print_error(config, &format!("{}", e));
-        return Ok(ExitCode::from(1));
+        return Ok(ExitCode::FAILURE);
     }
 
     // Merge updates with current values

@@ -29,6 +29,9 @@ use self::report::ReportArgs;
 use self::schema::SchemaArgs;
 use crate::Cli;
 
+/// Exit code reported when the user cancels an interactive prompt (128 + SIGINT).
+const EXIT_CANCELLED: u8 = 130;
+
 /// Returns the resolved repository paths, falling back to the current directory.
 fn resolve_repositories(config: &Config) -> Result<Vec<PathBuf>, io::Error> {
     if config.repositories.paths.is_empty() {

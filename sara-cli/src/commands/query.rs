@@ -126,7 +126,7 @@ fn handle_not_found(
         }
     }
 
-    Ok(ExitCode::from(1))
+    Ok(ExitCode::FAILURE)
 }
 
 fn build_traversal_options(args: &QueryArgs) -> TraversalOptions {

@@ -133,7 +133,7 @@ fn handle_output(
     if report.is_valid() {
         Ok(ExitCode::SUCCESS)
     } else {
-        Ok(ExitCode::from(1))
+        Ok(ExitCode::FAILURE)
     }
 }
 
