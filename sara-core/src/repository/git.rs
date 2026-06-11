@@ -22,6 +22,13 @@ where
     SaraError::Gix(Box::new(e))
 }
 
+/// Characters that introduce revision-expression syntax, such as `HEAD~1`,
+/// `main^2`, or `@{upstream}`. Git forbids `~`, `^`, and `:` in reference
+/// names, so their presence always indicates a revision expression. `@` may
+/// appear in branch names, but resolving such a name through the revspec
+/// grammar still finds the reference.
+const REVSPEC_CHARS: &[char] = &['~', '^', '@', ':'];
+
 /// Represents a Git reference that can be used to read files.
 #[derive(Debug, Clone)]
 pub enum GitRef {
@@ -33,6 +40,8 @@ pub enum GitRef {
     Branch(String),
     /// A tag name.
     Tag(String),
+    /// A revision expression such as `HEAD~1` or `main^2`.
+    Revspec(String),
 }
 
 impl GitRef {
@@ -43,11 +52,17 @@ impl GitRef {
     /// - `abc123` - a commit SHA (abbreviated or full)
     /// - `refs/heads/main` - a branch reference
     /// - `refs/tags/v1.0` - a tag reference
+    /// - `HEAD~1` - a revision expression
     /// - `main` - a branch name (shorthand)
+    ///
+    /// Any input containing `~`, `^`, `@`, or `:` is treated as a revision
+    /// expression and resolved through the full revspec grammar.
     pub fn parse(s: &str) -> Self {
         let s = s.trim();
         if s.eq_ignore_ascii_case("head") {
             GitRef::Head
+        } else if s.contains(REVSPEC_CHARS) {
+            GitRef::Revspec(s.to_string())
         } else if s.starts_with("refs/heads/") {
             GitRef::Branch(s.trim_start_matches("refs/heads/").to_string())
         } else if s.starts_with("refs/tags/") {
@@ -114,6 +129,7 @@ impl GitReader {
                 let spec = format!("refs/tags/{name}");
                 self.peel_spec_to_commit(spec.as_bytes())
             }
+            GitRef::Revspec(spec) => self.peel_spec_to_commit(spec.as_bytes()),
         }
     }
 
@@ -294,6 +310,13 @@ mod tests {
     #[test]
     fn test_git_ref_parse_tag() {
         assert!(matches!(GitRef::parse("refs/tags/v1.0"), GitRef::Tag(_)));
+    }
+
+    #[test]
+    fn test_git_ref_parse_revspec() {
+        assert!(matches!(GitRef::parse("HEAD~1"), GitRef::Revspec(_)));
+        assert!(matches!(GitRef::parse("HEAD^"), GitRef::Revspec(_)));
+        assert!(matches!(GitRef::parse("main~2"), GitRef::Revspec(_)));
     }
 
     #[test]

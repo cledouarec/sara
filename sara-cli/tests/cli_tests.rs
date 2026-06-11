@@ -501,6 +501,23 @@ name: "Mobile App"
     }
 
     #[test]
+    fn test_diff_revision_expression_lists_changes() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("HEAD~1")
+            .arg("HEAD")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("+ SOL-003 (Solution)"))
+            .stdout(predicate::str::contains("- SOL-002 (Solution)"))
+            .stdout(predicate::str::contains("~ SOL-001 (Solution)"));
+    }
+
+    #[test]
     fn test_diff_stat_prints_summary_only() {
         let repo = diff_repo();
 
