@@ -219,11 +219,11 @@ impl DiffService {
         let mut all_items = Vec::new();
 
         for repo_path in repositories {
-            let items = parse_directory(repo_path).map_err(|e| DiffError::ParseError {
+            let scan = parse_directory(repo_path).map_err(|e| DiffError::ParseError {
                 path: repo_path.display().to_string(),
                 reason: e.to_string(),
             })?;
-            all_items.extend(items);
+            all_items.extend(scan.items);
         }
 
         Ok(all_items)

@@ -107,6 +107,41 @@ mod check_command {
             .success()
             .stdout(predicate::str::contains("\"items_checked\""));
     }
+
+    #[test]
+    fn test_check_warns_about_skipped_files() {
+        let fixtures = fixtures_path().join("corrupt_file");
+
+        // The corrupt file is reported but does not fail the check
+        sara()
+            .arg("check")
+            .arg("-r")
+            .arg(&fixtures)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("skipped"))
+            .stdout(predicate::str::contains("CORRUPT-001.md"))
+            .stdout(predicate::str::contains("Check passed"));
+    }
+
+    #[test]
+    fn test_check_strict_config_fails_on_skipped_files() {
+        let fixtures = fixtures_path().join("corrupt_file");
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("sara.toml");
+        std::fs::write(&config_path, "[validation]\nstrict_mode = true\n").unwrap();
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("check")
+            .arg("-r")
+            .arg(&fixtures)
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("CORRUPT-001.md"))
+            .stdout(predicate::str::contains("skipped during scan"));
+    }
 }
 
 mod query_command {

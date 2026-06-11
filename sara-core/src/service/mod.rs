@@ -9,7 +9,7 @@ use std::path::PathBuf;
 use crate::error::SaraError;
 use crate::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use crate::model::{ItemId, Relationship, RelationshipType};
-use crate::repository::parse_repositories;
+use crate::repository::{ScanWarning, parse_repositories};
 
 pub mod diff;
 pub mod edit;
@@ -17,9 +17,13 @@ pub mod init;
 
 /// Parses the given repository paths and builds the knowledge graph from
 /// every item found.
-pub fn load_graph(paths: &[PathBuf]) -> Result<KnowledgeGraph, SaraError> {
-    let items = parse_repositories(paths)?;
-    KnowledgeGraphBuilder::new().add_items(items).build()
+///
+/// Warnings for paths skipped during the scan are returned alongside the
+/// graph so callers can report them.
+pub fn load_graph(paths: &[PathBuf]) -> Result<(KnowledgeGraph, Vec<ScanWarning>), SaraError> {
+    let scan = parse_repositories(paths);
+    let graph = KnowledgeGraphBuilder::new().add_items(scan.items).build()?;
+    Ok((graph, scan.warnings))
 }
 
 /// Converts string IDs into [`Relationship`] values of the given type.
@@ -61,8 +65,9 @@ name: "Test Solution"
         )
         .unwrap();
 
-        let graph = load_graph(&[temp_dir.path().to_path_buf()]).unwrap();
+        let (graph, warnings) = load_graph(&[temp_dir.path().to_path_buf()]).unwrap();
 
         assert_eq!(graph.item_count(), 1);
+        assert!(warnings.is_empty());
     }
 }

@@ -19,7 +19,7 @@ use clap::Subcommand;
 use sara_core::config::Config;
 use sara_core::graph::KnowledgeGraph;
 use sara_core::model::Item;
-use sara_core::repository::{GitReader, GitRef, parse_repositories};
+use sara_core::repository::{GitReader, GitRef, ScanWarning, parse_repositories};
 use sara_core::service::load_graph;
 
 use self::check::CheckArgs;
@@ -30,6 +30,7 @@ use self::query::QueryArgs;
 use self::report::ReportArgs;
 use self::schema::SchemaArgs;
 use crate::Cli;
+use crate::output::print_warning;
 
 /// Exit code reported when the user cancels an interactive prompt (128 + SIGINT).
 const EXIT_CANCELLED: u8 = 130;
@@ -43,16 +44,23 @@ fn resolve_repositories(config: &Config) -> Result<Vec<PathBuf>, io::Error> {
     }
 }
 
-/// Parses items from the configured repositories.
-fn parse_items(config: &Config) -> Result<Vec<Item>, Box<dyn Error>> {
+/// Parses items from the configured repositories, returning the warnings
+/// for skipped paths alongside the items.
+fn parse_items(config: &Config) -> Result<(Vec<Item>, Vec<ScanWarning>), Box<dyn Error>> {
     let repos = resolve_repositories(config)?;
-    Ok(parse_repositories(&repos)?)
+    let scan = parse_repositories(&repos);
+    Ok((scan.items, scan.warnings))
 }
 
-/// Builds the knowledge graph from the items of the configured repositories.
+/// Builds the knowledge graph from the items of the configured repositories,
+/// printing a warning for every path skipped during the scan.
 fn build_graph(config: &Config) -> Result<KnowledgeGraph, Box<dyn Error>> {
     let repos = resolve_repositories(config)?;
-    Ok(load_graph(&repos)?)
+    let (graph, warnings) = load_graph(&repos)?;
+    for warning in &warnings {
+        print_warning(&config.output, &warning.to_string());
+    }
+    Ok(graph)
 }
 
 /// Parses items from the configured repositories at a specific Git reference.
