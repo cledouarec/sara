@@ -72,12 +72,6 @@ impl KnowledgeGraph {
         self.graph.node_weight(*idx)
     }
 
-    /// Gets a mutable reference to an item by ID.
-    pub fn get_mut(&mut self, id: &ItemId) -> Option<&mut Item> {
-        let idx = self.index.get(id)?;
-        self.graph.node_weight_mut(*idx)
-    }
-
     /// Checks if an item exists in the graph.
     pub fn contains(&self, id: &ItemId) -> bool {
         self.index.contains_key(id)
@@ -154,11 +148,6 @@ impl KnowledgeGraph {
     /// Returns the underlying petgraph for advanced operations.
     pub fn inner(&self) -> &DiGraph<Item, RelationshipType> {
         &self.graph
-    }
-
-    /// Returns a mutable reference to the underlying petgraph.
-    pub fn inner_mut(&mut self) -> &mut DiGraph<Item, RelationshipType> {
-        &mut self.graph
     }
 
     /// Returns the node index for an item ID.
