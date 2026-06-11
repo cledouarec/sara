@@ -64,6 +64,10 @@ fn build_graph(config: &Config) -> Result<KnowledgeGraph, Box<dyn Error>> {
 }
 
 /// Parses items from the configured repositories at a specific Git reference.
+///
+/// Each path is resolved to its enclosing Git repository and the scan is
+/// scoped to that path, so files outside the configured repositories are
+/// never parsed.
 fn parse_items_at(config: &Config, git_ref: &str) -> Result<Vec<Item>, Box<dyn Error>> {
     let repos = resolve_repositories(config)?;
     let git_ref = GitRef::parse(git_ref);
@@ -75,8 +79,9 @@ fn parse_items_at(config: &Config, git_ref: &str) -> Result<Vec<Item>, Box<dyn E
             continue;
         }
 
-        let reader = GitReader::open(repo_path)?;
-        let items = reader.parse_commit(&git_ref)?;
+        let reader = GitReader::discover(repo_path)?;
+        let scope = reader.scope_from_path(repo_path)?;
+        let items = reader.parse_commit(&git_ref, &scope)?;
         all_items.extend(items);
     }
 

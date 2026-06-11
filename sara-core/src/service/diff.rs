@@ -119,38 +119,57 @@ impl DiffService {
     }
 
     /// Attempts Git-based diff comparison.
-    /// Returns None if Git comparison is not possible (e.g., not a Git repo).
+    /// Returns None if Git comparison is not possible (e.g., a configured
+    /// path lies outside any Git repository).
+    ///
+    /// Each configured path is resolved to its enclosing Git repository and
+    /// the scan is scoped to that path, so files outside the configured
+    /// repositories are never parsed. The items compared at each reference
+    /// are the union over all configured paths.
     fn try_git_diff(&self, opts: &DiffOptions) -> Result<Option<DiffResult>, DiffError> {
         // We need at least one repository path
         if opts.repositories.is_empty() {
             return Ok(None);
         }
 
-        // Try to open a Git reader for the first repository
-        let repo_path = &opts.repositories[0];
-        let git_reader = match GitReader::discover(repo_path) {
-            Ok(reader) => reader,
-            Err(_) => return Ok(None), // Not a Git repo, fall back
-        };
-
         // Parse Git references
         let git_ref1 = GitRef::parse(&opts.ref1);
         let git_ref2 = GitRef::parse(&opts.ref2);
 
-        // Parse items at each reference
-        let items1 = git_reader
-            .parse_commit(&git_ref1)
-            .map_err(|e| DiffError::ParseError {
-                path: format!("{}@{}", repo_path.display(), opts.ref1),
-                reason: e.to_string(),
-            })?;
+        // Parse items at each reference, accumulated across all paths
+        let mut items1 = Vec::new();
+        let mut items2 = Vec::new();
 
-        let items2 = git_reader
-            .parse_commit(&git_ref2)
-            .map_err(|e| DiffError::ParseError {
-                path: format!("{}@{}", repo_path.display(), opts.ref2),
-                reason: e.to_string(),
-            })?;
+        for repo_path in &opts.repositories {
+            let git_reader = match GitReader::discover(repo_path) {
+                Ok(reader) => reader,
+                Err(_) => return Ok(None), // Not a Git repo, fall back
+            };
+
+            // Scope the scan to the configured path so files outside it
+            // are never parsed
+            let scope =
+                git_reader
+                    .scope_from_path(repo_path)
+                    .map_err(|e| DiffError::ParseError {
+                        path: repo_path.display().to_string(),
+                        reason: e.to_string(),
+                    })?;
+
+            items1.extend(git_reader.parse_commit(&git_ref1, &scope).map_err(|e| {
+                DiffError::ParseError {
+                    path: format!("{}@{}", repo_path.display(), opts.ref1),
+                    reason: e.to_string(),
+                }
+            })?);
+
+            items2.extend(git_reader.parse_commit(&git_ref2, &scope).map_err(|e| {
+                DiffError::ParseError {
+                    path: format!("{}@{}", repo_path.display(), opts.ref2),
+                    reason: e.to_string(),
+                }
+            })?);
+        }
 
         // Build graphs from each reference
         let graph1 = KnowledgeGraphBuilder::new()
@@ -238,9 +257,51 @@ mod tests {
     use tempfile::TempDir;
 
     use super::*;
+    use crate::test_utils::run_git;
+
+    /// Item committed under the first configured path at the baseline.
+    const FIRST_PATH_ITEM: &str = r#"---
+id: "SOL-001"
+type: solution
+name: "First Path"
+---
+# Solution: First Path
+"#;
+
+    /// Item added under the second configured path by the second commit.
+    const SECOND_PATH_ITEM: &str = r#"---
+id: "SOL-010"
+type: solution
+name: "Second Path"
+---
+# Solution: Second Path
+"#;
 
     fn create_test_file(dir: &Path, name: &str, content: &str) {
         fs::write(dir.join(name), content).unwrap();
+    }
+
+    /// Creates a Git repository with an item under `docs` at the baseline
+    /// and an item under `specs` added by the second commit.
+    fn multi_path_repo() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = temp_dir.path();
+
+        run_git(repo, &["init"]);
+        run_git(repo, &["config", "user.name", "Sara Tests"]);
+        run_git(repo, &["config", "user.email", "tests@example.com"]);
+
+        fs::create_dir(repo.join("docs")).unwrap();
+        fs::write(repo.join("docs/SOL-001.md"), FIRST_PATH_ITEM).unwrap();
+        run_git(repo, &["add", "."]);
+        run_git(repo, &["commit", "-m", "baseline"]);
+
+        fs::create_dir(repo.join("specs")).unwrap();
+        fs::write(repo.join("specs/SOL-010.md"), SECOND_PATH_ITEM).unwrap();
+        run_git(repo, &["add", "."]);
+        run_git(repo, &["commit", "-m", "add spec"]);
+
+        temp_dir
     }
 
     #[test]
@@ -296,6 +357,22 @@ name: "Test Solution"
         assert_eq!(opts.ref1, "HEAD~1");
         assert_eq!(opts.ref2, "HEAD");
         assert_eq!(opts.repositories.len(), 2);
+    }
+
+    #[test]
+    fn test_git_diff_unions_all_configured_paths() {
+        let repo = multi_path_repo();
+        let opts = DiffOptions::new("HEAD~1", "HEAD")
+            .with_repositories(vec![repo.path().join("docs"), repo.path().join("specs")]);
+
+        let service = DiffService::new();
+        let result = service.diff(&opts).unwrap();
+
+        assert!(result.is_full_comparison);
+        assert_eq!(result.diff.added_items.len(), 1);
+        assert_eq!(result.diff.added_items[0].id, "SOL-010");
+        assert!(result.diff.removed_items.is_empty());
+        assert!(result.diff.modified_items.is_empty());
     }
 
     #[test]

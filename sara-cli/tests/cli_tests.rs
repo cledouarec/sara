@@ -413,6 +413,35 @@ name: "Mobile App"
 # Solution: Mobile App
 "#;
 
+    /// Valid item outside the configured repository path, present in both
+    /// commits.
+    const OUT_OF_SCOPE_ITEM: &str = r#"---
+id: "SOL-099"
+type: solution
+name: "Out of Scope"
+---
+# Solution: Out of Scope
+"#;
+
+    /// File with invalid frontmatter outside the configured repository path,
+    /// present in both commits.
+    const OUT_OF_SCOPE_CORRUPT_ITEM: &str = r#"---
+id: "CORRUPT-001
+type: solution
+---
+# Corrupt
+"#;
+
+    /// Item added under the second configured repository path by the second
+    /// commit.
+    const SECOND_PATH_ADDED_ITEM: &str = r#"---
+id: "SOL-010"
+type: solution
+name: "Reporting Service"
+---
+# Solution: Reporting Service
+"#;
+
     /// Runs a Git command in the repository, isolated from the user and
     /// system Git configuration.
     fn git(repo: &Path, args: &[&str]) {
@@ -435,6 +464,10 @@ name: "Mobile App"
     /// Creates a Git repository whose `baseline` branch holds SOL-001 and
     /// SOL-002, while the second commit at HEAD renames SOL-001, removes
     /// SOL-002 and adds SOL-003.
+    ///
+    /// The configuration declares `./docs` as the only repository path; a
+    /// valid item and a corrupt file live outside it in both commits and
+    /// must never appear in any output.
     fn diff_repo() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
         let repo = temp_dir.path();
@@ -443,18 +476,54 @@ name: "Mobile App"
         git(repo, &["config", "user.name", "Sara Tests"]);
         git(repo, &["config", "user.email", "tests@example.com"]);
 
-        fs::write(repo.join("sara.toml"), "[repositories]\npaths = [\".\"]\n").unwrap();
-        fs::write(repo.join("SOL-001.md"), RENAMED_ITEM_BEFORE).unwrap();
-        fs::write(repo.join("SOL-002.md"), REMOVED_ITEM).unwrap();
+        fs::write(
+            repo.join("sara.toml"),
+            "[repositories]\npaths = [\"./docs\"]\n",
+        )
+        .unwrap();
+        fs::create_dir(repo.join("docs")).unwrap();
+        fs::write(repo.join("docs/SOL-001.md"), RENAMED_ITEM_BEFORE).unwrap();
+        fs::write(repo.join("docs/SOL-002.md"), REMOVED_ITEM).unwrap();
+        fs::write(repo.join("SOL-099.md"), OUT_OF_SCOPE_ITEM).unwrap();
+        fs::write(repo.join("CORRUPT-001.md"), OUT_OF_SCOPE_CORRUPT_ITEM).unwrap();
         git(repo, &["add", "."]);
         git(repo, &["commit", "-m", "baseline"]);
         git(repo, &["branch", "baseline"]);
 
-        fs::write(repo.join("SOL-001.md"), RENAMED_ITEM_AFTER).unwrap();
-        fs::write(repo.join("SOL-003.md"), ADDED_ITEM).unwrap();
-        fs::remove_file(repo.join("SOL-002.md")).unwrap();
+        fs::write(repo.join("docs/SOL-001.md"), RENAMED_ITEM_AFTER).unwrap();
+        fs::write(repo.join("docs/SOL-003.md"), ADDED_ITEM).unwrap();
+        fs::remove_file(repo.join("docs/SOL-002.md")).unwrap();
         git(repo, &["add", "."]);
         git(repo, &["commit", "-m", "changes"]);
+
+        temp_dir
+    }
+
+    /// Creates a Git repository whose configuration declares `./docs` and
+    /// `./specs` as repository paths. The baseline commit holds SOL-001
+    /// under `docs`; the second commit adds SOL-010 under `specs`.
+    fn multi_path_repo() -> TempDir {
+        let temp_dir = TempDir::new().unwrap();
+        let repo = temp_dir.path();
+
+        git(repo, &["init"]);
+        git(repo, &["config", "user.name", "Sara Tests"]);
+        git(repo, &["config", "user.email", "tests@example.com"]);
+
+        fs::write(
+            repo.join("sara.toml"),
+            "[repositories]\npaths = [\"./docs\", \"./specs\"]\n",
+        )
+        .unwrap();
+        fs::create_dir(repo.join("docs")).unwrap();
+        fs::write(repo.join("docs/SOL-001.md"), RENAMED_ITEM_BEFORE).unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "baseline"]);
+
+        fs::create_dir(repo.join("specs")).unwrap();
+        fs::write(repo.join("specs/SOL-010.md"), SECOND_PATH_ADDED_ITEM).unwrap();
+        git(repo, &["add", "."]);
+        git(repo, &["commit", "-m", "add spec"]);
 
         temp_dir
     }
@@ -596,6 +665,56 @@ name: "Mobile App"
             .failure()
             .stdout(predicate::str::contains("Failed to parse repository"))
             .stdout(predicate::str::contains("no-such-branch"));
+    }
+
+    #[test]
+    fn test_diff_ignores_files_outside_configured_repositories() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("baseline")
+            .arg("HEAD")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("~ SOL-001 (Solution)"))
+            .stdout(predicate::str::contains("SOL-099").not())
+            .stdout(predicate::str::contains("CORRUPT-001").not())
+            .stderr(predicate::str::contains("CORRUPT-001").not());
+    }
+
+    #[test]
+    fn test_diff_scans_all_configured_repository_paths() {
+        let repo = multi_path_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("HEAD~1")
+            .arg("HEAD")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("+ SOL-010 (Solution)"));
+    }
+
+    #[test]
+    fn test_check_at_ignores_files_outside_configured_repositories() {
+        let repo = diff_repo();
+
+        sara()
+            .current_dir(repo.path())
+            .arg("--no-color")
+            .arg("check")
+            .arg("--at")
+            .arg("HEAD")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("SOL-099").not())
+            .stdout(predicate::str::contains("CORRUPT-001").not())
+            .stderr(predicate::str::contains("CORRUPT-001").not());
     }
 }
 
