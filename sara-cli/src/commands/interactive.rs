@@ -385,7 +385,6 @@ fn build_confirmation_summary(input: &InteractiveInput) -> String {
     format!(
         "\n\
          \x20 Summary:\n\
-         \x20 ────────────────────────────────────\n\
          \x20 Type: {}\n\
          \x20 ID:   {}\n\
          \x20 Name: {}\n\
