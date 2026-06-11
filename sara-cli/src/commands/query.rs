@@ -318,7 +318,10 @@ fn print_traversal_json(result: &TraversalResult, graph: &KnowledgeGraph) {
         "items": nodes
     });
 
-    println!("{}", serde_json::to_string_pretty(&json_output).unwrap());
+    println!(
+        "{}",
+        serde_json::to_string_pretty(&json_output).unwrap_or_else(|_| "{}".to_string())
+    );
 }
 
 /// Parses item type strings into item types known to the active schema.
