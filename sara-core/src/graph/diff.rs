@@ -90,8 +90,8 @@ impl GraphDiff {
         let mut modified_items = Vec::new();
 
         // Collect item IDs from both graphs
-        let old_ids: HashSet<_> = old_graph.item_ids().cloned().collect();
-        let new_ids: HashSet<_> = new_graph.item_ids().cloned().collect();
+        let old_ids: HashSet<_> = old_graph.item_ids().collect();
+        let new_ids: HashSet<_> = new_graph.item_ids().collect();
 
         // Find added items (in new but not in old)
         for id in new_ids.difference(&old_ids) {
@@ -123,22 +123,14 @@ impl GraphDiff {
         }
 
         // Compute relationship diffs
-        let old_rels: HashSet<_> = old_graph
-            .relationships()
-            .into_iter()
-            .map(|(from, to, rel)| (from.as_str().to_string(), to.as_str().to_string(), rel))
-            .collect();
-        let new_rels: HashSet<_> = new_graph
-            .relationships()
-            .into_iter()
-            .map(|(from, to, rel)| (from.as_str().to_string(), to.as_str().to_string(), rel))
-            .collect();
+        let old_rels: HashSet<_> = old_graph.relationships().collect();
+        let new_rels: HashSet<_> = new_graph.relationships().collect();
 
         let added_relationships: Vec<_> = new_rels
             .difference(&old_rels)
             .map(|(from, to, rel)| RelationshipDiff {
-                from_id: from.clone(),
-                to_id: to.clone(),
+                from_id: from.as_str().to_string(),
+                to_id: to.as_str().to_string(),
                 relationship_type: format!("{:?}", rel),
             })
             .collect();
@@ -146,8 +138,8 @@ impl GraphDiff {
         let removed_relationships: Vec<_> = old_rels
             .difference(&new_rels)
             .map(|(from, to, rel)| RelationshipDiff {
-                from_id: from.clone(),
-                to_id: to.clone(),
+                from_id: from.as_str().to_string(),
+                to_id: to.as_str().to_string(),
                 relationship_type: format!("{:?}", rel),
             })
             .collect();

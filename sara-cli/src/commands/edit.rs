@@ -219,7 +219,7 @@ pub fn run(args: &EditArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>>
     // Check if interactive or non-interactive mode
     if opts.has_updates() {
         // Non-interactive mode (FR-057, FR-058)
-        run_non_interactive_edit(&service, &opts, &item_ctx, &config.output)
+        run_non_interactive_edit(&service, opts, &item_ctx, &config.output)
     } else {
         // Interactive mode (FR-055, FR-056)
         run_interactive_edit(&service, &graph, &item_ctx, &config.output)
@@ -410,12 +410,12 @@ fn prompt_edit_confirmation() -> Result<bool, PromptError> {
 /// Runs the non-interactive edit (FR-057, FR-058).
 fn run_non_interactive_edit(
     service: &EditService,
-    opts: &EditOptions,
+    opts: EditOptions,
     item: &ItemContext,
     config: &OutputConfig,
 ) -> Result<ExitCode, Box<dyn Error>> {
     // Validate type-specific fields (FR-058)
-    if let Err(e) = service.validate_options(opts, item.item_type) {
+    if let Err(e) = service.validate_options(&opts, item.item_type) {
         print_error(config, &format!("{}", e));
         return Ok(ExitCode::from(1));
     }
