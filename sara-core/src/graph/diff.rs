@@ -193,14 +193,12 @@ impl GraphDiff {
         }
 
         // Check attribute changes, over the union of both attribute sets
-        let mut field_names: Vec<&String> = old.attributes.iter().map(|(name, _)| name).collect();
-        let added_names: Vec<&String> = new
-            .attributes
-            .iter()
-            .map(|(name, _)| name)
-            .filter(|name| !field_names.contains(name))
-            .collect();
-        field_names.extend(added_names);
+        let field_names = old.attributes.iter().map(|(name, _)| name).chain(
+            new.attributes
+                .iter()
+                .map(|(name, _)| name)
+                .filter(|name| old.attributes.get(name).is_none()),
+        );
         for name in field_names {
             let old_value = old.attributes.get(name);
             let new_value = new.attributes.get(name);
