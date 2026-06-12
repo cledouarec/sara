@@ -7,6 +7,49 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/cledouarec/sara/compare/sara-core-v0.8.1...sara-core-v0.9.0) - 2026-06-12
+
+### Added
+
+- [**breaking**] drive edit, prompts and validation from the active schema (by @cledouarec) - #105
+- [**breaking**] a custom schema replaces the built-in model entirely (by @cledouarec) - #105
+- build init subcommands from the active schema (by @cledouarec) - #105
+- make relations schema-defined at runtime (by @cledouarec) - #105
+- make item types schema-defined at runtime (by @cledouarec) - #105
+- drive markdown generation from the active schema (by @cledouarec) - #105
+- store item attributes in a typed field map (by @cledouarec) - #105
+- delegate ItemType/RelationshipRules to active schema (by @cledouarec) - #105
+- add YAML-loadable model definition (by @cledouarec) - #105
+
+### Changed
+
+- move graph loading into the core service layer (by @cledouarec) - #105
+- borrow paths as &Path in function signatures (by @cledouarec) - #105
+- [**breaking**] drop dead code and share the frontmatter delimiter scan (by @cledouarec) - #105
+- type the frontmatter entry kinds as an enum (by @cledouarec) - #105
+- store peer links as relationships (by @cledouarec) - #105
+
+### Fixed
+
+- label query relationships by their schema relation (by @cledouarec) - #105
+- [**breaking**] scan only configured repository paths at git refs (by @cledouarec) - #105
+- [**breaking**] resolve revision expressions like HEAD~1 as git refs (by @cledouarec) - #105
+- [**breaking**] surface skipped files and schema-load failures (by @cledouarec) - #105
+- let a partial schema reference built-in types and relations (by @cledouarec) - #105
+
+### Other
+
+- [**breaking**] avoid redundant clones in graph diff and edit merge (by @cledouarec) - #105
+- drop linear scans from diff and matrix (by @cledouarec) - #105
+
+### Testing
+
+- unit-cover edit service and the parse-generate round trip (by @cledouarec) - #105
+
+### Contributors
+
+* @cledouarec
+
 ## [0.8.1](https://github.com/cledouarec/sara/compare/sara-core-v0.8.0...sara-core-v0.8.1) - 2026-05-31
 
 ### Other
