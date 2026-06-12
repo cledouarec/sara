@@ -7,6 +7,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.8.1...sara-cli-v0.9.0) - 2026-06-12
+
+### Added
+
+- [**breaking**] drive edit, prompts and validation from the active schema (by @cledouarec) - #105
+- [**breaking**] a custom schema replaces the built-in model entirely (by @cledouarec) - #105
+- add a schema command exporting the active model (by @cledouarec) - #105
+- build init subcommands from the active schema (by @cledouarec) - #105
+- make relations schema-defined at runtime (by @cledouarec) - #105
+- make item types schema-defined at runtime (by @cledouarec) - #105
+- drive markdown generation from the active schema (by @cledouarec) - #105
+- delegate ItemType/RelationshipRules to active schema (by @cledouarec) - #105
+
+### Changed
+
+- move graph loading into the core service layer (by @cledouarec) - #105
+- build the knowledge graph through one helper (by @cledouarec) - #105
+- name and share the cli exit codes (by @cledouarec) - #105
+- borrow paths as &Path in function signatures (by @cledouarec) - #105
+
+### Fixed
+
+- label query relationships by their schema relation (by @cledouarec) - #105
+- [**breaking**] scan only configured repository paths at git refs (by @cledouarec) - #105
+- [**breaking**] resolve revision expressions like HEAD~1 as git refs (by @cledouarec) - #105
+- [**breaking**] surface skipped files and schema-load failures (by @cledouarec) - #105
+- stop panicking when JSON output serialization fails (by @cledouarec) - #105
+- accept architecture_decision_record in query --type filter (by @cledouarec) - #105
+
+### Other
+
+- [**breaking**] avoid redundant clones in graph diff and edit merge (by @cledouarec) - #105
+
+### Styling
+
+- align edit and init output on colorize, drop decorative rules (by @cledouarec) - #105
+
+### Testing
+
+- write the schema path TOML-safely in custom-schema configs (by @cledouarec) - #105
+- cover the diff command end to end (by @cledouarec) - #105
+
+### Contributors
+
+* @cledouarec
+
 ## [0.8.1](https://github.com/cledouarec/sara/compare/sara-cli-v0.8.0...sara-cli-v0.8.1) - 2026-05-31
 
 ### Other
