@@ -28,7 +28,7 @@ toml = "1.1.2"
 indexmap = { version = "2.13", features = ["serde"] }
 
 # Git operations (pure Rust via gitoxide, read-only local access only)
-gix = { version = "0.84.0", default-features = false, features = ["max-performance-safe", "revision", "sha1", "zlib-rs"] }
+gix = { version = "0.85.0", default-features = false, features = ["max-performance-safe", "revision", "sha1", "zlib-rs"] }
 
 # Terminal output
 colored = "3.1.1"
