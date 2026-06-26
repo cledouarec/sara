@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.2](https://github.com/cledouarec/sara/compare/sara-core-v0.9.1...sara-core-v0.9.2) - 2026-06-26
+
+### Other
+
+- update Cargo.toml dependencies
+
 ## [0.9.0](https://github.com/cledouarec/sara/compare/sara-core-v0.8.1...sara-core-v0.9.0) - 2026-06-12
 
 ### Added
