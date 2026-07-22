@@ -380,9 +380,9 @@ fn build_context(item: &Item) -> Context {
 
     for entry in &entries {
         if entry.kind == EntryKind::List {
-            context.insert(&entry.name, &entry.values);
+            context.insert(entry.name.clone(), &entry.values);
         } else {
-            context.insert(&entry.name, &entry.value);
+            context.insert(entry.name.clone(), &entry.value);
         }
     }
     context.insert("entries", &entries);
