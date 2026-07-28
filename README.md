@@ -30,6 +30,7 @@ SARA is a command-line tool that manages Architecture documents and Requirements
 - [Features](#features)
 - [Installation](#installation)
   - [From crates.io (Recommended)](#from-cratesio-recommended)
+  - [Using Nix](#using-nix)
   - [From Source](#from-source)
 - [Quick Start](#quick-start)
 - [Commands](#commands)
@@ -99,6 +100,32 @@ Your requirements are too important to be trapped in a proprietary system. And y
 ```bash
 cargo install sara-cli
 ```
+
+### Using Nix
+
+With [Nix](https://nixos.org/) and flakes enabled, run SARA without installing
+it:
+
+```bash
+nix run github:cledouarec/sara -- --version
+```
+
+Or install it into your profile:
+
+```bash
+nix profile install github:cledouarec/sara
+```
+
+To use SARA from another flake, add it as an input:
+
+```nix
+{
+  inputs.sara.url = "github:cledouarec/sara";
+}
+```
+
+The package is exposed as `packages.<system>.default` for `x86_64-linux`,
+`aarch64-linux` and `aarch64-darwin`.
 
 ### From Source
 

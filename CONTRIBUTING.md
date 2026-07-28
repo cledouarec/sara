@@ -23,7 +23,19 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 - Rust 1.85+ (2024 edition)
 
+Alternatively, [Nix](https://nixos.org/) with flakes enabled provides the whole
+toolchain, so nothing else needs to be installed.
+
 ### Building
+
+If you use Nix, enter the development shell first. It provides `rustc`,
+`cargo`, `rustfmt`, `clippy` and `rust-analyzer`:
+
+```bash
+nix develop
+```
+
+The commands below are the same with or without Nix:
 
 ```bash
 # Debug build
