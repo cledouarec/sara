@@ -30,6 +30,11 @@ Thumbs.db
 tarpaulin-report.html
 coverage/
 
+# Nix
+result
+result-*
+.direnv/
+
 # Misc
 sara.toml
 model.yaml
