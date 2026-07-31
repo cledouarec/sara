@@ -47,6 +47,12 @@ rayon = "1.12.0"
 # Fuzzy string matching
 strsim = "0.11.1"
 
+# Unique identifiers
+uuid = { version = "1", features = ["v4", "v7"] }
+
+# Date and time
+chrono = { version = "0.4", default-features = false, features = ["clock"] }
+
 # Templating
 tera = "2.0.0"
 
