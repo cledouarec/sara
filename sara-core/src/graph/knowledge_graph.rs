@@ -275,26 +275,6 @@ impl KnowledgeGraph {
         (!has_parents).then_some(parent_type)
     }
 
-    /// Checks if parent items exist for the given item type.
-    ///
-    /// Solution has no parent requirement and always returns Ok.
-    pub fn check_parent_exists(&self, item_type: ItemType) -> Result<(), SaraError> {
-        let Some(parent_type) = item_type.required_parent_type() else {
-            return Ok(());
-        };
-
-        let has_parents = self.items().any(|item| item.item_type == parent_type);
-
-        if has_parents {
-            Ok(())
-        } else {
-            Err(SaraError::MissingParent {
-                item_type: item_type.display_name().to_string(),
-                parent_type: parent_type.display_name().to_string(),
-            })
-        }
-    }
-
     /// Core implementation for finding similar IDs with Levenshtein distance scoring.
     fn find_similar_ids_scored(
         &self,
