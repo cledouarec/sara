@@ -580,12 +580,27 @@ item_types:
 | `id` | yes | Snake_case identifier, used as the `type:` value in frontmatter |
 | `display_name` | yes | Human-readable label used in reports and help texts |
 | `prefix` | yes | Identifier prefix (e.g. `STKREQ-001`); its lowercase form becomes the `sara init` alias |
-| `id_format` | yes | Identifier format template (reserved; identifiers currently render as `PREFIX-NNN`) |
+| `id_format` | yes | Identifier template driving generation, suggestion and `sara check` (see below) |
 | `parent_types` | no | Types a parent must have; empty for hierarchy roots |
 | `fields` | no | Typed frontmatter fields (see below) |
 | `allowed_targets` | no | Relations this type may declare, with their valid target types |
 
-> **Note:** `id_format` uses Sara's own placeholder syntax, not [Tera](https://keats.github.io/tera/docs/): `{prefix}` is the type's `prefix` and `{seq:03}` is the per-type sequence number zero-padded to three digits (so the first stakeholder requirement is `STKREQ-001`). The key is reserved for future use — today identifiers always render as `PREFIX-NNN` regardless of its value.
+#### Identifier Formats
+
+`id_format` uses Sara's own placeholder syntax, not [Tera](https://keats.github.io/tera/docs/): literal text plus `{placeholder}` segments (`{{` and `}}` escape literal braces). The same template generates new identifiers (`sara init`), recognizes existing ones when suggesting the next sequence number, and backs a `sara check` warning when an item's id does not match its type's format.
+
+| Placeholder | Renders | Notes |
+|-------------|---------|-------|
+| `{prefix}` | The type's `prefix` key | |
+| `{id}` | The type's `id` key | |
+| `{seq}` / `{seq:0N}` | Per-type counter, zero-padded to N digits | At most one; recognition accepts any width, so unpadded legacy ids still count |
+| `{year}` `{month}` `{day}` | UTC date at creation (4/2/2 digits) | Frozen in the id, never recomputed |
+| `{date}` | Shorthand for `{year}{month}{day}` | |
+| `{uuid4}` / `{uuid7}` | A random / time-ordered UUID | At most one each; unique without coordination across git branches |
+
+A format must contain at least one uniqueness source (`{seq}`, `{uuid4}` or `{uuid7}`), and `{seq}` must be followed by the end of the format or a literal that does not start with a digit — violations are rejected when the schema loads.
+
+The sequence counter is scoped to the rendered pattern: when the interactive `sara init` suggests the next id under `id_format: "{prefix}-{year}-{seq:02}"`, the first stakeholder requirement of 2027 is suggested as `STKREQ-2027-01` even if `STKREQ-2026-14` exists (a non-interactive `sara init` always starts at `01`; pass `--id` to choose explicitly). With `id_format: "{prefix}-{uuid4}"`, `sara init` mints ids like `STKREQ-8f14e45f-ceea-467f-a8d9-91f6a2c9be03` with no sequence scan at all.
 
 Each field declares `name`, `display_name`, a `field_type`, an optional `required` flag and an optional `placeholder` used when `sara init` runs without input for a required field.
 

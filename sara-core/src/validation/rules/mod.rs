@@ -6,6 +6,7 @@
 mod broken_refs;
 mod cycles;
 mod duplicates;
+mod id_format;
 mod metadata;
 mod orphans;
 mod redundant;
@@ -15,6 +16,7 @@ mod relationships;
 pub use broken_refs::BrokenReferencesRule;
 pub use cycles::CyclesRule;
 pub use duplicates::DuplicatesRule;
+pub use id_format::IdFormatRule;
 pub use metadata::MetadataRule;
 pub use orphans::OrphansRule;
 pub use redundant::RedundantRelationshipsRule;
