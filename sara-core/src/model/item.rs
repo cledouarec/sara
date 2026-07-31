@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use crate::error::SaraError;
 use crate::model::field::FieldValue;
 use crate::model::relationship::{Relationship, RelationshipType};
-use crate::schema::{self, FieldDef, ItemTypeDef, RelationDirection};
+use crate::schema::{self, FieldDef, IdFormat, ItemTypeDef, RelationDirection};
 
 /// Canonical name of the item identifier field.
 ///
@@ -111,39 +111,51 @@ impl ItemType {
             .unwrap_or_default()
     }
 
-    /// Generates a new ID for the given type with an optional sequence number.
-    ///
-    /// Defaults to sequence 1 if not provided.
-    #[must_use]
-    pub fn generate_id(&self, sequence: Option<u32>) -> String {
-        let num = sequence.unwrap_or(1);
-        format!("{}-{:03}", self.prefix(), num)
+    /// Returns the compiled identifier template of this type, if the active
+    /// schema defines the type.
+    fn id_format(&self) -> Option<IdFormat> {
+        schema::item_type_def(self.as_str()).and_then(|def| IdFormat::parse(&def.id_format).ok())
     }
 
-    /// Suggests the next sequential ID based on existing items in the graph.
+    /// Generates a new ID for the given type with an optional sequence number.
     ///
-    /// Finds the highest existing ID for this type and returns the next one.
-    /// If no graph is provided or no items exist, returns the first ID (e.g., "SOL-001").
+    /// Renders the type's `id_format`; defaults to sequence 1 if not
+    /// provided. Falls back to `PREFIX-NNN` when the active schema does not
+    /// define the type.
+    #[must_use]
+    pub fn generate_id(&self, sequence: Option<u32>) -> String {
+        let seq = sequence.unwrap_or(1);
+        match self.id_format() {
+            Some(format) => format.render(self.prefix(), self.as_str(), seq),
+            None => format!("{}-{seq:03}", self.prefix()),
+        }
+    }
+
+    /// Suggests the next ID based on existing items in the graph.
+    ///
+    /// Scans the items of this type whose id matches the type's `id_format`
+    /// with non-sequence placeholders bound to their current values (so a
+    /// format embedding `{year}` restarts its counter each year), and
+    /// renders the highest matched sequence plus one. Formats without a
+    /// `{seq}` placeholder render directly (e.g. a fresh UUID). If no graph
+    /// is provided or no id matches, returns the first ID (e.g. "SOL-001").
     #[must_use]
     pub fn suggest_next_id(&self, graph: Option<&crate::graph::KnowledgeGraph>) -> String {
-        let Some(graph) = graph else {
+        let Some(format) = self.id_format() else {
             return self.generate_id(None);
         };
-
         let prefix = self.prefix();
-        let max_num = graph
-            .items()
+        if !format.has_seq() {
+            return format.render(prefix, self.as_str(), 1);
+        }
+        let max_seq = graph
+            .into_iter()
+            .flat_map(|g| g.items())
             .filter(|item| item.item_type == *self)
-            .filter_map(|item| {
-                item.id
-                    .as_str()
-                    .strip_prefix(prefix)
-                    .and_then(|suffix| suffix.trim_start_matches('-').parse::<u32>().ok())
-            })
+            .filter_map(|item| format.extract_seq(item.id.as_str(), prefix, self.as_str()))
             .max()
             .unwrap_or(0);
-
-        format!("{}-{:03}", prefix, max_num + 1)
+        format.render(prefix, self.as_str(), max_seq.saturating_add(1))
     }
 
     /// Returns true if this is a root item type.
@@ -421,7 +433,9 @@ impl Item {
 mod tests {
     use super::*;
 
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::schema::builtin;
+    use crate::test_utils::create_test_item;
 
     #[test]
     fn test_item_id_valid() {
@@ -462,5 +476,27 @@ mod tests {
         assert_eq!(builtin::SOLUTION.generate_id(Some(1)), "SOL-001");
         assert_eq!(builtin::USE_CASE.generate_id(Some(42)), "UC-042");
         assert_eq!(builtin::SYSTEM_REQUIREMENT.generate_id(None), "SYSREQ-001");
+    }
+
+    #[test]
+    fn test_generate_id_follows_the_builtin_format() {
+        assert_eq!(builtin::SOLUTION.generate_id(None), "SOL-001");
+        assert_eq!(builtin::SOLUTION.generate_id(Some(42)), "SOL-042");
+    }
+
+    #[test]
+    fn test_generate_id_for_a_type_missing_from_the_schema() {
+        let ghost = ItemType::from_static("ghost");
+        assert_eq!(ghost.generate_id(None), "-001");
+    }
+
+    #[test]
+    fn test_suggest_next_id_scans_legacy_unpadded_ids() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-7", builtin::SOLUTION))
+            .add_item(create_test_item("SOL-002", builtin::SOLUTION))
+            .build()
+            .unwrap();
+        assert_eq!(builtin::SOLUTION.suggest_next_id(Some(&graph)), "SOL-008");
     }
 }

@@ -20,6 +20,8 @@ tracing.workspace = true
 thiserror.workspace = true
 rayon.workspace = true
 strsim.workspace = true
+uuid.workspace = true
+chrono.workspace = true
 tera.workspace = true
 
 [dev-dependencies]

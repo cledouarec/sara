@@ -11,6 +11,7 @@
 
 mod active;
 pub mod builtin;
+mod id_format;
 mod yaml;
 
 #[cfg(test)]
@@ -20,6 +21,7 @@ use serde::{Deserialize, Serialize};
 
 pub use active::{active, install};
 pub(crate) use active::{item_type_def, relation_def};
+pub(crate) use id_format::IdFormat;
 
 /// The direction of a relation relative to the model hierarchy.
 ///
