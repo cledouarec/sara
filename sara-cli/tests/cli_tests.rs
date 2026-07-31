@@ -80,6 +80,19 @@ mod check_command {
     }
 
     #[test]
+    fn test_check_reports_orphans_without_failing() {
+        let fixtures = fixtures_path().join("orphans");
+
+        sara()
+            .arg("check")
+            .arg("-r")
+            .arg(&fixtures)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Orphan item"));
+    }
+
+    #[test]
     fn test_check_strict_mode() {
         let fixtures = fixtures_path().join("orphans");
 
