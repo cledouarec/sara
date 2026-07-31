@@ -263,6 +263,18 @@ impl KnowledgeGraph {
             .collect()
     }
 
+    /// Returns the required parent type of `item_type` when the graph holds
+    /// no item of that type.
+    ///
+    /// `None` when the type anchors the hierarchy or when a parent already
+    /// exists, so the caller decides how to report the gap.
+    #[must_use]
+    pub fn missing_parent_type(&self, item_type: ItemType) -> Option<ItemType> {
+        let parent_type = item_type.required_parent_type()?;
+        let has_parents = self.items().any(|item| item.item_type == parent_type);
+        (!has_parents).then_some(parent_type)
+    }
+
     /// Checks if parent items exist for the given item type.
     ///
     /// Solution has no parent requirement and always returns Ok.
@@ -637,5 +649,35 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn test_missing_parent_type_is_none_for_a_root_type() {
+        let graph = KnowledgeGraphBuilder::new().build().unwrap();
+
+        assert_eq!(graph.missing_parent_type(builtin::SOLUTION), None);
+    }
+
+    #[test]
+    fn test_missing_parent_type_is_none_when_a_parent_exists() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
+            .build()
+            .unwrap();
+
+        assert_eq!(graph.missing_parent_type(builtin::USE_CASE), None);
+    }
+
+    #[test]
+    fn test_missing_parent_type_reports_the_absent_parent() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("UC-001", builtin::USE_CASE))
+            .build()
+            .unwrap();
+
+        assert_eq!(
+            graph.missing_parent_type(builtin::USE_CASE),
+            Some(builtin::SOLUTION)
+        );
     }
 }
