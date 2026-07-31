@@ -442,7 +442,7 @@ pub fn run_interactive_session(
         print_warning(
             session.output,
             &format!(
-                "No {} items exist — this {} will have no parent, and `sara check` will report it as an orphan.",
+                "No {} items exist — this {} will have no parent, and `sara check` may report it as an orphan.",
                 parent_type.display_name(),
                 item_type.display_name()
             ),
