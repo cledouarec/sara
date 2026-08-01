@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.9.3](https://github.com/cledouarec/sara/compare/sara-core-v0.9.2...sara-core-v0.9.3) - 2026-08-01
+
+### Build
+
+- bump the all-dependencies group across 1 directory with 7 updates (by @dependabot[bot]) - #116
+
+### Contributors
+
+* @dependabot[bot]
+
 ## [0.9.2](https://github.com/cledouarec/sara/compare/sara-core-v0.9.1...sara-core-v0.9.2) - 2026-06-26
 
 ### Other
