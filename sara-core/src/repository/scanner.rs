@@ -137,14 +137,12 @@ pub fn parse_directory(repository_path: &Path) -> Result<ScanResult, SaraError> 
             ParseResult::Item(item) => scan.items.push(*item),
             ParseResult::Skipped => {}
             ParseResult::ReadError(e) => {
-                tracing::warn!("Failed to read file {}: {}", file_path.display(), e);
                 scan.warnings.push(ScanWarning {
                     path: file_path.clone(),
                     reason: e.to_string(),
                 });
             }
             ParseResult::ParseError(e) => {
-                tracing::warn!("Parse error: {}", e);
                 scan.warnings.push(ScanWarning {
                     path: file_path.clone(),
                     reason: e.to_string(),
@@ -169,7 +167,6 @@ pub fn parse_repositories(paths: &[PathBuf]) -> ScanResult {
         if path.exists() {
             valid_paths.push(path);
         } else {
-            tracing::warn!("Repository path does not exist: {}", path.display());
             scan.warnings.push(ScanWarning {
                 path: path.clone(),
                 reason: "repository path does not exist".to_string(),
@@ -192,7 +189,6 @@ pub fn parse_repositories(paths: &[PathBuf]) -> ScanResult {
                 scan.warnings.extend(repo_scan.warnings);
             }
             Err(e) => {
-                tracing::warn!("Failed to parse repository: {}", e);
                 scan.warnings.push(ScanWarning {
                     path: (*path).clone(),
                     reason: e.to_string(),
