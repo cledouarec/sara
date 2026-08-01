@@ -46,6 +46,10 @@ pub fn run(args: &DiffArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>>
 
     match service.diff(&opts) {
         Ok(result) => {
+            for warning in &result.warnings {
+                print_warning(&config.output, &warning.to_string());
+            }
+
             if !result.is_full_comparison {
                 print_warning(
                     &config.output,

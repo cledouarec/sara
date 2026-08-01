@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use crate::graph::{GraphDiff, KnowledgeGraphBuilder};
-use crate::repository::{GitReader, GitRef, parse_directory};
+use crate::repository::{GitReader, GitRef, ScanWarning, parse_directory};
 
 /// Options for computing a diff between two graph states.
 #[derive(Debug, Clone)]
@@ -84,6 +84,11 @@ pub struct DiffResult {
     pub ref2: String,
     /// Whether this was a full Git ref comparison or a workaround.
     pub is_full_comparison: bool,
+    /// Files skipped while scanning the working directory.
+    ///
+    /// Always empty for a Git reference comparison, which reads its files
+    /// from commit objects rather than from a directory scan.
+    pub warnings: Vec<ScanWarning>,
 }
 
 impl DiffResult {
@@ -190,11 +195,12 @@ impl DiffService {
             ref1: opts.ref1.clone(),
             ref2: opts.ref2.clone(),
             is_full_comparison: true,
+            warnings: Vec::new(),
         }))
     }
 
     fn diff_working_directory(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
-        let items = self.parse_repositories(&opts.repositories)?;
+        let (items, warnings) = self.parse_repositories(&opts.repositories)?;
 
         let graph = KnowledgeGraphBuilder::new()
             .add_items(items)
@@ -208,6 +214,7 @@ impl DiffService {
             ref1: opts.ref1.clone(),
             ref2: opts.ref2.clone(),
             is_full_comparison: false,
+            warnings,
         })
     }
 
@@ -227,15 +234,24 @@ impl DiffService {
             ref1: ref1.into(),
             ref2: ref2.into(),
             is_full_comparison: true,
+            warnings: Vec::new(),
         }
     }
 
-    /// Parses items from all repository paths.
+    /// Parses items from all repository paths, collecting the files skipped
+    /// along the way.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DiffError::ParseError`] when a repository path cannot be
+    /// scanned at all; individual unreadable or unparseable files are
+    /// reported as warnings instead.
     fn parse_repositories(
         &self,
         repositories: &[std::path::PathBuf],
-    ) -> Result<Vec<crate::model::Item>, DiffError> {
+    ) -> Result<(Vec<crate::model::Item>, Vec<ScanWarning>), DiffError> {
         let mut all_items = Vec::new();
+        let mut all_warnings = Vec::new();
 
         for repo_path in repositories {
             let scan = parse_directory(repo_path).map_err(|e| DiffError::ParseError {
@@ -243,9 +259,10 @@ impl DiffService {
                 reason: e.to_string(),
             })?;
             all_items.extend(scan.items);
+            all_warnings.extend(scan.warnings);
         }
 
-        Ok(all_items)
+        Ok((all_items, all_warnings))
     }
 }
 
@@ -277,6 +294,15 @@ name: "Second Path"
 # Solution: Second Path
 "#;
 
+    /// Item whose type is absent from the active schema, so it is skipped.
+    const UNKNOWN_TYPE_ITEM: &str = r#"---
+id: "XXX-001"
+type: not_a_declared_type
+name: "Unknown"
+---
+# Unknown
+"#;
+
     fn create_test_file(dir: &Path, name: &str, content: &str) {
         fs::write(dir.join(name), content).unwrap();
     }
@@ -302,6 +328,25 @@ name: "Second Path"
         run_git(repo, &["commit", "-m", "add spec"]);
 
         temp_dir
+    }
+
+    #[test]
+    fn test_diff_working_directory_reports_skipped_files() {
+        let temp_dir = TempDir::new().unwrap();
+
+        create_test_file(temp_dir.path(), "UNKNOWN.md", UNKNOWN_TYPE_ITEM);
+
+        let opts = DiffOptions::new("main", "feature")
+            .with_repositories(vec![temp_dir.path().to_path_buf()]);
+
+        let result = DiffService::new().diff(&opts).unwrap();
+
+        assert_eq!(result.warnings.len(), 1);
+        assert!(
+            result.warnings[0].reason.contains("unknown item type"),
+            "got: {}",
+            result.warnings[0].reason
+        );
     }
 
     #[test]
