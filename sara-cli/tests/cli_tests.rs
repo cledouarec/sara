@@ -606,6 +606,21 @@ name: "Reporting Service"
     }
 
     #[test]
+    fn test_diff_outside_a_git_repository_fails() {
+        let temp_dir = TempDir::new().unwrap();
+
+        sara()
+            .current_dir(temp_dir.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("HEAD~1")
+            .arg("HEAD")
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("No Git repository found"));
+    }
+
+    #[test]
     fn test_diff_text_lists_added_removed_modified() {
         let repo = diff_repo();
 
@@ -617,7 +632,6 @@ name: "Reporting Service"
             .arg("HEAD")
             .assert()
             .success()
-            .stdout(predicate::str::contains("not fully implemented").not())
             .stdout(predicate::str::contains("Added Items:"))
             .stdout(predicate::str::contains("+ SOL-003 (Solution)"))
             .stdout(predicate::str::contains("Removed Items:"))

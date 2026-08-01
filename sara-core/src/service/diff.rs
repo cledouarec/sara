@@ -6,7 +6,7 @@
 use std::path::PathBuf;
 
 use crate::graph::{GraphDiff, KnowledgeGraphBuilder};
-use crate::repository::{GitReader, GitRef, ScanWarning, parse_directory};
+use crate::repository::{GitReader, GitRef};
 
 /// Options for computing a diff between two graph states.
 #[derive(Debug, Clone)]
@@ -62,11 +62,13 @@ pub enum DiffError {
     #[error("Failed to build graph: {0}")]
     GraphBuildError(String),
 
-    /// Git reference not supported yet.
-    #[error(
-        "Git reference comparison not fully implemented. Only current state comparison is available."
-    )]
-    GitRefNotSupported,
+    /// No repository path was configured to compare.
+    #[error("No repository path configured: nothing to compare")]
+    NoRepositories,
+
+    /// A configured path lies outside any Git repository.
+    #[error("No Git repository found for {path}: {reason}")]
+    NotAGitRepository { path: String, reason: String },
 
     /// IO error.
     #[error("IO error: {0}")]
@@ -82,13 +84,6 @@ pub struct DiffResult {
     pub ref1: String,
     /// The second reference used.
     pub ref2: String,
-    /// Whether this was a full Git ref comparison or a workaround.
-    pub is_full_comparison: bool,
-    /// Files skipped while scanning the working directory.
-    ///
-    /// Always empty for a Git reference comparison, which reads its files
-    /// from commit objects rather than from a directory scan.
-    pub warnings: Vec<ScanWarning>,
 }
 
 impl DiffResult {
@@ -110,31 +105,20 @@ impl DiffService {
 
     /// Computes the diff between two references.
     ///
-    /// This method supports full Git reference comparison when the repository
-    /// paths are Git repositories. It will parse the knowledge graph at each
-    /// reference point and compute the differences.
-    pub fn diff(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
-        // Try Git-based comparison first
-        if let Some(result) = self.try_git_diff(opts)? {
-            return Ok(result);
-        }
-
-        // Fall back to current working directory comparison
-        self.diff_working_directory(opts)
-    }
-
-    /// Attempts Git-based diff comparison.
-    /// Returns None if Git comparison is not possible (e.g., a configured
-    /// path lies outside any Git repository).
-    ///
     /// Each configured path is resolved to its enclosing Git repository and
     /// the scan is scoped to that path, so files outside the configured
     /// repositories are never parsed. The items compared at each reference
     /// are the union over all configured paths.
-    fn try_git_diff(&self, opts: &DiffOptions) -> Result<Option<DiffResult>, DiffError> {
-        // We need at least one repository path
+    ///
+    /// # Errors
+    ///
+    /// Returns [`DiffError::NoRepositories`] when no path is configured and
+    /// [`DiffError::NotAGitRepository`] when a configured path lies outside
+    /// any Git repository, since neither state can be compared at a
+    /// reference.
+    pub fn diff(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
         if opts.repositories.is_empty() {
-            return Ok(None);
+            return Err(DiffError::NoRepositories);
         }
 
         // Parse Git references
@@ -146,10 +130,11 @@ impl DiffService {
         let mut items2 = Vec::new();
 
         for repo_path in &opts.repositories {
-            let git_reader = match GitReader::discover(repo_path) {
-                Ok(reader) => reader,
-                Err(_) => return Ok(None), // Not a Git repo, fall back
-            };
+            let git_reader =
+                GitReader::discover(repo_path).map_err(|e| DiffError::NotAGitRepository {
+                    path: repo_path.display().to_string(),
+                    reason: e.to_string(),
+                })?;
 
             // Scope the scan to the configured path so files outside it
             // are never parsed
@@ -190,31 +175,10 @@ impl DiffService {
         // Compute diff
         let diff = GraphDiff::compute(&graph1, &graph2);
 
-        Ok(Some(DiffResult {
-            diff,
-            ref1: opts.ref1.clone(),
-            ref2: opts.ref2.clone(),
-            is_full_comparison: true,
-            warnings: Vec::new(),
-        }))
-    }
-
-    fn diff_working_directory(&self, opts: &DiffOptions) -> Result<DiffResult, DiffError> {
-        let (items, warnings) = self.parse_repositories(&opts.repositories)?;
-
-        let graph = KnowledgeGraphBuilder::new()
-            .add_items(items)
-            .build()
-            .map_err(|e| DiffError::GraphBuildError(e.to_string()))?;
-
-        let diff = GraphDiff::compute(&graph, &graph);
-
         Ok(DiffResult {
             diff,
             ref1: opts.ref1.clone(),
             ref2: opts.ref2.clone(),
-            is_full_comparison: false,
-            warnings,
         })
     }
 
@@ -233,36 +197,7 @@ impl DiffService {
             diff,
             ref1: ref1.into(),
             ref2: ref2.into(),
-            is_full_comparison: true,
-            warnings: Vec::new(),
         }
-    }
-
-    /// Parses items from all repository paths, collecting the files skipped
-    /// along the way.
-    ///
-    /// # Errors
-    ///
-    /// Returns [`DiffError::ParseError`] when a repository path cannot be
-    /// scanned at all; individual unreadable or unparseable files are
-    /// reported as warnings instead.
-    fn parse_repositories(
-        &self,
-        repositories: &[std::path::PathBuf],
-    ) -> Result<(Vec<crate::model::Item>, Vec<ScanWarning>), DiffError> {
-        let mut all_items = Vec::new();
-        let mut all_warnings = Vec::new();
-
-        for repo_path in repositories {
-            let scan = parse_directory(repo_path).map_err(|e| DiffError::ParseError {
-                path: repo_path.display().to_string(),
-                reason: e.to_string(),
-            })?;
-            all_items.extend(scan.items);
-            all_warnings.extend(scan.warnings);
-        }
-
-        Ok((all_items, all_warnings))
     }
 }
 
@@ -294,15 +229,6 @@ name: "Second Path"
 # Solution: Second Path
 "#;
 
-    /// Item whose type is absent from the active schema, so it is skipped.
-    const UNKNOWN_TYPE_ITEM: &str = r#"---
-id: "XXX-001"
-type: not_a_declared_type
-name: "Unknown"
----
-# Unknown
-"#;
-
     fn create_test_file(dir: &Path, name: &str, content: &str) {
         fs::write(dir.join(name), content).unwrap();
     }
@@ -331,41 +257,7 @@ name: "Unknown"
     }
 
     #[test]
-    fn test_diff_working_directory_reports_skipped_files() {
-        let temp_dir = TempDir::new().unwrap();
-
-        create_test_file(temp_dir.path(), "UNKNOWN.md", UNKNOWN_TYPE_ITEM);
-
-        let opts = DiffOptions::new("main", "feature")
-            .with_repositories(vec![temp_dir.path().to_path_buf()]);
-
-        let result = DiffService::new().diff(&opts).unwrap();
-
-        assert_eq!(result.warnings.len(), 1);
-        assert!(
-            result.warnings[0].reason.contains("unknown item type"),
-            "got: {}",
-            result.warnings[0].reason
-        );
-    }
-
-    #[test]
-    fn test_diff_empty_repositories_non_git() {
-        let temp_dir = TempDir::new().unwrap();
-
-        let opts = DiffOptions::new("HEAD~1", "HEAD")
-            .with_repositories(vec![temp_dir.path().to_path_buf()]);
-
-        let service = DiffService::new();
-        let result = service.diff(&opts).unwrap();
-
-        // Non-git directory falls back to working directory comparison
-        assert!(result.is_empty());
-        assert!(!result.is_full_comparison);
-    }
-
-    #[test]
-    fn test_diff_with_items_non_git() {
+    fn test_diff_outside_a_git_repository_errors() {
         let temp_dir = TempDir::new().unwrap();
 
         create_test_file(
@@ -383,14 +275,42 @@ name: "Test Solution"
         let opts = DiffOptions::new("main", "feature")
             .with_repositories(vec![temp_dir.path().to_path_buf()]);
 
-        let service = DiffService::new();
-        let result = service.diff(&opts).unwrap();
+        let error = DiffService::new().diff(&opts).unwrap_err();
 
-        // Non-git: falls back to comparing current state with itself
-        assert!(result.is_empty());
-        assert!(!result.is_full_comparison);
-        assert_eq!(result.ref1, "main");
-        assert_eq!(result.ref2, "feature");
+        let message = error.to_string();
+        assert!(
+            matches!(error, DiffError::NotAGitRepository { .. }),
+            "got: {message}"
+        );
+        assert!(
+            message.contains(&temp_dir.path().display().to_string()),
+            "got: {message}"
+        );
+    }
+
+    #[test]
+    fn test_diff_without_repositories_errors() {
+        let opts = DiffOptions::new("HEAD~1", "HEAD");
+
+        let error = DiffService::new().diff(&opts).unwrap_err();
+
+        assert!(matches!(error, DiffError::NoRepositories), "got: {error}");
+    }
+
+    #[test]
+    fn test_diff_errors_when_one_path_is_outside_a_git_repository() {
+        let repo = multi_path_repo();
+        let outside = TempDir::new().unwrap();
+
+        let opts = DiffOptions::new("HEAD~1", "HEAD")
+            .with_repositories(vec![repo.path().join("docs"), outside.path().to_path_buf()]);
+
+        let error = DiffService::new().diff(&opts).unwrap_err();
+
+        assert!(
+            matches!(error, DiffError::NotAGitRepository { .. }),
+            "got: {error}"
+        );
     }
 
     #[test]
@@ -413,7 +333,6 @@ name: "Test Solution"
         let service = DiffService::new();
         let result = service.diff(&opts).unwrap();
 
-        assert!(result.is_full_comparison);
         assert_eq!(result.diff.added_items.len(), 1);
         assert_eq!(result.diff.added_items[0].id, "SOL-010");
         assert!(result.diff.removed_items.is_empty());
@@ -437,7 +356,5 @@ name: "Test Solution"
 
         // Comparing HEAD to HEAD should produce no changes
         assert!(result.is_empty());
-        // Should be a full Git comparison
-        assert!(result.is_full_comparison);
     }
 }
