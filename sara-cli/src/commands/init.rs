@@ -13,7 +13,7 @@ use std::process::ExitCode;
 use clap::{Arg, ArgAction, ArgMatches, Args, Command, FromArgMatches, value_parser};
 use sara_core::model::{FIELD_DESCRIPTION, FIELD_ID, FIELD_NAME, ItemType};
 use sara_core::schema::FieldType;
-use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
+use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig, load_graph};
 
 use sara_core::config::{Config, OutputConfig};
 
@@ -300,6 +300,24 @@ fn run_interactive(config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     }
 }
 
+/// Builds the init service, attaching the graph only when an identifier has to
+/// be generated.
+///
+/// Loading the graph is skipped when `--id` is supplied, so explicit
+/// identifiers keep costing a single file write. A graph that fails to load is
+/// not fatal: initialization falls back to the first sequence number, matching
+/// the behaviour of an empty repository.
+fn build_init_service(opts: &InitOptions, config: &Config) -> InitService {
+    if opts.id.is_some() {
+        return InitService::new();
+    }
+
+    match load_graph(&config.repositories.paths) {
+        Ok((graph, _warnings)) => InitService::new().with_graph(graph),
+        Err(_) => InitService::new(),
+    }
+}
+
 /// Builds a TypeConfig from interactive session input.
 fn build_type_config_from_interactive(input: &super::interactive::InteractiveInput) -> TypeConfig {
     let mut config = TypeConfig::new(input.item_type);
@@ -315,7 +333,7 @@ fn build_type_config_from_interactive(input: &super::interactive::InteractiveInp
 fn run_with_options(opts: InitOptions, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     let output = &config.output;
 
-    let service = InitService::new();
+    let service = build_init_service(&opts, config);
 
     match service.init(&opts) {
         Ok(result) => {
