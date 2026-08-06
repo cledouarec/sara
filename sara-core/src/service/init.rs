@@ -9,6 +9,7 @@ use std::path::PathBuf;
 use indexmap::IndexMap;
 
 use crate::generator::{self, OutputFormat};
+use crate::graph::KnowledgeGraph;
 use crate::model::{FieldValue, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation};
 use crate::parser::{extract_name_from_content, has_frontmatter};
 use crate::schema::{self, FieldDef, FieldType, RelationDirection};
@@ -210,12 +211,27 @@ pub struct InitResult {
 
 /// Service for initializing requirement items.
 #[derive(Debug, Default)]
-pub struct InitService;
+pub struct InitService {
+    /// Existing graph consulted to suggest the next unused identifier.
+    ///
+    /// When absent, generated identifiers always start at the first sequence
+    /// number of their type.
+    graph: Option<KnowledgeGraph>,
+}
 
 impl InitService {
-    /// Creates a new init service.
+    /// Creates a new init service with no knowledge of existing items.
     pub fn new() -> Self {
-        Self
+        Self::default()
+    }
+
+    /// Attaches the graph used to suggest the next unused identifier.
+    ///
+    /// Without it, [`InitOptions::id`] must be supplied by the caller to avoid
+    /// colliding with items already present in the graph.
+    pub fn with_graph(mut self, graph: KnowledgeGraph) -> Self {
+        self.graph = Some(graph);
+        self
     }
 
     /// Initializes an item based on the provided options.
@@ -267,11 +283,11 @@ impl InitService {
         })
     }
 
-    /// Resolves the ID from options or generates a new one.
+    /// Resolves the ID from options or suggests the next unused one.
     fn resolve_id(&self, opts: &InitOptions) -> String {
         opts.id
             .clone()
-            .unwrap_or_else(|| opts.item_type().generate_id(None))
+            .unwrap_or_else(|| opts.item_type().suggest_next_id(self.graph.as_ref()))
     }
 
     /// Resolves the name from options, file content, or file stem.
@@ -522,6 +538,87 @@ mod tests {
         assert_eq!(parse_item_type("use_case"), Some(builtin::USE_CASE));
         assert_eq!(parse_item_type("UC"), Some(builtin::USE_CASE));
         assert_eq!(parse_item_type("invalid"), None);
+    }
+
+    /// Builds a graph holding the given identifiers, all of the same type.
+    fn graph_with_ids(item_type: ItemType, ids: &[&str]) -> KnowledgeGraph {
+        let items = ids.iter().map(|id| {
+            ItemBuilder::new()
+                .id(ItemId::new_unchecked(*id))
+                .item_type(item_type)
+                .name(*id)
+                .source(SourceLocation {
+                    repository: PathBuf::new(),
+                    file_path: PathBuf::from(format!("{id}.md")),
+                    git_ref: None,
+                })
+                .build()
+                .unwrap()
+        });
+
+        crate::graph::KnowledgeGraphBuilder::new()
+            .add_items(items)
+            .build()
+            .unwrap()
+    }
+
+    /// Without a graph the service cannot know what exists, so it falls back to
+    /// the first sequence number.
+    #[test]
+    fn test_generated_id_without_graph_starts_at_first_sequence() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("uc.md");
+
+        let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE)).with_name("New");
+
+        let result = InitService::new().init(&opts).unwrap();
+
+        assert_eq!(result.id, "UC-001");
+    }
+
+    /// With a graph attached, a generated identifier must not collide with the
+    /// items already present.
+    #[test]
+    fn test_generated_id_continues_after_existing_items() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("uc.md");
+
+        let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE)).with_name("New");
+
+        let graph = graph_with_ids(builtin::USE_CASE, &["UC-001", "UC-002"]);
+        let result = InitService::new().with_graph(graph).init(&opts).unwrap();
+
+        assert_eq!(result.id, "UC-003");
+    }
+
+    /// Sequences are per type: unrelated types must not shift the suggestion.
+    #[test]
+    fn test_generated_id_ignores_other_item_types() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("uc.md");
+
+        let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE)).with_name("New");
+
+        let graph = graph_with_ids(builtin::SOLUTION, &["SOL-001", "SOL-002"]);
+        let result = InitService::new().with_graph(graph).init(&opts).unwrap();
+
+        assert_eq!(result.id, "UC-001");
+    }
+
+    /// An explicit identifier always wins over the suggestion.
+    #[test]
+    fn test_explicit_id_overrides_graph_suggestion() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("uc.md");
+
+        let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE))
+            .with_id("UC-LOGIN")
+            .with_name("New");
+
+        let graph = graph_with_ids(builtin::USE_CASE, &["UC-001", "UC-002"]);
+        let result = InitService::new().with_graph(graph).init(&opts).unwrap();
+
+        assert_eq!(result.id, "UC-LOGIN");
     }
 
     #[test]
