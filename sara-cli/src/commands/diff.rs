@@ -9,7 +9,7 @@ use sara_core::service::{DiffOptions, DiffResult, DiffService};
 
 use sara_core::config::{Config, OutputConfig};
 
-use crate::output::{Color, Style, colorize, print_error, print_success, print_warning};
+use crate::output::{Color, Style, colorize, print_error, print_success};
 
 /// Output format for diff command.
 #[derive(Debug, Clone, Copy, Default, clap::ValueEnum)]
@@ -46,13 +46,6 @@ pub fn run(args: &DiffArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>>
 
     match service.diff(&opts) {
         Ok(result) => {
-            if !result.is_full_comparison {
-                print_warning(
-                    &config.output,
-                    "Git reference comparison is not fully implemented. Comparing current state with itself.",
-                );
-            }
-
             match args.format {
                 DiffFormat::Text => print_diff_text(&result, &opts, &config.output),
                 DiffFormat::Json => print_diff_json(&result.diff),

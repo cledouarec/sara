@@ -80,6 +80,19 @@ mod check_command {
     }
 
     #[test]
+    fn test_check_reports_orphans_without_failing() {
+        let fixtures = fixtures_path().join("orphans");
+
+        sara()
+            .arg("check")
+            .arg("-r")
+            .arg(&fixtures)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Orphan item"));
+    }
+
+    #[test]
     fn test_check_strict_mode() {
         let fixtures = fixtures_path().join("orphans");
 
@@ -593,6 +606,21 @@ name: "Reporting Service"
     }
 
     #[test]
+    fn test_diff_outside_a_git_repository_fails() {
+        let temp_dir = TempDir::new().unwrap();
+
+        sara()
+            .current_dir(temp_dir.path())
+            .arg("--no-color")
+            .arg("diff")
+            .arg("HEAD~1")
+            .arg("HEAD")
+            .assert()
+            .failure()
+            .stdout(predicate::str::contains("No Git repository found"));
+    }
+
+    #[test]
     fn test_diff_text_lists_added_removed_modified() {
         let repo = diff_repo();
 
@@ -604,7 +632,6 @@ name: "Reporting Service"
             .arg("HEAD")
             .assert()
             .success()
-            .stdout(predicate::str::contains("not fully implemented").not())
             .stdout(predicate::str::contains("Added Items:"))
             .stdout(predicate::str::contains("+ SOL-003 (Solution)"))
             .stdout(predicate::str::contains("Removed Items:"))
@@ -1280,9 +1307,9 @@ mod custom_schema {
     - solution
 "#;
 
-    /// Exports the built-in model, appends a custom type and returns the
+    /// Exports the built-in model, appends `type_yaml` and returns the
     /// config path referencing the extended schema.
-    fn write_extended_schema(temp_dir: &TempDir) -> std::path::PathBuf {
+    fn write_schema_with_type(temp_dir: &TempDir, type_yaml: &str) -> std::path::PathBuf {
         let schema_path = temp_dir.path().join("model.yaml");
         sara()
             .arg("schema")
@@ -1292,12 +1319,171 @@ mod custom_schema {
             .success();
 
         let exported = fs::read_to_string(&schema_path).unwrap();
-        let extended = exported.replace("\nrelations:", &format!("\n{CUSTOM_TYPE_YAML}relations:"));
+        let extended = exported.replace("\nrelations:", &format!("\n{type_yaml}relations:"));
         fs::write(&schema_path, extended).unwrap();
 
         let config_path = temp_dir.path().join("sara.toml");
         fs::write(&config_path, model_schema_config(&schema_path)).unwrap();
         config_path
+    }
+
+    /// YAML for a type whose identifiers embed the creation year.
+    const YEAR_FORMAT_TYPE_YAML: &str = r#"- id: stakeholder_requirement
+  display_name: Stakeholder Requirement
+  prefix: STKREQ
+  id_format: "{prefix}-{year}-{seq:02}"
+  parent_types:
+  - solution
+  fields:
+  - name: rationale
+    display_name: Rationale
+    field_type: text
+    required: true
+    placeholder: TBD
+  allowed_targets:
+  - relation: refines
+    targets:
+    - solution
+"#;
+
+    #[test]
+    fn test_init_renders_a_year_id_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_schema_with_type(&temp_dir, YEAR_FORMAT_TYPE_YAML);
+        let file = temp_dir.path().join("STKREQ.md");
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("init")
+            .arg("stakeholder-requirement")
+            .arg(&file)
+            .arg("--name")
+            .arg("Operator overview")
+            .arg("--rationale")
+            .arg("Operators need a single pane of glass.")
+            .assert()
+            .success();
+
+        let content = fs::read_to_string(&file).unwrap();
+        let id_line = content
+            .lines()
+            .find(|l| l.starts_with("id:"))
+            .expect("frontmatter id line");
+        let id = id_line.trim_start_matches("id:").trim().trim_matches('"');
+        let year = id
+            .strip_prefix("STKREQ-")
+            .and_then(|rest| rest.strip_suffix("-01"))
+            .unwrap_or_else(|| panic!("unexpected id: {id}"));
+        assert_eq!(year.len(), 4, "unexpected id: {id}");
+        assert!(
+            year.bytes().all(|b| b.is_ascii_digit()),
+            "unexpected id: {id}"
+        );
+    }
+
+    /// A conforming root item for check fixtures.
+    const CHECK_SOLUTION: &str = r#"---
+id: "SOL-001"
+type: solution
+name: "Root"
+---
+# Root
+"#;
+
+    /// A stakeholder requirement whose hand-written id defies the format.
+    const CHECK_HAND_WRITTEN_ID: &str = r#"---
+id: "STKREQ-LOGIN"
+type: stakeholder_requirement
+name: "Login"
+rationale: "Operators sign in."
+refines: SOL-001
+---
+# Login
+"#;
+
+    #[test]
+    fn test_check_warns_on_id_format_mismatch() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_schema_with_type(&temp_dir, YEAR_FORMAT_TYPE_YAML);
+        let docs = temp_dir.path().join("docs");
+        fs::create_dir(&docs).unwrap();
+        fs::write(docs.join("SOL-001.md"), CHECK_SOLUTION).unwrap();
+        fs::write(docs.join("STKREQ-LOGIN.md"), CHECK_HAND_WRITTEN_ID).unwrap();
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("check")
+            .arg("-r")
+            .arg(&docs)
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("STKREQ-LOGIN"))
+            .stdout(predicate::str::contains("does not match the id_format"));
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("check")
+            .arg("-r")
+            .arg(&docs)
+            .arg("--strict")
+            .assert()
+            .failure();
+    }
+
+    /// YAML for a type whose identifiers are random UUIDs.
+    const UUID_FORMAT_TYPE_YAML: &str = r#"- id: stakeholder_requirement
+  display_name: Stakeholder Requirement
+  prefix: STKREQ
+  id_format: "{prefix}-{uuid4}"
+  parent_types:
+  - solution
+  fields: []
+  allowed_targets:
+  - relation: refines
+    targets:
+    - solution
+"#;
+
+    #[test]
+    fn test_init_renders_a_uuid_id_format() {
+        let temp_dir = TempDir::new().unwrap();
+        let config_path = write_schema_with_type(&temp_dir, UUID_FORMAT_TYPE_YAML);
+        let file = temp_dir.path().join("STKREQ.md");
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("init")
+            .arg("stakeholder-requirement")
+            .arg(&file)
+            .arg("--name")
+            .arg("Operator overview")
+            .assert()
+            .success();
+
+        let content = fs::read_to_string(&file).unwrap();
+        let id_line = content
+            .lines()
+            .find(|l| l.starts_with("id:"))
+            .expect("frontmatter id line");
+        let id = id_line.trim_start_matches("id:").trim().trim_matches('"');
+        let tail = id
+            .strip_prefix("STKREQ-")
+            .unwrap_or_else(|| panic!("unexpected id: {id}"));
+        assert_eq!(tail.len(), 36, "unexpected id: {id}");
+        assert_eq!(tail.as_bytes()[14], b'4', "unexpected id: {id}");
+        for index in [8, 13, 18, 23] {
+            assert_eq!(tail.as_bytes()[index], b'-', "unexpected id: {id}");
+        }
+    }
+
+    /// Exports the built-in model, appends a custom type and returns the
+    /// config path referencing the extended schema.
+    fn write_extended_schema(temp_dir: &TempDir) -> std::path::PathBuf {
+        write_schema_with_type(temp_dir, CUSTOM_TYPE_YAML)
     }
 
     #[test]

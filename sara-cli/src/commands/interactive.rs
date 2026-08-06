@@ -9,7 +9,6 @@ use std::path::PathBuf;
 
 use inquire::validator::{StringValidator, Validation};
 use inquire::{Confirm, InquireError, MultiSelect, Select, Text};
-use sara_core::error::SaraError;
 use sara_core::graph::KnowledgeGraph;
 use sara_core::model::{FieldValue, ItemAttributes, ItemType, RelationshipType, TraceabilityLinks};
 use sara_core::schema::{FieldDef, FieldType};
@@ -47,9 +46,6 @@ pub struct InteractiveInput {
 pub enum PromptError {
     #[error("Interactive mode requires a terminal. Use --type <TYPE> to specify the item type.")]
     NonInteractiveTerminal,
-
-    #[error(transparent)]
-    MissingParent(#[from] SaraError),
 
     #[error("User cancelled")]
     Cancelled,
@@ -440,8 +436,17 @@ pub fn run_interactive_session(
     ensure_graph_loaded(session);
 
     let item_type = prompt_item_type()?;
-    if let Some(graph) = &session.graph {
-        graph.check_parent_exists(item_type)?;
+    if let Some(graph) = &session.graph
+        && let Some(parent_type) = graph.missing_parent_type(item_type)
+    {
+        print_warning(
+            session.output,
+            &format!(
+                "No {} items exist — this {} will have no parent, and `sara check` may report it as an orphan.",
+                parent_type.display_name(),
+                item_type.display_name()
+            ),
+        );
     }
 
     let input = collect_item_input(session, item_type)?;
@@ -641,10 +646,6 @@ pub fn handle_interactive_result(
                 "Interactive mode requires a terminal. Use --type <TYPE> to specify the item type.",
             );
             Err(PromptError::NonInteractiveTerminal)
-        }
-        Err(PromptError::MissingParent(err)) => {
-            print_error(config, &err.to_string());
-            Err(PromptError::MissingParent(err))
         }
         Err(e) => Err(e),
     }

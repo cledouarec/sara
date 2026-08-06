@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use super::id_format::IdFormat;
 use super::{FieldType, Schema};
 use crate::error::SaraError;
 
@@ -42,8 +43,8 @@ impl Schema {
     /// Validates internal consistency of the schema.
     ///
     /// Checks: relation inverses are symmetric, every referenced relation,
-    /// parent and target type id exists, and `Enum` fields list at least one
-    /// value.
+    /// parent and target type id exists, `Enum` fields list at least one
+    /// value, and every `id_format` parses (see `IdFormat`).
     ///
     /// # Errors
     ///
@@ -72,6 +73,12 @@ impl Schema {
         }
 
         for def in &self.item_types {
+            if let Err(reason) = IdFormat::parse(&def.id_format) {
+                return Err(invalid(format!(
+                    "type '{}' has an invalid id_format '{}': {reason}",
+                    def.id, def.id_format
+                )));
+            }
             for parent in &def.parent_types {
                 if self.item_type(parent).is_none() {
                     return Err(invalid(format!(
@@ -190,5 +197,18 @@ relations:
             "",
         );
         assert!(Schema::from_yaml_str(&yaml, Path::new("<test>")).is_err());
+    }
+
+    #[test]
+    fn test_invalid_id_format_is_rejected() {
+        let yaml = STANDALONE_SCHEMA.replace(
+            "id_format: \"{prefix}-{seq:03}\"\n  parent_types: []",
+            "id_format: \"{prefix}\"\n  parent_types: []",
+        );
+        let err = Schema::from_yaml_str(&yaml, Path::new("<test>")).unwrap_err();
+        assert!(
+            err.to_string().contains("invalid id_format '{prefix}'"),
+            "got: {err}"
+        );
     }
 }
