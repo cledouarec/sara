@@ -313,6 +313,9 @@ mod init_command {
 
     use super::*;
 
+    /// Exit code the init command returns for an identifier already in use.
+    const EXIT_DUPLICATE_ID: i32 = 4;
+
     #[test]
     fn test_init_new_file() {
         let temp_dir = TempDir::new().unwrap();
@@ -353,6 +356,71 @@ mod init_command {
 
         let content = fs::read_to_string(&test_file).unwrap();
         assert!(content.contains("id: \"SWREQ-999\"") || content.contains("id: SWREQ-999"));
+    }
+
+    /// Two successive inits in the same repository must not hand out the same
+    /// identifier.
+    #[test]
+    fn test_init_continues_the_sequence_of_existing_items() {
+        let temp_dir = TempDir::new().unwrap();
+        let docs = temp_dir.path().join("docs");
+        fs::create_dir(&docs).unwrap();
+
+        for name in ["first", "second"] {
+            sara()
+                .arg("-r")
+                .arg(&docs)
+                .arg("init")
+                .arg("use-case")
+                .arg(docs.join(format!("{name}.md")))
+                .arg("--name")
+                .arg(name)
+                .assert()
+                .success();
+        }
+
+        let first = fs::read_to_string(docs.join("first.md")).unwrap();
+        let second = fs::read_to_string(docs.join("second.md")).unwrap();
+        assert!(first.contains("id: \"UC-001\""), "unexpected id in {first}");
+        assert!(
+            second.contains("id: \"UC-002\""),
+            "unexpected id in {second}"
+        );
+    }
+
+    #[test]
+    fn test_init_rejects_an_id_already_used() {
+        let temp_dir = TempDir::new().unwrap();
+        let docs = temp_dir.path().join("docs");
+        fs::create_dir(&docs).unwrap();
+
+        sara()
+            .arg("-r")
+            .arg(&docs)
+            .arg("init")
+            .arg("use-case")
+            .arg(docs.join("first.md"))
+            .arg("--name")
+            .arg("First")
+            .assert()
+            .success();
+
+        sara()
+            .arg("-r")
+            .arg(&docs)
+            .arg("init")
+            .arg("use-case")
+            .arg(docs.join("second.md"))
+            .arg("--id")
+            .arg("UC-001")
+            .arg("--name")
+            .arg("Second")
+            .assert()
+            .failure()
+            .code(EXIT_DUPLICATE_ID)
+            .stdout(predicate::str::contains("already used"));
+
+        assert!(!docs.join("second.md").exists());
     }
 
     #[test]

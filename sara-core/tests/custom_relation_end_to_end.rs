@@ -158,7 +158,9 @@ fn custom_relation_flows_through_the_whole_pipeline() {
     let opts = InitOptions::new(file.clone(), config)
         .with_id("TC-002")
         .with_name("Throughput check");
-    InitService::new().init(&opts).expect("init custom type");
+    InitService::new()
+        .init(None, &opts)
+        .expect("init custom type");
     let content = std::fs::read_to_string(&file).expect("read generated file");
     assert!(content.contains("verifies:"));
     assert!(content.contains("- \"SYSREQ-001\""));

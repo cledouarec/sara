@@ -4,7 +4,7 @@
 //! to existing documents.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
 
@@ -185,6 +185,15 @@ pub enum InitError {
     #[error("{0}")]
     InvalidOption(String),
 
+    /// Identifier already carried by another file.
+    #[error("Identifier {id} is already used by {}", file.display())]
+    DuplicateId {
+        /// The identifier that is already taken.
+        id: String,
+        /// The file of the item already carrying it.
+        file: PathBuf,
+    },
+
     /// IO error.
     #[error("IO error: {0}")]
     Io(#[from] std::io::Error),
@@ -211,33 +220,34 @@ pub struct InitResult {
 
 /// Service for initializing requirement items.
 #[derive(Debug, Default)]
-pub struct InitService {
-    /// Existing graph consulted to suggest the next unused identifier.
-    ///
-    /// When absent, generated identifiers always start at the first sequence
-    /// number of their type.
-    graph: Option<KnowledgeGraph>,
-}
+pub struct InitService;
 
 impl InitService {
-    /// Creates a new init service with no knowledge of existing items.
+    /// Creates a new init service.
     pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Attaches the graph used to suggest the next unused identifier.
-    ///
-    /// Without it, [`InitOptions::id`] must be supplied by the caller to avoid
-    /// colliding with items already present in the graph.
-    pub fn with_graph(mut self, graph: KnowledgeGraph) -> Self {
-        self.graph = Some(graph);
-        self
+        Self
     }
 
     /// Initializes an item based on the provided options.
     ///
-    /// This will either create a new file or update an existing file with frontmatter.
-    pub fn init(&self, opts: &InitOptions) -> Result<InitResult, InitError> {
+    /// This will either create a new file or update an existing file with
+    /// frontmatter. `graph` holds the items already known, so that a generated
+    /// identifier continues their sequence and an identifier already taken is
+    /// rejected. Passing `None` means no repository was scanned: sequences
+    /// then restart at their first number and collisions go undetected.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`InitError::FrontmatterExists`] when the file already has
+    /// frontmatter and `force` is not set, [`InitError::DuplicateId`] when the
+    /// resolved identifier belongs to another file of the graph,
+    /// [`InitError::InvalidOption`] for an option the type does not accept and
+    /// [`InitError::Io`] when the file cannot be read or written.
+    pub fn init(
+        &self,
+        graph: Option<&KnowledgeGraph>,
+        opts: &InitOptions,
+    ) -> Result<InitResult, InitError> {
         // Check for existing frontmatter
         if opts.file.exists() && !opts.force {
             let content = fs::read_to_string(&opts.file)?;
@@ -249,7 +259,8 @@ impl InitService {
         let item_type = opts.item_type();
 
         // Resolve ID and name
-        let id = self.resolve_id(opts);
+        let id = self.resolve_id(graph, opts);
+        self.ensure_id_is_free(graph, &id, &opts.file)?;
         let name = self.resolve_name(opts, &id)?;
 
         // Build an Item from init options
@@ -284,10 +295,36 @@ impl InitService {
     }
 
     /// Resolves the ID from options or suggests the next unused one.
-    fn resolve_id(&self, opts: &InitOptions) -> String {
+    fn resolve_id(&self, graph: Option<&KnowledgeGraph>, opts: &InitOptions) -> String {
         opts.id
             .clone()
-            .unwrap_or_else(|| opts.item_type().suggest_next_id(self.graph.as_ref()))
+            .unwrap_or_else(|| opts.item_type().suggest_next_id(graph))
+    }
+
+    /// Rejects an identifier already carried by another file of the graph.
+    ///
+    /// The item stored in the target file itself is ignored, so that
+    /// re-initializing a file keeps its identifier available. Without a graph
+    /// nothing is known, hence nothing is rejected.
+    fn ensure_id_is_free(
+        &self,
+        graph: Option<&KnowledgeGraph>,
+        id: &str,
+        file: &Path,
+    ) -> Result<(), InitError> {
+        let Some(existing) = graph.and_then(|g| g.get(&ItemId::new_unchecked(id))) else {
+            return Ok(());
+        };
+
+        let existing_file = existing.source.repository.join(&existing.source.file_path);
+        if same_file(&existing_file, file) {
+            return Ok(());
+        }
+
+        Err(InitError::DuplicateId {
+            id: id.to_string(),
+            file: existing_file,
+        })
     }
 
     /// Resolves the name from options, file content, or file stem.
@@ -510,6 +547,16 @@ fn scalar_field_value(value: &str, field_type: &FieldType) -> FieldValue {
     }
 }
 
+/// Tells whether two paths designate the same file.
+///
+/// Resolving is what makes a path rebuilt from a scanned item comparable with
+/// the one typed on the command line. A path that cannot be resolved (the file
+/// is about to be created) is compared as it stands.
+fn same_file(left: &Path, right: &Path) -> bool {
+    let resolve = |path: &Path| fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
+    resolve(left) == resolve(right)
+}
+
 /// Parses an item type string into an [`ItemType`].
 ///
 /// Accepts the schema id (`use_case`), its squashed form (`usecase`) and the
@@ -529,7 +576,9 @@ mod tests {
 
     use super::*;
 
+    use crate::graph::KnowledgeGraphBuilder;
     use crate::schema::builtin;
+    use crate::test_utils::create_test_item_at;
 
     #[test]
     fn test_parse_item_type() {
@@ -542,24 +591,31 @@ mod tests {
 
     /// Builds a graph holding the given identifiers, all of the same type.
     fn graph_with_ids(item_type: ItemType, ids: &[&str]) -> KnowledgeGraph {
-        let items = ids.iter().map(|id| {
-            ItemBuilder::new()
-                .id(ItemId::new_unchecked(*id))
-                .item_type(item_type)
-                .name(*id)
-                .source(SourceLocation {
-                    repository: PathBuf::new(),
-                    file_path: PathBuf::from(format!("{id}.md")),
-                    git_ref: None,
-                })
-                .build()
-                .unwrap()
-        });
+        let items = ids
+            .iter()
+            .map(|id| create_test_item_at(id, item_type, &format!("{id}.md")));
 
-        crate::graph::KnowledgeGraphBuilder::new()
+        KnowledgeGraphBuilder::new()
             .add_items(items)
             .build()
             .unwrap()
+    }
+
+    /// Builds a graph holding one item stored in the given file.
+    fn graph_with_item_at(item_type: ItemType, id: &str, file: &Path) -> KnowledgeGraph {
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked(id))
+            .item_type(item_type)
+            .name(id)
+            .source(SourceLocation {
+                repository: file.parent().unwrap().to_path_buf(),
+                file_path: PathBuf::from(file.file_name().unwrap()),
+                git_ref: None,
+            })
+            .build()
+            .unwrap();
+
+        KnowledgeGraphBuilder::new().add_item(item).build().unwrap()
     }
 
     /// Without a graph the service cannot know what exists, so it falls back to
@@ -571,7 +627,7 @@ mod tests {
 
         let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE)).with_name("New");
 
-        let result = InitService::new().init(&opts).unwrap();
+        let result = InitService::new().init(None, &opts).unwrap();
 
         assert_eq!(result.id, "UC-001");
     }
@@ -586,7 +642,7 @@ mod tests {
         let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE)).with_name("New");
 
         let graph = graph_with_ids(builtin::USE_CASE, &["UC-001", "UC-002"]);
-        let result = InitService::new().with_graph(graph).init(&opts).unwrap();
+        let result = InitService::new().init(Some(&graph), &opts).unwrap();
 
         assert_eq!(result.id, "UC-003");
     }
@@ -600,7 +656,7 @@ mod tests {
         let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE)).with_name("New");
 
         let graph = graph_with_ids(builtin::SOLUTION, &["SOL-001", "SOL-002"]);
-        let result = InitService::new().with_graph(graph).init(&opts).unwrap();
+        let result = InitService::new().init(Some(&graph), &opts).unwrap();
 
         assert_eq!(result.id, "UC-001");
     }
@@ -616,9 +672,48 @@ mod tests {
             .with_name("New");
 
         let graph = graph_with_ids(builtin::USE_CASE, &["UC-001", "UC-002"]);
-        let result = InitService::new().with_graph(graph).init(&opts).unwrap();
+        let result = InitService::new().init(Some(&graph), &opts).unwrap();
 
         assert_eq!(result.id, "UC-LOGIN");
+    }
+
+    /// An explicit identifier already carried by another file is refused
+    /// instead of silently creating a duplicate.
+    #[test]
+    fn test_explicit_id_already_taken_is_rejected() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("uc.md");
+
+        let opts = InitOptions::new(file_path, TypeConfig::new(builtin::USE_CASE))
+            .with_id("UC-001")
+            .with_name("New");
+
+        let graph = graph_with_ids(builtin::USE_CASE, &["UC-001"]);
+        let error = InitService::new().init(Some(&graph), &opts).unwrap_err();
+
+        assert!(
+            matches!(error, InitError::DuplicateId { ref id, .. } if id == "UC-001"),
+            "expected a duplicate identifier error, got {error:?}"
+        );
+    }
+
+    /// Re-initializing a file must not see the item it already holds as a
+    /// duplicate of itself.
+    #[test]
+    fn test_id_of_the_target_file_itself_is_not_a_duplicate() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("uc.md");
+        fs::write(&file_path, "# Existing").unwrap();
+
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(builtin::USE_CASE))
+            .with_id("UC-001")
+            .with_name("New")
+            .with_force(true);
+
+        let graph = graph_with_item_at(builtin::USE_CASE, "UC-001", &file_path);
+        let result = InitService::new().init(Some(&graph), &opts).unwrap();
+
+        assert_eq!(result.id, "UC-001");
     }
 
     #[test]
@@ -638,7 +733,7 @@ mod tests {
             .with_name("Test Solution");
 
         let service = InitService::new();
-        let result = service.init(&opts).unwrap();
+        let result = service.init(None, &opts).unwrap();
 
         assert_eq!(result.id, "SOL-001");
         assert_eq!(result.name, "Test Solution");
@@ -662,7 +757,7 @@ mod tests {
             .with_id("UC-001");
 
         let service = InitService::new();
-        let result = service.init(&opts).unwrap();
+        let result = service.init(None, &opts).unwrap();
 
         assert_eq!(result.id, "UC-001");
         assert_eq!(result.name, "My Document"); // Extracted from heading
@@ -686,7 +781,7 @@ mod tests {
             InitOptions::new(file_path, TypeConfig::new(builtin::SOLUTION)).with_id("SOL-001");
 
         let service = InitService::new();
-        let result = service.init(&opts);
+        let result = service.init(None, &opts);
 
         assert!(matches!(result, Err(InitError::FrontmatterExists(_))));
     }
@@ -705,7 +800,7 @@ mod tests {
             .with_force(true);
 
         let service = InitService::new();
-        let result = service.init(&opts).unwrap();
+        let result = service.init(None, &opts).unwrap();
 
         assert_eq!(result.id, "SOL-001");
         assert!(result.updated_existing);
@@ -725,7 +820,7 @@ mod tests {
             .with_id("SYSREQ-001");
 
         let service = InitService::new();
-        let result = service.init(&opts).unwrap();
+        let result = service.init(None, &opts).unwrap();
 
         assert!(result.needs_specification);
     }
@@ -741,7 +836,7 @@ mod tests {
         let opts = InitOptions::new(file_path, type_config).with_id("SYSREQ-001");
 
         let service = InitService::new();
-        let result = service.init(&opts).unwrap();
+        let result = service.init(None, &opts).unwrap();
 
         assert!(!result.needs_specification);
     }

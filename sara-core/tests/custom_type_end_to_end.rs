@@ -158,7 +158,9 @@ fn custom_type_flows_through_the_whole_pipeline() {
     let opts = InitOptions::new(file.clone(), TypeConfig::new(custom))
         .with_id("STKREQ-002")
         .with_name("Maintenance access");
-    let result = InitService::new().init(&opts).expect("init custom type");
+    let result = InitService::new()
+        .init(None, &opts)
+        .expect("init custom type");
     assert_eq!(result.item_type, custom);
     assert!(result.needs_specification, "placeholder text was used");
     let content = std::fs::read_to_string(&file).expect("read generated file");
