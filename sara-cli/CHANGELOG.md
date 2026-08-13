@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.9.4...sara-cli-v0.10.0) - 2026-08-13
+
+### Fixed
+
+- *(init)* suggest the next unused id in non-interactive mode (by @mosaan)
+
+### Contributors
+
+* @mosaan
+
 ## [0.9.4](https://github.com/cledouarec/sara/compare/sara-cli-v0.9.3...sara-cli-v0.9.4) - 2026-08-05
 
 ### Other
