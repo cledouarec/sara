@@ -7,6 +7,27 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/cledouarec/sara/compare/sara-core-v0.9.4...sara-core-v0.10.0) - 2026-08-13
+
+### Added
+
+- [**breaking**] fail the diff instead of comparing the working tree with itself (by @cledouarec) - #118
+- [**breaking**] warn instead of blocking when no parent item exists (by @cledouarec) - #118
+- query the graph for a type's missing parent (by @cledouarec) - #118
+- [**breaking**] drive identifier generation from id_format templates (by @cledouarec) - #118
+
+### Fixed
+
+- *(init)* [**breaking**] reject an identifier already used instead of duplicating it (by @cledouarec)
+- [**breaking**] surface skipped files in sara diff (by @cledouarec) - #118
+- report skipped files once instead of logging them twice (by @cledouarec) - #118
+- *(init)* suggest the next unused id in non-interactive mode (by @mosaan)
+
+### Contributors
+
+* @cledouarec
+* @mosaan
+
 ## [0.9.3](https://github.com/cledouarec/sara/compare/sara-core-v0.9.2...sara-core-v0.9.3) - 2026-08-01
 
 ### Build
