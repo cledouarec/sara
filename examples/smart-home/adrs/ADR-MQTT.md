@@ -9,7 +9,7 @@ status: accepted
 deciders:
   - "Smart Home Architecture Team"
 justifies:
-  - "SWDD-MQTT"
+  - "SWDD-001"
 ---
 
 # Use MQTT for Device Communication

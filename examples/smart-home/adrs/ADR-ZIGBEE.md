@@ -10,7 +10,7 @@ deciders:
   - "Smart Home Architecture Team"
   - "Hardware Engineering Lead"
 justifies:
-  - "HWDD-ZIGBEE"
+  - "HWDD-001"
 ---
 
 # Use Zigbee for Wireless Device Mesh

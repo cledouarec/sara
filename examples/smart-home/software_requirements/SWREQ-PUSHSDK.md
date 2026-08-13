@@ -1,5 +1,5 @@
 ---
-id: "SWREQ-PUSHSDK"
+id: "SWREQ-002"
 type: software_requirement
 name: "Push Notification SDK Integration"
 description: >
@@ -8,7 +8,7 @@ specification: >
   The mobile application SHALL integrate FCM (Android) and APNs (iOS) SDKs
   for token registration, notification handling, and deep-linking
 derives_from:
-  - "SYSARCH-COMM"
+  - "SYSARCH-001"
 ---
 
 # Push Notification SDK Integration

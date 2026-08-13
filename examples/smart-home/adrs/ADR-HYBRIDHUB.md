@@ -9,7 +9,7 @@ status: accepted
 deciders:
   - "Smart Home Architecture Team"
 justifies:
-  - "SYSARCH-COMM"
+  - "SYSARCH-001"
 ---
 
 # Hub-Based Hybrid Architecture

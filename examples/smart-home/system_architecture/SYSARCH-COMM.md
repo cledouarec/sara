@@ -1,12 +1,12 @@
 ---
-id: "SYSARCH-COMM"
+id: "SYSARCH-001"
 type: system_architecture
 name: "Communication Architecture"
 description: >
   System architecture for device communication and alert delivery
 satisfies:
-  - "SYSREQ-LATENCY"
-  - "SYSREQ-ALERT"
+  - "SYSREQ-001"
+  - "SYSREQ-002"
 ---
 
 # Communication Architecture

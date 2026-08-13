@@ -1,11 +1,11 @@
 ---
-id: "HWDD-HUBBOARD"
+id: "HWDD-002"
 type: hardware_detailed_design
 name: "Hub Main Board Design"
 description: >
   Detailed design for central hub main circuit board
 satisfies:
-  - "HWREQ-HUB"
+  - "HWREQ-002"
 ---
 
 # Hub Main Board Design

@@ -1,11 +1,11 @@
 ---
-id: "SWDD-MQTT"
+id: "SWDD-001"
 type: software_detailed_design
 name: "MQTT Communication Protocol"
 description: >
   Design for device-to-hub communication using MQTT messaging protocol
 satisfies:
-  - "SWREQ-MQTTCLIENT"
+  - "SWREQ-001"
 ---
 
 # MQTT Communication Protocol

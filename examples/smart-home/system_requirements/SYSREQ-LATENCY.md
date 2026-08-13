@@ -1,5 +1,5 @@
 ---
-id: "SYSREQ-LATENCY"
+id: "SYSREQ-001"
 type: system_requirement
 name: "Device Command Latency"
 description: >
@@ -7,7 +7,7 @@ description: >
 specification: >
   The system SHALL deliver device commands within 500ms of user action
 derives_from:
-  - "SCEN-DIMMER"
+  - "SCEN-001"
 ---
 
 # Device Command Latency

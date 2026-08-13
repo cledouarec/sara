@@ -1,5 +1,5 @@
 ---
-id: "SYSREQ-ALERT"
+id: "SYSREQ-002"
 type: system_requirement
 name: "Security Alert Delivery"
 description: >
@@ -8,9 +8,9 @@ specification: >
   The system SHALL deliver security alerts to user devices within 5 seconds
   of event detection
 derives_from:
-  - "SCEN-INTRUSION"
+  - "SCEN-002"
 depends_on:
-  - "SYSREQ-LATENCY"
+  - "SYSREQ-001"
 ---
 
 # Security Alert Delivery

@@ -1,11 +1,11 @@
 ---
-id: "HWDD-ZIGBEE"
+id: "HWDD-001"
 type: hardware_detailed_design
 name: "Zigbee Module Integration"
 description: >
   Detailed design for Zigbee radio module PCB integration
 satisfies:
-  - "HWREQ-ZIGBEE"
+  - "HWREQ-001"
 ---
 
 # Zigbee Module Integration
