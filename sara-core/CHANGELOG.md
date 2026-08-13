@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.0](https://github.com/cledouarec/sara/compare/sara-core-v0.9.4...sara-core-v0.10.0) - 2026-08-13
+
+### Fixed
+
+- *(init)* suggest the next unused id in non-interactive mode (by @mosaan)
+
+### Contributors
+
+* @mosaan
+
 ## [0.9.3](https://github.com/cledouarec/sara/compare/sara-core-v0.9.2...sara-core-v0.9.3) - 2026-08-01
 
 ### Build
