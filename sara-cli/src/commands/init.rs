@@ -11,9 +11,10 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 
 use clap::{Arg, ArgAction, ArgMatches, Args, Command, FromArgMatches, value_parser};
+use sara_core::graph::KnowledgeGraph;
 use sara_core::model::{FIELD_DESCRIPTION, FIELD_ID, FIELD_NAME, ItemType};
 use sara_core::schema::FieldType;
-use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig, load_graph};
+use sara_core::service::{InitError, InitOptions, InitResult, InitService, TypeConfig};
 
 use sara_core::config::{Config, OutputConfig};
 
@@ -262,6 +263,9 @@ const EXIT_FRONTMATTER_EXISTS: u8 = 2;
 /// Exit code for invalid option for item type.
 const EXIT_INVALID_OPTION: u8 = 3;
 
+/// Exit code for an identifier already used by another item.
+const EXIT_DUPLICATE_ID: u8 = 4;
+
 // =============================================================================
 // Command execution
 // =============================================================================
@@ -270,7 +274,10 @@ const EXIT_INVALID_OPTION: u8 = 3;
 pub fn run(args: &InitArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
     match &args.command {
         None => run_interactive(config),
-        Some(subcommand) => run_with_options(subcommand.to_init_options(), config),
+        Some(subcommand) => {
+            let graph = load_init_graph(config);
+            run_with_options(subcommand.to_init_options(), graph.as_ref(), config)
+        }
     }
 }
 
@@ -293,28 +300,29 @@ fn run_interactive(config: &Config) -> Result<ExitCode, Box<dyn Error>> {
                 .maybe_description(input.description)
                 .with_force(false);
 
-            run_with_options(opts, config)
+            run_with_options(opts, session.graph.as_ref(), config)
         }
         Ok(None) => Ok(ExitCode::from(EXIT_CANCELLED)),
         Err(_) => Ok(ExitCode::FAILURE),
     }
 }
 
-/// Builds the init service, attaching the graph only when an identifier has to
-/// be generated.
+/// Loads the graph the initialization consults to keep identifiers unique.
 ///
-/// Loading the graph is skipped when `--id` is supplied, so explicit
-/// identifiers keep costing a single file write. A graph that fails to load is
-/// not fatal: initialization falls back to the first sequence number, matching
-/// the behaviour of an empty repository.
-fn build_init_service(opts: &InitOptions, config: &Config) -> InitService {
-    if opts.id.is_some() {
-        return InitService::new();
-    }
-
-    match load_graph(&config.repositories.paths) {
-        Ok((graph, _warnings)) => InitService::new().with_graph(graph),
-        Err(_) => InitService::new(),
+/// A graph that fails to load is not fatal: initialization goes on without it,
+/// but the identifier it produces may then collide with an existing item, so
+/// the failure is reported rather than swallowed.
+fn load_init_graph(config: &Config) -> Option<KnowledgeGraph> {
+    match super::build_graph(config) {
+        Ok(graph) => Some(graph),
+        Err(error) => {
+            tracing::warn!("Failed to load knowledge graph: {error}");
+            print_warning(
+                &config.output,
+                "Failed to load knowledge graph: the generated identifier may already be taken",
+            );
+            None
+        }
     }
 }
 
@@ -330,12 +338,16 @@ fn build_type_config_from_interactive(input: &super::interactive::InteractiveInp
     config
 }
 
-fn run_with_options(opts: InitOptions, config: &Config) -> Result<ExitCode, Box<dyn Error>> {
+fn run_with_options(
+    opts: InitOptions,
+    graph: Option<&KnowledgeGraph>,
+    config: &Config,
+) -> Result<ExitCode, Box<dyn Error>> {
     let output = &config.output;
 
-    let service = build_init_service(&opts, config);
+    let service = InitService::new();
 
-    match service.init(&opts) {
+    match service.init(graph, &opts) {
         Ok(result) => {
             print_result(output, &result);
             Ok(ExitCode::SUCCESS)
@@ -353,6 +365,16 @@ fn run_with_options(opts: InitOptions, config: &Config) -> Result<ExitCode, Box<
         Err(InitError::InvalidOption(msg)) => {
             print_error(output, &msg);
             Ok(ExitCode::from(EXIT_INVALID_OPTION))
+        }
+        Err(InitError::DuplicateId { id, file }) => {
+            print_error(
+                output,
+                &format!(
+                    "Identifier {id} is already used by {}. Pick another one with --id.",
+                    file.display()
+                ),
+            );
+            Ok(ExitCode::from(EXIT_DUPLICATE_ID))
         }
         Err(InitError::Io(e)) => {
             print_error(output, &format!("IO error: {}", e));
