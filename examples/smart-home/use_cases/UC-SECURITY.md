@@ -1,11 +1,11 @@
 ---
-id: "UC-SECURITY"
+id: "UC-002"
 type: use_case
 name: "Security Monitoring"
 description: >
   Monitor and manage home security devices including cameras and door sensors
 refines:
-  - "SOL-SMARTHOME"
+  - "SOL-001"
 ---
 
 # Use Case: Security Monitoring

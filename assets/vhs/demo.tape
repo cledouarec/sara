@@ -24,7 +24,7 @@ Enter
 Sleep 2s
 
 # Query with upstream traceability
-Type "sara query SWREQ-MQTTCLIENT --upstream"
+Type "sara query SWREQ-001 --upstream"
 Enter
 Sleep 3s
 

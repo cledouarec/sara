@@ -1,5 +1,5 @@
 ---
-id: "HWREQ-HUB"
+id: "HWREQ-002"
 type: hardware_requirement
 name: "Central Hub Hardware"
 description: >
@@ -8,7 +8,7 @@ specification: >
   The central hub SHALL include ARM Cortex-A53 quad-core processor, 1GB RAM,
   Ethernet, Wi-Fi, and Zigbee 3.0 radio
 derives_from:
-  - "SYSARCH-COMM"
+  - "SYSARCH-001"
 ---
 
 # Central Hub Hardware

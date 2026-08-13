@@ -1,5 +1,5 @@
 ---
-id: "HWREQ-ZIGBEE"
+id: "HWREQ-001"
 type: hardware_requirement
 name: "Zigbee Radio Module"
 description: >
@@ -8,7 +8,7 @@ specification: >
   Smart devices SHALL include a Zigbee 3.0 compliant radio module with
   minimum +8 dBm TX power and -100 dBm RX sensitivity
 derives_from:
-  - "SYSARCH-COMM"
+  - "SYSARCH-001"
 ---
 
 # Zigbee Radio Module

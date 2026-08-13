@@ -1,11 +1,11 @@
 ---
-id: "UC-LIGHTS"
+id: "UC-001"
 type: use_case
 name: "Lighting Control"
 description: >
   Control and automate smart lighting throughout the home
 refines:
-  - "SOL-SMARTHOME"
+  - "SOL-001"
 ---
 
 # Use Case: Lighting Control

@@ -1,5 +1,5 @@
 ---
-id: "SWREQ-MQTTCLIENT"
+id: "SWREQ-001"
 type: software_requirement
 name: "MQTT Client Library"
 description: >
@@ -9,7 +9,7 @@ specification: >
   of TLS connections, QoS 0/1/2 publishing, wildcard subscriptions, and
   automatic reconnection
 derives_from:
-  - "SYSARCH-COMM"
+  - "SYSARCH-001"
 ---
 
 # MQTT Client Library

@@ -1,11 +1,11 @@
 ---
-id: "SCEN-DIMMER"
+id: "SCEN-001"
 type: scenario
 name: "Adjust Living Room Dimmer"
 description: >
   User adjusts brightness of living room lights using the mobile app
 refines:
-  - "UC-LIGHTS"
+  - "UC-001"
 ---
 
 # Scenario: Adjust Living Room Dimmer

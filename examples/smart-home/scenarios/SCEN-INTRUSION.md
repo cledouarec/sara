@@ -1,11 +1,11 @@
 ---
-id: "SCEN-INTRUSION"
+id: "SCEN-002"
 type: scenario
 name: "Door Sensor Triggered While Away"
 description: >
   System detects door opening while homeowner is away and armed
 refines:
-  - "UC-SECURITY"
+  - "UC-002"
 ---
 
 # Scenario: Door Sensor Triggered While Away

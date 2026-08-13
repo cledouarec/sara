@@ -8,80 +8,80 @@ the sara templates.
 ```
 smart-home/
 ├── solutions/
-│   └── SOL-SMARTHOME.md              # Top-level solution
+│   └── SOL-SMARTHOME.md              # SOL-001: Top-level solution
 ├── use_cases/
-│   ├── UC-LIGHTS.md                  # Lighting control use case
-│   └── UC-SECURITY.md                # Security monitoring use case
+│   ├── UC-LIGHTS.md                  # UC-001: Lighting control use case
+│   └── UC-SECURITY.md                # UC-002: Security monitoring use case
 ├── scenarios/
-│   ├── SCEN-DIMMER.md                # Dimmer adjustment scenario
-│   └── SCEN-INTRUSION.md             # Intrusion detection scenario
+│   ├── SCEN-DIMMER.md                # SCEN-001: Dimmer adjustment scenario
+│   └── SCEN-INTRUSION.md             # SCEN-002: Intrusion detection scenario
 ├── system_requirements/
-│   ├── SYSREQ-LATENCY.md             # Command latency requirement
-│   └── SYSREQ-ALERT.md               # Alert delivery requirement
+│   ├── SYSREQ-LATENCY.md             # SYSREQ-001: Command latency requirement
+│   └── SYSREQ-ALERT.md               # SYSREQ-002: Alert delivery requirement
 ├── system_architecture/
-│   └── SYSARCH-COMM.md               # Communication architecture
+│   └── SYSARCH-COMM.md               # SYSARCH-001: Communication architecture
 ├── software_requirements/
-│   ├── SWREQ-MQTTCLIENT.md           # MQTT client library
-│   └── SWREQ-PUSHSDK.md              # Push SDK integration
+│   ├── SWREQ-MQTTCLIENT.md           # SWREQ-001: MQTT client library
+│   └── SWREQ-PUSHSDK.md              # SWREQ-002: Push SDK integration
 ├── hardware_requirements/
-│   ├── HWREQ-ZIGBEE.md               # Zigbee radio module
-│   └── HWREQ-HUB.md                  # Central hub hardware
+│   ├── HWREQ-ZIGBEE.md               # HWREQ-001: Zigbee radio module
+│   └── HWREQ-HUB.md                  # HWREQ-002: Central hub hardware
 ├── detailed_design/
-│   ├── SWDD-MQTT.md                  # MQTT protocol design (SW)
-│   ├── SWDD-ALERTPUSH.md             # Push notification design (SW)
-│   ├── HWDD-ZIGBEE.md                # Zigbee module design (HW)
-│   └── HWDD-HUBBOARD.md              # Hub board design (HW)
+│   ├── SWDD-MQTT.md                  # SWDD-001: MQTT protocol design (SW)
+│   ├── SWDD-ALERTPUSH.md             # SWDD-002: Push notification design (SW)
+│   ├── HWDD-ZIGBEE.md                # HWDD-001: Zigbee module design (HW)
+│   └── HWDD-HUBBOARD.md              # HWDD-002: Hub board design (HW)
 └── adrs/
-    ├── ADR-001.md                    # Hub-based hybrid architecture
-    ├── ADR-002.md                    # Use MQTT for device communication
-    └── ADR-003.md                    # Use Zigbee for wireless mesh
+    ├── ADR-HYBRIDHUB.md              # ADR-001: Hub-based hybrid architecture
+    ├── ADR-MQTT.md                   # ADR-002: Use MQTT for device communication
+    └── ADR-ZIGBEE.md                 # ADR-003: Use Zigbee for wireless mesh
 ```
 
 ## Traceability Graph
 
 ```
-SOL-SMARTHOME
-├── UC-LIGHTS
-│   └── SCEN-DIMMER
-│       └── SYSREQ-LATENCY ─────┐
-└── UC-SECURITY                 │
-    └── SCEN-INTRUSION          │
-        └── SYSREQ-ALERT ───────┤
-                                ▼
-                         SYSARCH-COMM ◄── ADR-001
-                        /            \
-           ┌───────────┘              └───────────┐
-           ▼                                      ▼
-    SWREQ-MQTTCLIENT                       HWREQ-ZIGBEE
-    SWREQ-PUSHSDK                          HWREQ-HUB
-           │                                      │
-           ▼                                      ▼
-    SWDD-MQTT ◄── ADR-002               HWDD-ZIGBEE ◄── ADR-003
-    SWDD-ALERTPUSH                        HWDD-HUBBOARD
+SOL-001
+├── UC-001
+│   └── SCEN-001
+│       └── SYSREQ-001 ──┐
+└── UC-002               │
+    └── SCEN-002         │
+        └── SYSREQ-002 ──┤
+                         ▼
+                  SYSARCH-001 ◄── ADR-001
+                 /           \
+    ┌───────────┘             └───────────┐
+    ▼                                     ▼
+SWREQ-001                             HWREQ-001
+SWREQ-002                             HWREQ-002
+    │                                     │
+    ▼                                     ▼
+SWDD-001 ◄── ADR-002                  HWDD-001 ◄── ADR-003
+SWDD-002                              HWDD-002
 ```
 
 ## Relationships
 
-| Child            | Relationship | Parent           |
-|------------------|--------------|------------------|
-| UC-LIGHTS        | refines      | SOL-SMARTHOME    |
-| UC-SECURITY      | refines      | SOL-SMARTHOME    |
-| SCEN-DIMMER      | refines      | UC-LIGHTS        |
-| SCEN-INTRUSION   | refines      | UC-SECURITY      |
-| SYSREQ-LATENCY   | derives_from | SCEN-DIMMER      |
-| SYSREQ-ALERT     | derives_from | SCEN-INTRUSION   |
-| SYSARCH-COMM     | satisfies    | SYSREQ-LATENCY, SYSREQ-ALERT |
-| SWREQ-MQTTCLIENT | derives_from | SYSARCH-COMM     |
-| SWREQ-PUSHSDK    | derives_from | SYSARCH-COMM     |
-| HWREQ-ZIGBEE     | derives_from | SYSARCH-COMM     |
-| HWREQ-HUB        | derives_from | SYSARCH-COMM     |
-| SWDD-MQTT        | satisfies    | SWREQ-MQTTCLIENT |
-| SWDD-ALERTPUSH   | satisfies    | SWREQ-PUSHSDK    |
-| HWDD-ZIGBEE      | satisfies    | HWREQ-ZIGBEE     |
-| HWDD-HUBBOARD    | satisfies    | HWREQ-HUB        |
-| ADR-001          | justifies    | SYSARCH-COMM |
-| ADR-002          | justifies    | SWDD-MQTT |
-| ADR-003          | justifies    | HWDD-ZIGBEE |
+| Child       | Relationship | Parent                 |
+|-------------|--------------|------------------------|
+| UC-001      | refines      | SOL-001                |
+| UC-002      | refines      | SOL-001                |
+| SCEN-001    | refines      | UC-001                 |
+| SCEN-002    | refines      | UC-002                 |
+| SYSREQ-001  | derives_from | SCEN-001               |
+| SYSREQ-002  | derives_from | SCEN-002               |
+| SYSARCH-001 | satisfies    | SYSREQ-001, SYSREQ-002 |
+| SWREQ-001   | derives_from | SYSARCH-001            |
+| SWREQ-002   | derives_from | SYSARCH-001            |
+| HWREQ-001   | derives_from | SYSARCH-001            |
+| HWREQ-002   | derives_from | SYSARCH-001            |
+| SWDD-001    | satisfies    | SWREQ-001              |
+| SWDD-002    | satisfies    | SWREQ-002              |
+| HWDD-001    | satisfies    | HWREQ-001              |
+| HWDD-002    | satisfies    | HWREQ-002              |
+| ADR-001     | justifies    | SYSARCH-001            |
+| ADR-002     | justifies    | SWDD-001               |
+| ADR-003     | justifies    | HWDD-001               |
 
 ## Element Types
 

@@ -1,11 +1,11 @@
 ---
-id: "SWDD-ALERTPUSH"
+id: "SWDD-002"
 type: software_detailed_design
 name: "Push Notification Service"
 description: >
   Design for delivering security alerts via push notifications
 satisfies:
-  - "SWREQ-PUSHSDK"
+  - "SWREQ-002"
 ---
 
 # Push Notification Service

@@ -1,5 +1,5 @@
 ---
-id: "SOL-SMARTHOME"
+id: "SOL-001"
 type: solution
 name: "Smart Home Control System"
 description: >

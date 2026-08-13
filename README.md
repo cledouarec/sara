@@ -367,20 +367,20 @@ depends_on:
 
 Requirements can depend on other requirements of the same type using `depends_on` / `is_required_by`. This is useful for:
 
-- **Prerequisite requirements**: SYSREQ-AUTH depends on SYSREQ-SESSION
-- **Ordering constraints**: HWREQ-POWER must be satisfied before HWREQ-CPU
-- **Shared foundations**: Multiple SW requirements depend on SWREQ-LOGGING
+- **Prerequisite requirements**: the authentication requirement depends on the session one
+- **Ordering constraints**: the power requirement must be satisfied before the CPU one
+- **Shared foundations**: multiple SW requirements depend on the logging one
 
 ```yaml
 ---
-id: "SWREQ-RETRY"
+id: "SWREQ-003"
 type: software_requirement
 name: "Retry Logic with Exponential Backoff"
 derives_from:
-  - "SYSARCH-COMM"
+  - "SYSARCH-001"
 depends_on:
-  - "SWREQ-LOGGING"  # Retry events must be logged
-  - "SWREQ-CONFIG"   # Retry params come from config
+  - "SWREQ-001"  # Logging: retry events must be logged
+  - "SWREQ-002"  # Configuration: retry params come from config
 ---
 ```
 
@@ -399,8 +399,8 @@ deciders:
   - "Bob Johnson"
 # Design artifacts this decision justifies
 justifies:
-  - "SYSARCH-AUTH"
-  - "SWDD-AUTH-SERVICE"
+  - "SYSARCH-001"  # Authentication architecture
+  - "SWDD-001"     # Auth service implementation
 ---
 
 # Context
@@ -431,8 +431,8 @@ deciders:
 supersedes:
   - "ADR-001"  # This ADR replaces the previous auth decision
 justifies:
-  - "SYSARCH-AUTH"
-  - "SWDD-AUTH-SERVICE"
+  - "SYSARCH-001"
+  - "SWDD-001"
 ---
 ```
 
@@ -600,7 +600,7 @@ item_types:
 
 A format must contain at least one uniqueness source (`{seq}`, `{uuid4}` or `{uuid7}`), and `{seq}` must be followed by the end of the format or a literal that does not start with a digit — violations are rejected when the schema loads.
 
-The sequence counter is scoped to the rendered pattern: when the interactive `sara init` suggests the next id under `id_format: "{prefix}-{year}-{seq:02}"`, the first stakeholder requirement of 2027 is suggested as `STKREQ-2027-01` even if `STKREQ-2026-14` exists (a non-interactive `sara init` always starts at `01`; pass `--id` to choose explicitly). With `id_format: "{prefix}-{uuid4}"`, `sara init` mints ids like `STKREQ-8f14e45f-ceea-467f-a8d9-91f6a2c9be03` with no sequence scan at all.
+The sequence counter is scoped to the rendered pattern: when `sara init` suggests the next id under `id_format: "{prefix}-{year}-{seq:02}"`, the first stakeholder requirement of 2027 is suggested as `STKREQ-2027-01` even if `STKREQ-2026-14` exists. Both the interactive and the non-interactive form scan the configured repositories to continue the sequence, so two consecutive `sara init` inside them never hand out the same id; pass `--id` to choose one explicitly. An id already carried by another item is refused rather than duplicated, whether it comes from the suggestion or from `--id`. With `id_format: "{prefix}-{uuid4}"`, `sara init` mints ids like `STKREQ-8f14e45f-ceea-467f-a8d9-91f6a2c9be03` with no sequence scan at all.
 
 Each field declares `name`, `display_name`, a `field_type`, an optional `required` flag and an optional `placeholder` used when `sara init` runs without input for a required field.
 
