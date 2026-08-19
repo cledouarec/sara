@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.10.1](https://github.com/cledouarec/sara/compare/sara-cli-v0.10.0...sara-cli-v0.10.1) - 2026-08-19
+
+### Other
+
+- update Cargo.lock dependencies
+
 ## [0.10.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.9.4...sara-cli-v0.10.0) - 2026-08-13
 
 ### Added
