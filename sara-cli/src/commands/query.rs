@@ -1,12 +1,13 @@
 //! Query command implementation.
 
+use std::collections::HashMap;
 use std::error::Error;
 use std::process::ExitCode;
 
 use clap::Args;
 use sara_core::graph::{
-    KnowledgeGraph, LookupResult, TraversalNode, TraversalOptions, TraversalResult,
-    traverse_downstream, traverse_upstream,
+    KnowledgeGraph, LookupResult, TraversalOptions, TraversalResult, traverse_downstream,
+    traverse_upstream,
 };
 use sara_core::model::{Item, ItemId, ItemType};
 
@@ -197,83 +198,84 @@ fn print_traversal(
 }
 
 fn print_traversal_tree(config: &OutputConfig, result: &TraversalResult, graph: &KnowledgeGraph) {
-    // Group items by parent to build tree structure
-    let mut children_map: std::collections::HashMap<Option<&ItemId>, Vec<&TraversalNode>> =
-        std::collections::HashMap::new();
+    // Items come in depth-first preorder, so the parent of an occurrence is
+    // the nearest preceding occurrence of its parent id.
+    let mut children: Vec<Vec<usize>> = vec![Vec::new(); result.items.len()];
+    let mut roots: Vec<usize> = Vec::new();
+    let mut last_seen: HashMap<&ItemId, usize> = HashMap::new();
 
-    for node in &result.items {
-        children_map
-            .entry(node.parent.as_ref())
-            .or_default()
-            .push(node);
+    for (index, node) in result.items.iter().enumerate() {
+        match node
+            .parent
+            .as_ref()
+            .and_then(|parent| last_seen.get(parent))
+        {
+            Some(&parent) => children[parent].push(index),
+            None => roots.push(index),
+        }
+        last_seen.insert(&node.item_id, index);
     }
 
-    // Print the tree starting from items with no parent (roots)
-    if let Some(roots) = children_map.get(&None) {
-        for (i, root) in roots.iter().enumerate() {
-            let is_last = i == roots.len() - 1;
-            print_tree_node(config, root, graph, &children_map, "", is_last, true);
-        }
+    let printer = TreePrinter {
+        config,
+        result,
+        graph,
+        children,
+    };
+    for (i, &root) in roots.iter().enumerate() {
+        printer.print_node(root, "", i == roots.len() - 1, true);
     }
 }
 
-fn print_tree_node(
-    config: &OutputConfig,
-    node: &TraversalNode,
-    graph: &KnowledgeGraph,
-    children_map: &std::collections::HashMap<Option<&ItemId>, Vec<&TraversalNode>>,
-    prefix: &str,
-    is_last: bool,
-    is_root: bool,
-) {
-    let item = match graph.get(&node.item_id) {
-        Some(item) => item,
-        None => return,
-    };
+/// Renders a traversal result as an indented tree.
+struct TreePrinter<'a> {
+    config: &'a OutputConfig,
+    result: &'a TraversalResult,
+    graph: &'a KnowledgeGraph,
+    /// Child occurrences of each occurrence, indexed like `result.items`.
+    children: Vec<Vec<usize>>,
+}
 
-    // Format the line
-    let branch = if is_root {
-        ""
-    } else if is_last {
-        "└── "
-    } else {
-        "├── "
-    };
+impl TreePrinter<'_> {
+    fn print_node(&self, index: usize, prefix: &str, is_last: bool, is_root: bool) {
+        let Some(item) = self.graph.get(&self.result.items[index].item_id) else {
+            return;
+        };
 
-    let id = colorize(config, item.id.as_str(), Color::Cyan, Style::None);
-    let type_name = colorize(
-        config,
-        item.item_type.display_name(),
-        Color::None,
-        Style::Dimmed,
-    );
-    let item_text = format!("{}: {} ({})", id, item.name, type_name);
+        // Format the line
+        let branch = if is_root {
+            ""
+        } else if is_last {
+            "└── "
+        } else {
+            "├── "
+        };
 
-    if is_root {
-        println!("{}", item_text);
-    } else {
-        println!("{}{}{}", prefix, branch, item_text);
-    }
+        let id = colorize(self.config, item.id.as_str(), Color::Cyan, Style::None);
+        let type_name = colorize(
+            self.config,
+            item.item_type.display_name(),
+            Color::None,
+            Style::Dimmed,
+        );
+        let item_text = format!("{}: {} ({})", id, item.name, type_name);
 
-    // Print children
-    if let Some(children) = children_map.get(&Some(&node.item_id)) {
+        if is_root {
+            println!("{}", item_text);
+        } else {
+            println!("{}{}{}", prefix, branch, item_text);
+        }
+
+        // Print children
         let new_prefix = if is_root {
             String::new()
         } else {
             format!("{}{}", prefix, if is_last { "    " } else { "│   " })
         };
 
-        for (i, child) in children.iter().enumerate() {
-            let child_is_last = i == children.len() - 1;
-            print_tree_node(
-                config,
-                child,
-                graph,
-                children_map,
-                &new_prefix,
-                child_is_last,
-                false,
-            );
+        let children = &self.children[index];
+        for (i, &child) in children.iter().enumerate() {
+            self.print_node(child, &new_prefix, i == children.len() - 1, false);
         }
     }
 }

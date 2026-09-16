@@ -1,20 +1,23 @@
 //! Graph traversal operations for upstream/downstream queries.
 
-use std::collections::{HashSet, VecDeque};
+use std::collections::HashSet;
 
 use petgraph::Direction;
-use petgraph::graph::NodeIndex;
+use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::{ItemId, ItemType, RelationshipType};
+use crate::model::{Item, ItemId, ItemType, RelationshipType};
 
 /// Result of a traversal operation.
 #[derive(Debug, Clone)]
 pub struct TraversalResult {
     /// The starting item.
     pub origin: ItemId,
-    /// Items found during traversal, in order visited.
+    /// Items found during traversal, in depth-first preorder.
+    ///
+    /// An item reachable through several paths appears once per path, so
+    /// the list unfolds the traversed subgraph into a tree.
     pub items: Vec<TraversalNode>,
     /// Maximum depth reached.
     pub max_depth: usize,
@@ -30,6 +33,9 @@ pub struct TraversalNode {
     /// Relationship type from parent to this node (None for origin).
     pub relationship: Option<RelationshipType>,
     /// Parent item ID (None for origin).
+    ///
+    /// In the preorder of [`TraversalResult::items`], the parent occurrence
+    /// is the nearest preceding node carrying this id.
     pub parent: Option<ItemId>,
 }
 
@@ -94,7 +100,12 @@ pub fn traverse_downstream(
     traverse_graph(graph, start, TraversalDirection::Downstream, options)
 }
 
-/// Internal traversal implementation using BFS.
+/// Internal traversal implementation: a depth-first walk that reports one
+/// occurrence per path.
+///
+/// Only the ancestors on the current path are excluded from expansion, so an
+/// item reachable through several parents is reported under each of them
+/// while cycles still terminate.
 fn traverse_graph(
     graph: &KnowledgeGraph,
     start: &ItemId,
@@ -102,107 +113,125 @@ fn traverse_graph(
     options: &TraversalOptions,
 ) -> Option<TraversalResult> {
     let start_idx = graph.node_index(start)?;
-    let inner = graph.inner();
 
-    let mut visited: HashSet<NodeIndex> = HashSet::new();
-    // Queue contains: (node_idx, depth, relationship, parent_for_display)
-    // parent_for_display is the last ancestor that was included in results (for proper tree building)
-    let mut queue: VecDeque<(NodeIndex, usize, Option<RelationshipType>, Option<ItemId>)> =
-        VecDeque::new();
-    let mut result_items: Vec<TraversalNode> = Vec::new();
-    let mut max_depth = 0;
-
-    // Start with the origin node
-    queue.push_back((start_idx, 0, None, None));
-    visited.insert(start_idx);
-
-    while let Some((node_idx, depth, relationship, display_parent)) = queue.pop_front() {
-        // Check depth limit
-        if let Some(max) = options.max_depth
-            && depth > max
-        {
-            continue;
-        }
-
-        if let Some(item) = inner.node_weight(node_idx) {
-            // Determine if this item matches the type filter
-            let matches_filter =
-                options.type_filter.is_empty() || options.type_filter.contains(&item.item_type);
-
-            // The parent to pass to children: if this item is included, use it;
-            // otherwise pass through the current display_parent
-            let next_display_parent = if matches_filter {
-                Some(item.id.clone())
-            } else {
-                display_parent.clone()
-            };
-
-            if matches_filter {
-                result_items.push(TraversalNode {
-                    item_id: item.id.clone(),
-                    depth,
-                    relationship,
-                    parent: display_parent,
-                });
-                max_depth = max_depth.max(depth);
-            }
-
-            // Get edges based on direction
-            let edges = match direction {
-                TraversalDirection::Upstream => {
-                    // Follow outgoing edges with upstream relationship types
-                    inner
-                        .edges_directed(node_idx, Direction::Outgoing)
-                        .filter(|e| e.weight().is_upstream())
-                        .map(|e| (e.target(), *e.weight()))
-                        .collect::<Vec<_>>()
-                }
-                TraversalDirection::Downstream => {
-                    // Follow incoming edges (items that point to us via upstream relationships)
-                    // OR outgoing edges with downstream relationship types
-                    let mut edges = Vec::new();
-
-                    // Items that refine/derive from/satisfy this item
-                    for edge in inner.edges_directed(node_idx, Direction::Incoming) {
-                        if edge.weight().is_upstream() {
-                            edges.push((edge.source(), edge.weight().inverse()));
-                        }
-                    }
-
-                    // Or explicit downstream references from this item
-                    for edge in inner.edges_directed(node_idx, Direction::Outgoing) {
-                        if edge.weight().is_downstream() {
-                            edges.push((edge.target(), *edge.weight()));
-                        }
-                    }
-
-                    edges
-                }
-            };
-
-            // Check depth limit for exploring children
-            let next_depth = depth + 1;
-            if options.max_depth.is_none_or(|max| next_depth <= max) {
-                for (target_idx, rel_type) in edges {
-                    if !visited.contains(&target_idx) {
-                        visited.insert(target_idx);
-                        queue.push_back((
-                            target_idx,
-                            next_depth,
-                            Some(rel_type),
-                            next_display_parent.clone(),
-                        ));
-                    }
-                }
-            }
-        }
-    }
+    let mut walk = Walk {
+        inner: graph.inner(),
+        direction,
+        options,
+        on_path: HashSet::new(),
+        items: Vec::new(),
+        max_depth: 0,
+    };
+    walk.visit(start_idx, 0, None, None);
 
     Some(TraversalResult {
         origin: start.clone(),
-        items: result_items,
-        max_depth,
+        items: walk.items,
+        max_depth: walk.max_depth,
     })
+}
+
+/// State of a depth-first walk.
+struct Walk<'a> {
+    inner: &'a DiGraph<Item, RelationshipType>,
+    direction: TraversalDirection,
+    options: &'a TraversalOptions,
+    /// Nodes on the path from the origin to the node being visited.
+    on_path: HashSet<NodeIndex>,
+    items: Vec<TraversalNode>,
+    max_depth: usize,
+}
+
+impl Walk<'_> {
+    /// Reports the node when it passes the type filter, then visits its
+    /// neighbors in the walk direction.
+    ///
+    /// `display_parent` is the last ancestor that was reported, so filtered
+    /// out items are skipped over rather than breaking the tree.
+    fn visit(
+        &mut self,
+        node_idx: NodeIndex,
+        depth: usize,
+        relationship: Option<RelationshipType>,
+        display_parent: Option<ItemId>,
+    ) {
+        let Some(item) = self.inner.node_weight(node_idx) else {
+            return;
+        };
+
+        let matches_filter = self.options.type_filter.is_empty()
+            || self.options.type_filter.contains(&item.item_type);
+
+        let next_display_parent = if matches_filter {
+            Some(item.id.clone())
+        } else {
+            display_parent.clone()
+        };
+
+        if matches_filter {
+            self.items.push(TraversalNode {
+                item_id: item.id.clone(),
+                depth,
+                relationship,
+                parent: display_parent,
+            });
+            self.max_depth = self.max_depth.max(depth);
+        }
+
+        let next_depth = depth + 1;
+        if self.options.max_depth.is_some_and(|max| next_depth > max) {
+            return;
+        }
+
+        self.on_path.insert(node_idx);
+        for (target_idx, rel_type) in self.neighbors(node_idx) {
+            if !self.on_path.contains(&target_idx) {
+                self.visit(
+                    target_idx,
+                    next_depth,
+                    Some(rel_type),
+                    next_display_parent.clone(),
+                );
+            }
+        }
+        self.on_path.remove(&node_idx);
+    }
+
+    /// Returns the neighbors reached from a node in the walk direction, with
+    /// the relationship seen from that node.
+    fn neighbors(&self, node_idx: NodeIndex) -> Vec<(NodeIndex, RelationshipType)> {
+        match self.direction {
+            TraversalDirection::Upstream => {
+                // Follow outgoing edges with upstream relationship types
+                self.inner
+                    .edges_directed(node_idx, Direction::Outgoing)
+                    .filter(|e| e.weight().is_upstream())
+                    .map(|e| (e.target(), *e.weight()))
+                    .collect()
+            }
+            TraversalDirection::Downstream => {
+                // Follow incoming edges (items that point to us via upstream relationships)
+                // OR outgoing edges with downstream relationship types
+                let mut edges = Vec::new();
+
+                // Items that refine/derive from/satisfy this item
+                for edge in self.inner.edges_directed(node_idx, Direction::Incoming) {
+                    if edge.weight().is_upstream() {
+                        edges.push((edge.source(), edge.weight().inverse()));
+                    }
+                }
+
+                // Or explicit downstream references from this item
+                for edge in self.inner.edges_directed(node_idx, Direction::Outgoing) {
+                    if edge.weight().is_downstream() {
+                        edges.push((edge.target(), *edge.weight()));
+                    }
+                }
+
+                edges
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -321,6 +350,112 @@ mod tests {
         assert_eq!(result.max_depth, 1);
         // Should find SCEN-001 (depth 0) and UC-001 (depth 1), but not SOL-001 (depth 2)
         assert!(result.items.len() <= 2);
+    }
+
+    #[test]
+    fn test_shared_ancestor_is_reported_under_each_parent() {
+        // SYSARCH-001 satisfies two requirements that both derive from
+        // SCEN-001, which refines UC-001, which refines SOL-001.
+        let scen = create_test_item("SCEN-001", builtin::SCENARIO);
+        let req1 = create_test_item_with_relationships(
+            "SYSREQ-001",
+            builtin::SYSTEM_REQUIREMENT,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-001"),
+                builtin::DERIVES_FROM,
+            )],
+        );
+        let req2 = create_test_item_with_relationships(
+            "SYSREQ-002",
+            builtin::SYSTEM_REQUIREMENT,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SCEN-001"),
+                builtin::DERIVES_FROM,
+            )],
+        );
+        let arch = create_test_item_with_relationships(
+            "SYSARCH-001",
+            builtin::SYSTEM_ARCHITECTURE,
+            vec![
+                Relationship::new(ItemId::new_unchecked("SYSREQ-001"), builtin::SATISFIES),
+                Relationship::new(ItemId::new_unchecked("SYSREQ-002"), builtin::SATISFIES),
+            ],
+        );
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(scen)
+            .add_item(req1)
+            .add_item(req2)
+            .add_item(arch)
+            .build()
+            .unwrap();
+
+        let result = traverse_upstream(
+            &graph,
+            &ItemId::new_unchecked("SYSARCH-001"),
+            &TraversalOptions::new(),
+        )
+        .unwrap();
+
+        // Depth-first preorder: the origin, then each requirement immediately
+        // followed by its own occurrence of the shared scenario.
+        let visited: Vec<(&str, usize, Option<&str>)> = result
+            .items
+            .iter()
+            .map(|n| {
+                (
+                    n.item_id.as_str(),
+                    n.depth,
+                    n.parent.as_ref().map(ItemId::as_str),
+                )
+            })
+            .collect();
+        assert_eq!(visited.len(), 5, "{visited:?}");
+        assert_eq!(visited[0], ("SYSARCH-001", 0, None));
+        for block in [1, 3] {
+            let (req, depth, parent) = visited[block];
+            assert!(req.starts_with("SYSREQ-"), "{visited:?}");
+            assert_eq!((depth, parent), (1, Some("SYSARCH-001")));
+            assert_eq!(visited[block + 1], ("SCEN-001", 2, Some(req)));
+        }
+        assert_ne!(visited[1].0, visited[3].0);
+        assert_eq!(result.max_depth, 2);
+    }
+
+    #[test]
+    fn test_cycle_terminates_without_revisiting_path_ancestors() {
+        let a = create_test_item_with_relationships(
+            "UC-001",
+            builtin::USE_CASE,
+            vec![Relationship::new(
+                ItemId::new_unchecked("UC-002"),
+                builtin::REFINES,
+            )],
+        );
+        let b = create_test_item_with_relationships(
+            "UC-002",
+            builtin::USE_CASE,
+            vec![Relationship::new(
+                ItemId::new_unchecked("UC-001"),
+                builtin::REFINES,
+            )],
+        );
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(a)
+            .add_item(b)
+            .build()
+            .unwrap();
+
+        let result = traverse_upstream(
+            &graph,
+            &ItemId::new_unchecked("UC-001"),
+            &TraversalOptions::new(),
+        )
+        .unwrap();
+
+        let ids: Vec<&str> = result.items.iter().map(|n| n.item_id.as_str()).collect();
+        assert_eq!(ids, ["UC-001", "UC-002"]);
     }
 
     #[test]
