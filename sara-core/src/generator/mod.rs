@@ -8,11 +8,14 @@
 //! to produce output without depending on format-specific functions.
 
 mod markdown;
+mod mermaid;
 
 use crate::model::Item;
 
 #[doc(inline)]
 pub use markdown::{TemplateOverride, discover_overrides, install_overrides};
+#[doc(inline)]
+pub use mermaid::{neighborhood_to_mermaid, traversal_to_mermaid};
 
 /// Supported output formats for document generation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

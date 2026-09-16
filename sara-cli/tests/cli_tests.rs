@@ -279,6 +279,61 @@ mod query_command {
             .assert()
             .success();
     }
+
+    #[test]
+    fn test_query_mermaid_prints_raw_flowchart() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // The whole of stdout is the diagram: no item summary, no section
+        // header and no code fence, so the caller can wrap it as needed.
+        let expected = "\
+flowchart BT
+    SOL-001[\"SOL-001<br>Customer Portal\"]
+    UC-001[\"UC-001<br>User Authentication\"]
+    UC-001 -->|refines| SOL-001
+    class UC-001 origin
+    class SOL-001 solution
+    class UC-001 use_case
+";
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("UC-001")
+            .arg("--upstream")
+            .arg("--format")
+            .arg("mermaid")
+            .assert()
+            .success()
+            .stdout(expected);
+    }
+
+    #[test]
+    fn test_query_mermaid_without_direction_prints_direct_relationships() {
+        let fixtures = fixtures_path().join("query_relations");
+
+        let expected = "\
+flowchart BT
+    SWDD-QR-001[\"SWDD-QR-001<br>MQTT Communication Protocol\"]
+    SWREQ-QR-001[\"SWREQ-QR-001<br>MQTT Client Library\"]
+    SWREQ-QR-002[\"SWREQ-QR-002<br>Broker Reconnect Handling\"]
+    SWDD-QR-001 -->|satisfies| SWREQ-QR-001
+    SWREQ-QR-002 -->|depends_on| SWREQ-QR-001
+    class SWREQ-QR-001 origin
+    class SWDD-QR-001 software_detailed_design
+    class SWREQ-QR-001,SWREQ-QR-002 software_requirement
+";
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("SWREQ-QR-001")
+            .arg("--format")
+            .arg("mermaid")
+            .assert()
+            .success()
+            .stdout(expected);
+    }
 }
 
 mod report_command {
