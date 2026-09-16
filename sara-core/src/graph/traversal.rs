@@ -120,14 +120,15 @@ fn traverse_graph(
         options,
         on_path: HashSet::new(),
         items: Vec::new(),
-        max_depth: 0,
     };
     walk.visit(start_idx, 0, None, None);
+
+    let max_depth = walk.items.iter().map(|node| node.depth).max().unwrap_or(0);
 
     Some(TraversalResult {
         origin: start.clone(),
         items: walk.items,
-        max_depth: walk.max_depth,
+        max_depth,
     })
 }
 
@@ -139,10 +140,9 @@ struct Walk<'a> {
     /// Nodes on the path from the origin to the node being visited.
     on_path: HashSet<NodeIndex>,
     items: Vec<TraversalNode>,
-    max_depth: usize,
 }
 
-impl Walk<'_> {
+impl<'a> Walk<'a> {
     /// Reports the node when it passes the type filter, then visits its
     /// neighbors in the walk direction.
     ///
@@ -153,9 +153,10 @@ impl Walk<'_> {
         node_idx: NodeIndex,
         depth: usize,
         relationship: Option<RelationshipType>,
-        display_parent: Option<ItemId>,
+        display_parent: Option<&'a ItemId>,
     ) {
-        let Some(item) = self.inner.node_weight(node_idx) else {
+        let inner = self.inner;
+        let Some(item) = inner.node_weight(node_idx) else {
             return;
         };
 
@@ -163,20 +164,16 @@ impl Walk<'_> {
             || self.options.type_filter.contains(&item.item_type);
 
         let next_display_parent = if matches_filter {
-            Some(item.id.clone())
-        } else {
-            display_parent.clone()
-        };
-
-        if matches_filter {
             self.items.push(TraversalNode {
                 item_id: item.id.clone(),
                 depth,
                 relationship,
-                parent: display_parent,
+                parent: display_parent.cloned(),
             });
-            self.max_depth = self.max_depth.max(depth);
-        }
+            Some(&item.id)
+        } else {
+            display_parent
+        };
 
         let next_depth = depth + 1;
         if self.options.max_depth.is_some_and(|max| next_depth > max) {
@@ -186,12 +183,7 @@ impl Walk<'_> {
         self.on_path.insert(node_idx);
         for (target_idx, rel_type) in self.neighbors(node_idx) {
             if !self.on_path.contains(&target_idx) {
-                self.visit(
-                    target_idx,
-                    next_depth,
-                    Some(rel_type),
-                    next_display_parent.clone(),
-                );
+                self.visit(target_idx, next_depth, Some(rel_type), next_display_parent);
             }
         }
         self.on_path.remove(&node_idx);

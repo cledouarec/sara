@@ -50,6 +50,7 @@ SARA is a command-line tool that manages Architecture documents and Requirements
   - [Validation Rules](#validation-rules)
 - [Custom Model Schema](#custom-model-schema)
   - [Declaring Item Types](#declaring-item-types)
+    - [Identifier Formats](#identifier-formats)
   - [Field Types](#field-types)
   - [Declaring Relations](#declaring-relations)
   - [Custom Document Templates](#custom-document-templates)
@@ -502,6 +503,100 @@ sara query SWDD-001 --upstream
 
 # Find everything that implements a scenario
 sara query SCEN-001 --downstream
+
+# Render a traversal as a raw Mermaid flowchart (no code fence)
+sara query UC-001 --upstream --format mermaid
+
+# Output:
+# flowchart BT
+#     SOL-001["SOL-001<br>Customer Portal"]
+#     UC-001["UC-001<br>User Authentication"]
+#     UC-001 -->|refines| SOL-001
+#     class UC-001 origin
+#     class SOL-001 solution
+#     class UC-001 use_case
+```
+
+The Mermaid diagram draws every relationship between the items the traversal
+returned, so an item linked to several parents keeps all of its edges. The
+layout is bottom-to-top: arrows point from the items that refine, derive from
+or satisfy others up to the items they trace to, so solutions sit at the top
+and implementation items at the bottom.
+`--depth` and `--type` apply as usual. Without `--upstream` or `--downstream`,
+the diagram shows the item and its direct relationships.
+
+The queried item is assigned the `origin` class, and every node a class named
+after its item type id, as defined in the schema (`solution`,
+`hardware_requirement`, a custom type of your own model…). These classes carry
+no style by default: append your own `classDef` statements to the diagram to
+emphasize the origin or color each type, using any of the attributes documented
+in the [Mermaid flowchart styling reference](https://mermaid.js.org/syntax/flowchart.html#styling-and-classes).
+
+Source of the diagram below, as printed by `sara query SYSARCH-001 --format mermaid`
+with three `classDef` lines appended:
+
+```text
+flowchart BT
+    ADR-001["ADR-001<br>Hub-Based Hybrid Architecture"]
+    HWREQ-001["HWREQ-001<br>Zigbee Radio Module"]
+    HWREQ-002["HWREQ-002<br>Central Hub Hardware"]
+    SWREQ-001["SWREQ-001<br>MQTT Client Library"]
+    SWREQ-002["SWREQ-002<br>Push Notification SDK Integration"]
+    SYSARCH-001["SYSARCH-001<br>Communication Architecture"]
+    SYSREQ-001["SYSREQ-001<br>Device Command Latency"]
+    SYSREQ-002["SYSREQ-002<br>Security Alert Delivery"]
+    ADR-001 -->|justifies| SYSARCH-001
+    HWREQ-001 -->|derives_from| SYSARCH-001
+    HWREQ-002 -->|derives_from| SYSARCH-001
+    SWREQ-001 -->|derives_from| SYSARCH-001
+    SWREQ-002 -->|derives_from| SYSARCH-001
+    SYSARCH-001 -->|satisfies| SYSREQ-001
+    SYSARCH-001 -->|satisfies| SYSREQ-002
+    SYSREQ-002 -->|depends_on| SYSREQ-001
+    class SYSARCH-001 origin
+    class ADR-001 architecture_decision_record
+    class HWREQ-001,HWREQ-002 hardware_requirement
+    class SWREQ-001,SWREQ-002 software_requirement
+    class SYSARCH-001 system_architecture
+    class SYSREQ-001,SYSREQ-002 system_requirement
+
+    %% ---- user customization, appended after the generated diagram ----
+    classDef origin stroke-width:3px
+    classDef hardware_requirement fill:lightblue,stroke:blue,color:black
+    classDef software_requirement fill:lightgreen,stroke:green,color:black
+```
+
+Rendered:
+
+```mermaid
+flowchart BT
+    ADR-001["ADR-001<br>Hub-Based Hybrid Architecture"]
+    HWREQ-001["HWREQ-001<br>Zigbee Radio Module"]
+    HWREQ-002["HWREQ-002<br>Central Hub Hardware"]
+    SWREQ-001["SWREQ-001<br>MQTT Client Library"]
+    SWREQ-002["SWREQ-002<br>Push Notification SDK Integration"]
+    SYSARCH-001["SYSARCH-001<br>Communication Architecture"]
+    SYSREQ-001["SYSREQ-001<br>Device Command Latency"]
+    SYSREQ-002["SYSREQ-002<br>Security Alert Delivery"]
+    ADR-001 -->|justifies| SYSARCH-001
+    HWREQ-001 -->|derives_from| SYSARCH-001
+    HWREQ-002 -->|derives_from| SYSARCH-001
+    SWREQ-001 -->|derives_from| SYSARCH-001
+    SWREQ-002 -->|derives_from| SYSARCH-001
+    SYSARCH-001 -->|satisfies| SYSREQ-001
+    SYSARCH-001 -->|satisfies| SYSREQ-002
+    SYSREQ-002 -->|depends_on| SYSREQ-001
+    class SYSARCH-001 origin
+    class ADR-001 architecture_decision_record
+    class HWREQ-001,HWREQ-002 hardware_requirement
+    class SWREQ-001,SWREQ-002 software_requirement
+    class SYSARCH-001 system_architecture
+    class SYSREQ-001,SYSREQ-002 system_requirement
+
+    %% ---- user customization, appended after the generated diagram ----
+    classDef origin stroke-width:3px
+    classDef hardware_requirement fill:lightblue,stroke:blue,color:black
+    classDef software_requirement fill:lightgreen,stroke:green,color:black
 ```
 
 ### Validation Rules

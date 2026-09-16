@@ -12,6 +12,7 @@ use sara_core::graph::{
 use sara_core::model::{Item, ItemId, ItemType};
 
 use sara_core::config::{Config, OutputConfig};
+use sara_core::generator::{neighborhood_to_mermaid, traversal_to_mermaid};
 
 use crate::output::{
     Color, EMOJI_ERROR, EMOJI_ITEM, Style, colorize, format_tree_branch, get_emoji, print_header,
@@ -23,6 +24,8 @@ pub enum QueryFormat {
     #[default]
     Tree,
     Json,
+    /// Raw Mermaid flowchart of the traversal, without code fence
+    Mermaid,
 }
 
 /// Arguments for the query command.
@@ -64,6 +67,9 @@ pub fn run(args: &QueryArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>
     }
 }
 
+/// Traversal function shared by the upstream and downstream directions.
+type Traverse = fn(&KnowledgeGraph, &ItemId, &TraversalOptions) -> Option<TraversalResult>;
+
 /// Handles the case when an item is found.
 fn handle_found_item(
     args: &QueryArgs,
@@ -71,40 +77,78 @@ fn handle_found_item(
     item: &Item,
     graph: &KnowledgeGraph,
 ) -> Result<ExitCode, Box<dyn Error>> {
-    print_item_info(config, item, graph);
+    let traversals = requested_traversals(args, item, graph);
 
-    if args.upstream || args.downstream {
-        print_traceability(args, config, item, graph);
-    } else {
-        print_direct_relationships(config, item, graph);
+    match args.format {
+        QueryFormat::Tree => print_text(config, item, graph, &traversals, print_traversal_tree),
+        QueryFormat::Json => print_text(config, item, graph, &traversals, |_, result, graph| {
+            print_traversal_json(result, graph)
+        }),
+        QueryFormat::Mermaid => print_mermaid(item, graph, &traversals),
     }
 
     Ok(ExitCode::SUCCESS)
 }
 
-/// Prints upstream and/or downstream traceability for an item.
-fn print_traceability(
+/// Runs the traversals the arguments ask for, each with its section title.
+///
+/// Empty when neither direction is requested.
+fn requested_traversals(
     args: &QueryArgs,
+    item: &Item,
+    graph: &KnowledgeGraph,
+) -> Vec<(String, TraversalResult)> {
+    let options = build_traversal_options(args);
+    let directions: [(bool, &str, Traverse); 2] = [
+        (
+            args.upstream,
+            "Upstream Traceability for",
+            traverse_upstream,
+        ),
+        (args.downstream, "Downstream from", traverse_downstream),
+    ];
+
+    directions
+        .into_iter()
+        .filter(|(requested, _, _)| *requested)
+        .filter_map(|(_, title, traverse)| {
+            traverse(graph, &item.id, &options)
+                .map(|result| (format!("{title} {}", item.id), result))
+        })
+        .collect()
+}
+
+/// Prints the item summary, then either its direct relationships or each
+/// requested traversal under a section header.
+fn print_text(
     config: &OutputConfig,
     item: &Item,
     graph: &KnowledgeGraph,
+    traversals: &[(String, TraversalResult)],
+    print_traversal: impl Fn(&OutputConfig, &TraversalResult, &KnowledgeGraph),
 ) {
-    let traversal_opts = build_traversal_options(args);
+    print_item_info(config, item, graph);
 
-    if args.upstream {
-        println!();
-        print_header(config, &format!("Upstream Traceability for {}", item.id));
-        if let Some(result) = traverse_upstream(graph, &item.id, &traversal_opts) {
-            print_traversal(config, &result, graph, args);
-        }
+    if traversals.is_empty() {
+        print_direct_relationships(config, item, graph);
     }
 
-    if args.downstream {
+    for (title, result) in traversals {
         println!();
-        print_header(config, &format!("Downstream from {}", item.id));
-        if let Some(result) = traverse_downstream(graph, &item.id, &traversal_opts) {
-            print_traversal(config, &result, graph, args);
-        }
+        print_header(config, title);
+        print_traversal(config, result, graph);
+    }
+}
+
+/// Prints nothing but raw Mermaid diagrams: one per requested traversal, or
+/// the direct relationships of the item when no direction is requested.
+fn print_mermaid(item: &Item, graph: &KnowledgeGraph, traversals: &[(String, TraversalResult)]) {
+    if traversals.is_empty() {
+        print!("{}", neighborhood_to_mermaid(graph, &item.id));
+    }
+
+    for (_, result) in traversals {
+        print!("{}", traversal_to_mermaid(result, graph));
     }
 }
 
@@ -182,18 +226,6 @@ fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &Knowle
             let id = colorize(config, related_item.id.as_str(), Color::Cyan, Style::None);
             println!("     {branch} {id}: {name}", name = related_item.name);
         }
-    }
-}
-
-fn print_traversal(
-    config: &OutputConfig,
-    result: &TraversalResult,
-    graph: &KnowledgeGraph,
-    args: &QueryArgs,
-) {
-    match args.format {
-        QueryFormat::Tree => print_traversal_tree(config, result, graph),
-        QueryFormat::Json => print_traversal_json(result, graph),
     }
 }
 
