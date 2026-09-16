@@ -249,6 +249,25 @@ mod query_command {
     }
 
     #[test]
+    fn test_query_upstream_repeats_shared_subtree_under_each_parent() {
+        let fixtures = fixtures_path().join("diamond");
+
+        // SYSARCH-001 satisfies two requirements that both derive from
+        // SCEN-001: the scenario and everything above it are printed once
+        // under each requirement.
+        sara()
+            .current_dir(&fixtures)
+            .arg("--no-color")
+            .arg("query")
+            .arg("SYSARCH-001")
+            .arg("--upstream")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("SCEN-001").count(2))
+            .stdout(predicate::str::contains("SOL-001").count(2));
+    }
+
+    #[test]
     fn test_query_downstream() {
         let fixtures = fixtures_path().join("valid_graph");
 
