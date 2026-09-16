@@ -8,6 +8,7 @@ use petgraph::visit::EdgeRef;
 use strsim::levenshtein;
 
 use crate::error::SaraError;
+use crate::graph::TraversalOptions;
 use crate::model::{Item, ItemId, ItemType, RelationshipType};
 
 /// Result of looking up an item.
@@ -149,20 +150,34 @@ impl KnowledgeGraph {
     /// from both sides even when the builder materialized no inverse edge.
     /// Groups follow the active schema's relation declaration order; within
     /// a group, items are sorted by ID and duplicates from materialized
-    /// inverse edges are collapsed.
-    pub fn direct_relationships(&self, id: &ItemId) -> Vec<(RelationshipType, Vec<&Item>)> {
+    /// inverse edges are collapsed. Only items passing the type filter of
+    /// `options` are kept; its depth limit is irrelevant to this one-level
+    /// view.
+    pub fn direct_relationships(
+        &self,
+        id: &ItemId,
+        options: &TraversalOptions,
+    ) -> Vec<(RelationshipType, Vec<&Item>)> {
         let Some(idx) = self.index.get(id) else {
             return Vec::new();
         };
 
         let mut related: Vec<(RelationshipType, &Item)> = Vec::new();
         for edge in self.graph.edges_directed(*idx, Direction::Outgoing) {
-            if let Some(target) = self.graph.node_weight(edge.target()) {
+            if let Some(target) = self
+                .graph
+                .node_weight(edge.target())
+                .filter(|item| options.accepts(item))
+            {
                 related.push((*edge.weight(), target));
             }
         }
         for edge in self.graph.edges_directed(*idx, Direction::Incoming) {
-            if let Some(source) = self.graph.node_weight(edge.source()) {
+            if let Some(source) = self
+                .graph
+                .node_weight(edge.source())
+                .filter(|item| options.accepts(item))
+            {
                 related.push((edge.weight().inverse(), source));
             }
         }
@@ -535,8 +550,8 @@ mod tests {
             .collect()
     }
 
-    #[test]
-    fn test_direct_relationships_groups_by_relation() {
+    /// A requirement satisfied by a design that an ADR justifies.
+    fn satisfaction_graph() -> KnowledgeGraph {
         let swreq = create_test_item("SWREQ-001", builtin::SOFTWARE_REQUIREMENT);
         let swdd = create_test_item_with_relationships(
             "SWDD-001",
@@ -548,16 +563,22 @@ mod tests {
         );
         let adr = create_test_adr("ADR-001", &["SWDD-001"], &[]);
 
-        let graph = KnowledgeGraphBuilder::new()
+        KnowledgeGraphBuilder::new()
             .add_item(swreq)
             .add_item(swdd)
             .add_item(adr)
             .build()
-            .unwrap();
+            .unwrap()
+    }
+
+    #[test]
+    fn test_direct_relationships_groups_by_relation() {
+        let graph = satisfaction_graph();
 
         // The design groups its declared link and the incoming justification
         // under their own relations, in schema declaration order.
-        let groups = graph.direct_relationships(&ItemId::new_unchecked("SWDD-001"));
+        let groups = graph
+            .direct_relationships(&ItemId::new_unchecked("SWDD-001"), &TraversalOptions::new());
         assert_eq!(
             group_ids(&groups),
             vec![
@@ -568,7 +589,10 @@ mod tests {
 
         // The requirement sees the declared link through the inverse relation
         // even though no inverse edge was materialized for it.
-        let groups = graph.direct_relationships(&ItemId::new_unchecked("SWREQ-001"));
+        let groups = graph.direct_relationships(
+            &ItemId::new_unchecked("SWREQ-001"),
+            &TraversalOptions::new(),
+        );
         assert_eq!(
             group_ids(&groups),
             vec![("is_satisfied_by", vec!["SWDD-001"])]
@@ -588,11 +612,25 @@ mod tests {
 
         // The peer link is materialized in both directions; each side still
         // reports the other exactly once, under the matching relation.
-        let groups = graph.direct_relationships(&ItemId::new_unchecked("ADR-002"));
+        let groups =
+            graph.direct_relationships(&ItemId::new_unchecked("ADR-002"), &TraversalOptions::new());
         assert_eq!(group_ids(&groups), vec![("supersedes", vec!["ADR-001"])]);
 
-        let groups = graph.direct_relationships(&ItemId::new_unchecked("ADR-001"));
+        let groups =
+            graph.direct_relationships(&ItemId::new_unchecked("ADR-001"), &TraversalOptions::new());
         assert_eq!(group_ids(&groups), vec![("superseded_by", vec!["ADR-002"])]);
+    }
+
+    #[test]
+    fn test_direct_relationships_keeps_only_requested_types() {
+        let graph = satisfaction_graph();
+
+        // Only items of the requested types remain, and a relation left
+        // without any item is dropped rather than reported empty.
+        let options =
+            TraversalOptions::new().with_types(vec![builtin::ARCHITECTURE_DECISION_RECORD]);
+        let groups = graph.direct_relationships(&ItemId::new_unchecked("SWDD-001"), &options);
+        assert_eq!(group_ids(&groups), vec![("justified_by", vec!["ADR-001"])]);
     }
 
     #[test]

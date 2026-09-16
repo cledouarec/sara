@@ -5,6 +5,7 @@ use std::error::Error;
 use std::process::ExitCode;
 
 use clap::Args;
+use clap::builder::{PossibleValue, PossibleValuesParser, TypedValueParser};
 use sara_core::graph::{
     KnowledgeGraph, LookupResult, TraversalOptions, TraversalResult, traverse_downstream,
     traverse_upstream,
@@ -12,6 +13,8 @@ use sara_core::graph::{
 use sara_core::model::{Item, ItemId, ItemType};
 
 use sara_core::config::{Config, OutputConfig};
+use sara_core::generator::{neighborhood_to_mermaid, traversal_to_mermaid};
+use sara_core::service::parse_item_type;
 
 use crate::output::{
     Color, EMOJI_ERROR, EMOJI_ITEM, Style, colorize, format_tree_branch, get_emoji, print_header,
@@ -23,28 +26,40 @@ pub enum QueryFormat {
     #[default]
     Tree,
     Json,
+    /// Raw Mermaid flowchart of the traversal, without code fence
+    Mermaid,
 }
+
+/// Argument group of the traversal directions; a depth limit requires one.
+const DIRECTION_GROUP: &str = "direction";
 
 /// Arguments for the query command.
 #[derive(Args, Debug)]
+#[command(group = clap::ArgGroup::new(DIRECTION_GROUP).multiple(true))]
 pub struct QueryArgs {
     /// The item identifier to query
     pub item_id: String,
 
-    /// Limit traversal depth
-    #[arg(long, help_heading = "Filters")]
+    /// Limit traversal depth (requires --upstream or --downstream)
+    #[arg(long, requires = DIRECTION_GROUP, help_heading = "Filters")]
     pub depth: Option<usize>,
 
     /// Filter by item type(s)
-    #[arg(short = 't', long = "type", help_heading = "Filters")]
-    pub item_types: Vec<String>,
+    #[arg(
+        short = 't',
+        long = "type",
+        value_parser = item_type_parser(),
+        ignore_case = true,
+        help_heading = "Filters"
+    )]
+    pub item_types: Vec<ItemType>,
 
     /// Show downstream chain (toward Detailed Designs)
-    #[arg(short, long, help_heading = "Traversal")]
+    #[arg(short, long, group = DIRECTION_GROUP, help_heading = "Traversal")]
     pub downstream: bool,
 
     /// Show upstream chain (toward Solution)
-    #[arg(short, long, help_heading = "Traversal")]
+    #[arg(short, long, group = DIRECTION_GROUP, help_heading = "Traversal")]
     pub upstream: bool,
 
     /// Output format
@@ -57,12 +72,18 @@ pub fn run(args: &QueryArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>
     let graph = super::build_graph(config)?;
 
     match graph.lookup(&args.item_id) {
-        LookupResult::Found(item) => handle_found_item(args, &config.output, item, &graph),
+        LookupResult::Found(item) => Ok(handle_found_item(args, &config.output, item, &graph)),
         LookupResult::NotFound { suggestions } => {
             handle_not_found(args, &config.output, &suggestions)
         }
     }
 }
+
+/// Traversal function shared by the upstream and downstream directions.
+type Traverse = fn(&KnowledgeGraph, &ItemId, &TraversalOptions) -> Option<TraversalResult>;
+
+/// Printer of one traversal result in a text format.
+type TraversalPrinter = fn(&OutputConfig, &TraversalResult, &KnowledgeGraph);
 
 /// Handles the case when an item is found.
 fn handle_found_item(
@@ -70,41 +91,90 @@ fn handle_found_item(
     config: &OutputConfig,
     item: &Item,
     graph: &KnowledgeGraph,
-) -> Result<ExitCode, Box<dyn Error>> {
-    print_item_info(config, item, graph);
+) -> ExitCode {
+    let options = build_traversal_options(args);
+    let traversals = requested_traversals(args, item, graph, &options);
 
-    if args.upstream || args.downstream {
-        print_traceability(args, config, item, graph);
-    } else {
-        print_direct_relationships(config, item, graph);
-    }
+    let print_traversal: TraversalPrinter = match args.format {
+        QueryFormat::Tree => print_traversal_tree,
+        QueryFormat::Json => print_traversal_json,
+        QueryFormat::Mermaid => {
+            print_mermaid(item, graph, &traversals, &options);
+            return ExitCode::SUCCESS;
+        }
+    };
+    print_text(config, item, graph, &traversals, &options, print_traversal);
 
-    Ok(ExitCode::SUCCESS)
+    ExitCode::SUCCESS
 }
 
-/// Prints upstream and/or downstream traceability for an item.
-fn print_traceability(
+/// Runs the traversals the arguments ask for, each with its section title.
+///
+/// Empty when neither direction is requested.
+fn requested_traversals(
     args: &QueryArgs,
+    item: &Item,
+    graph: &KnowledgeGraph,
+    options: &TraversalOptions,
+) -> Vec<(String, TraversalResult)> {
+    let directions: [(bool, &str, Traverse); 2] = [
+        (
+            args.upstream,
+            "Upstream Traceability for",
+            traverse_upstream,
+        ),
+        (args.downstream, "Downstream from", traverse_downstream),
+    ];
+
+    directions
+        .into_iter()
+        .filter(|(requested, _, _)| *requested)
+        .filter_map(|(_, title, traverse)| {
+            traverse(graph, &item.id, options)
+                .map(|result| (format!("{title} {}", item.id), result))
+        })
+        .collect()
+}
+
+/// Prints the item summary, then either its direct relationships (limited
+/// to the type filter of `options`) or each requested traversal under a
+/// section header.
+fn print_text(
     config: &OutputConfig,
     item: &Item,
     graph: &KnowledgeGraph,
+    traversals: &[(String, TraversalResult)],
+    options: &TraversalOptions,
+    print_traversal: TraversalPrinter,
 ) {
-    let traversal_opts = build_traversal_options(args);
+    print_item_info(config, item, graph);
 
-    if args.upstream {
-        println!();
-        print_header(config, &format!("Upstream Traceability for {}", item.id));
-        if let Some(result) = traverse_upstream(graph, &item.id, &traversal_opts) {
-            print_traversal(config, &result, graph, args);
-        }
+    if traversals.is_empty() {
+        print_direct_relationships(config, item, graph, options);
     }
 
-    if args.downstream {
+    for (title, result) in traversals {
         println!();
-        print_header(config, &format!("Downstream from {}", item.id));
-        if let Some(result) = traverse_downstream(graph, &item.id, &traversal_opts) {
-            print_traversal(config, &result, graph, args);
-        }
+        print_header(config, title);
+        print_traversal(config, result, graph);
+    }
+}
+
+/// Prints nothing but raw Mermaid diagrams: one per requested traversal, or
+/// the direct relationships of the item (limited to the type filter of
+/// `options`) when no direction is requested.
+fn print_mermaid(
+    item: &Item,
+    graph: &KnowledgeGraph,
+    traversals: &[(String, TraversalResult)],
+    options: &TraversalOptions,
+) {
+    if traversals.is_empty() {
+        print!("{}", neighborhood_to_mermaid(graph, &item.id, options));
+    }
+
+    for (_, result) in traversals {
+        print!("{}", traversal_to_mermaid(result, graph));
     }
 }
 
@@ -129,19 +199,35 @@ fn handle_not_found(
     Ok(ExitCode::FAILURE)
 }
 
+/// Builds the traversal options from the depth and type arguments.
+///
+/// The type filter also limits the direct relationships shown when no
+/// direction is requested.
 fn build_traversal_options(args: &QueryArgs) -> TraversalOptions {
-    let mut traversal_opts = TraversalOptions::new();
+    let options = TraversalOptions::new().with_types(args.item_types.clone());
 
-    if let Some(depth) = args.depth {
-        traversal_opts = traversal_opts.with_max_depth(depth);
+    match args.depth {
+        Some(depth) => options.with_max_depth(depth),
+        None => options,
     }
+}
 
-    let types = parse_item_types(&args.item_types);
-    if !types.is_empty() {
-        traversal_opts = traversal_opts.with_types(types);
-    }
+/// Value parser of `--type`: the ids of the active schema's item types, each
+/// also accepted as its squashed form (`usecase`) or its id prefix (`uc`),
+/// in any case.
+///
+/// Built from the schema installed before the command line is parsed, so
+/// `--help` lists the ids a configured model defines.
+fn item_type_parser() -> impl TypedValueParser<Value = ItemType> {
+    let values = ItemType::all().into_iter().map(|item_type| {
+        let id = item_type.as_str();
+        PossibleValue::new(id.to_string())
+            .alias(id.replace('_', ""))
+            .alias(item_type.prefix().to_lowercase())
+    });
 
-    traversal_opts
+    PossibleValuesParser::new(values)
+        .try_map(|name| parse_item_type(&name).ok_or_else(|| format!("unknown item type `{name}`")))
 }
 
 fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) {
@@ -168,8 +254,15 @@ fn print_item_info(config: &OutputConfig, item: &Item, _graph: &KnowledgeGraph) 
     );
 }
 
-fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &KnowledgeGraph) {
-    for (rel_type, related) in graph.direct_relationships(&item.id) {
+/// Prints the items directly related to `item`, grouped by relation and
+/// limited to the type filter of `options`.
+fn print_direct_relationships(
+    config: &OutputConfig,
+    item: &Item,
+    graph: &KnowledgeGraph,
+    options: &TraversalOptions,
+) {
+    for (rel_type, related) in graph.direct_relationships(&item.id, options) {
         let label = colorize(
             config,
             &format!("{}:", rel_type.display_name()),
@@ -182,18 +275,6 @@ fn print_direct_relationships(config: &OutputConfig, item: &Item, graph: &Knowle
             let id = colorize(config, related_item.id.as_str(), Color::Cyan, Style::None);
             println!("     {branch} {id}: {name}", name = related_item.name);
         }
-    }
-}
-
-fn print_traversal(
-    config: &OutputConfig,
-    result: &TraversalResult,
-    graph: &KnowledgeGraph,
-    args: &QueryArgs,
-) {
-    match args.format {
-        QueryFormat::Tree => print_traversal_tree(config, result, graph),
-        QueryFormat::Json => print_traversal_json(result, graph),
     }
 }
 
@@ -280,7 +361,7 @@ impl TreePrinter<'_> {
     }
 }
 
-fn print_traversal_json(result: &TraversalResult, graph: &KnowledgeGraph) {
+fn print_traversal_json(_config: &OutputConfig, result: &TraversalResult, graph: &KnowledgeGraph) {
     #[derive(serde::Serialize)]
     struct JsonNode {
         id: String,
@@ -316,32 +397,50 @@ fn print_traversal_json(result: &TraversalResult, graph: &KnowledgeGraph) {
     );
 }
 
-/// Parses item type strings into item types known to the active schema.
-///
-/// Accepts, for every type the schema defines, the schema id (`use_case`),
-/// its squashed form (`usecase`) and the type's id prefix in any case
-/// (`adr`). Unknown names are ignored.
-pub fn parse_item_types(types: &[String]) -> Vec<ItemType> {
-    types
-        .iter()
-        .filter_map(|t| sara_core::service::parse_item_type(t))
-        .collect()
-}
-
 #[cfg(test)]
 mod tests {
+    use clap::{Command, FromArgMatches};
+    use sara_core::schema::builtin;
+
     use super::*;
 
+    /// Parses `--type` values through the real argument definition.
+    fn parse_types(values: &[&str]) -> Result<Vec<ItemType>, clap::Error> {
+        let args = ["query", "SOL-001"]
+            .into_iter()
+            .chain(values.iter().flat_map(|value| ["--type", value]));
+        let matches = QueryArgs::augment_args(Command::new("query")).try_get_matches_from(args)?;
+        Ok(QueryArgs::from_arg_matches(&matches)?.item_types)
+    }
+
     #[test]
-    fn test_parse_item_types_covers_every_item_type() {
+    fn test_type_accepts_every_item_type() {
         for item_type in ItemType::all() {
-            let parsed = parse_item_types(&[item_type.as_str().to_string()]);
             assert_eq!(
-                parsed,
+                parse_types(&[item_type.as_str()]).unwrap(),
                 vec![item_type],
                 "type id `{}` must be accepted by --type",
                 item_type.as_str()
             );
         }
+    }
+
+    #[test]
+    fn test_type_accepts_prefix_in_any_case() {
+        assert_eq!(parse_types(&["UC"]).unwrap(), vec![builtin::USE_CASE]);
+    }
+
+    #[test]
+    fn test_type_rejects_unknown_type() {
+        let error = parse_types(&["bogus"]).unwrap_err().to_string();
+
+        assert!(
+            error.contains("bogus"),
+            "must name the rejected type: {error}"
+        );
+        assert!(
+            error.contains("use_case"),
+            "must list the types the schema defines: {error}"
+        );
     }
 }

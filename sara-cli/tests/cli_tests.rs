@@ -279,6 +279,136 @@ mod query_command {
             .assert()
             .success();
     }
+
+    #[test]
+    fn test_query_depth_requires_a_direction() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // A depth limit only makes sense for a traversal, so asking for one
+        // without a direction is an argument error rather than a no-op.
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("SOL-001")
+            .arg("--depth")
+            .arg("1")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--upstream"))
+            .stderr(predicate::str::contains("--downstream"));
+    }
+
+    #[test]
+    fn test_query_type_filters_direct_relationships() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // UC-001 refines SOL-001 and is refined by SCEN-001; only the
+        // solution passes the filter.
+        sara()
+            .current_dir(&fixtures)
+            .arg("--no-color")
+            .arg("query")
+            .arg("UC-001")
+            .arg("--type")
+            .arg("solution")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("SOL-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
+    }
+
+    #[test]
+    fn test_query_mermaid_type_filters_direct_relationships() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("UC-001")
+            .arg("--type")
+            .arg("solution")
+            .arg("--format")
+            .arg("mermaid")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("UC-001 -->|refines| SOL-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
+    }
+
+    #[test]
+    fn test_query_rejects_unknown_type() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // An unknown type is an argument error naming the accepted ids,
+        // not a silently unfiltered result.
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("SOL-001")
+            .arg("--downstream")
+            .arg("--type")
+            .arg("bogus")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("bogus"))
+            .stderr(predicate::str::contains("use_case"))
+            .stdout(predicate::str::contains("SCEN-001").not());
+    }
+
+    #[test]
+    fn test_query_mermaid_prints_raw_flowchart() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // The whole of stdout is the diagram: no item summary, no section
+        // header and no code fence, so the caller can wrap it as needed.
+        let expected = "\
+flowchart BT
+    SOL-001[\"SOL-001<br>Customer Portal\"]
+    UC-001[\"UC-001<br>User Authentication\"]
+    UC-001 -->|refines| SOL-001
+    class UC-001 origin
+    class SOL-001 solution
+    class UC-001 use_case
+";
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("UC-001")
+            .arg("--upstream")
+            .arg("--format")
+            .arg("mermaid")
+            .assert()
+            .success()
+            .stdout(expected);
+    }
+
+    #[test]
+    fn test_query_mermaid_without_direction_prints_direct_relationships() {
+        let fixtures = fixtures_path().join("query_relations");
+
+        let expected = "\
+flowchart BT
+    SWDD-QR-001[\"SWDD-QR-001<br>MQTT Communication Protocol\"]
+    SWREQ-QR-001[\"SWREQ-QR-001<br>MQTT Client Library\"]
+    SWREQ-QR-002[\"SWREQ-QR-002<br>Broker Reconnect Handling\"]
+    SWDD-QR-001 -->|satisfies| SWREQ-QR-001
+    SWREQ-QR-002 -->|depends_on| SWREQ-QR-001
+    class SWREQ-QR-001 origin
+    class SWDD-QR-001 software_detailed_design
+    class SWREQ-QR-001,SWREQ-QR-002 software_requirement
+";
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("SWREQ-QR-001")
+            .arg("--format")
+            .arg("mermaid")
+            .assert()
+            .success()
+            .stdout(expected);
+    }
 }
 
 mod report_command {
@@ -983,7 +1113,9 @@ mod query_formats {
             .arg("--depth")
             .arg("1")
             .assert()
-            .success();
+            .success()
+            .stdout(predicate::str::contains("UC-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
     }
 
     #[test]
@@ -998,7 +1130,9 @@ mod query_formats {
             .arg("--type")
             .arg("use_case")
             .assert()
-            .success();
+            .success()
+            .stdout(predicate::str::contains("UC-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
     }
 }
 
