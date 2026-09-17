@@ -7,6 +7,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/cledouarec/sara/compare/sara-core-v0.10.1...sara-core-v0.11.0) - 2026-09-17
+
+### Added
+
+- *(query)* add a mermaid output format (by @cledouarec)
+
+### Documentation
+
+- *(readme)* fix the tip alert so GitHub renders it as a panel (by @cledouarec)
+
+### Fixed
+
+- *(query)* show a shared ancestor under each of its parents (by @cledouarec)
+
+### Contributors
+
+* @cledouarec
+
 ## [0.10.0](https://github.com/cledouarec/sara/compare/sara-core-v0.9.4...sara-core-v0.10.0) - 2026-08-13
 
 ### Added
