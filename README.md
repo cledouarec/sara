@@ -459,7 +459,8 @@ derives_from:
 
 Both approaches create the same bidirectional relationship in the graph.
 
-> [!TIP] Best Practice: Bottom-Up Linking
+> [!TIP]
+> **Best Practice: Bottom-Up Linking**
 >
 > While both directions are supported, we recommend using **upstream links** (bottom-up strategy). Lower-level items should reference the higher-level items they derive from or satisfy:
 >
