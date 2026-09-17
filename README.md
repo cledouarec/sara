@@ -459,7 +459,8 @@ derives_from:
 
 Both approaches create the same bidirectional relationship in the graph.
 
-> [!TIP] Best Practice: Bottom-Up Linking
+> [!TIP]
+> **Best Practice: Bottom-Up Linking**
 >
 > While both directions are supported, we recommend using **upstream links** (bottom-up strategy). Lower-level items should reference the higher-level items they derive from or satisfy:
 >
@@ -504,6 +505,13 @@ sara query SWDD-001 --upstream
 # Find everything that implements a scenario
 sara query SCEN-001 --downstream
 
+# Limit how far a traversal goes, or keep only some item types
+sara query SOL-001 --downstream --depth 2
+sara query SOL-001 --downstream --type software_requirement
+
+# Without a direction, --type filters the direct relationships
+sara query UC-001 --type solution
+
 # Render a traversal as a raw Mermaid flowchart (no code fence)
 sara query UC-001 --upstream --format mermaid
 
@@ -523,7 +531,8 @@ layout is bottom-to-top: arrows point from the items that refine, derive from
 or satisfy others up to the items they trace to, so solutions sit at the top
 and implementation items at the bottom.
 `--depth` and `--type` apply as usual. Without `--upstream` or `--downstream`,
-the diagram shows the item and its direct relationships.
+the diagram shows the item and its direct relationships, `--type` keeping
+only the related items of the given types.
 
 The queried item is assigned the `origin` class, and every node a class named
 after its item type id, as defined in the schema (`solution`,

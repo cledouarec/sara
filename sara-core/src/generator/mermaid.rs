@@ -13,7 +13,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use crate::graph::{KnowledgeGraph, TraversalResult};
+use crate::graph::{KnowledgeGraph, TraversalOptions, TraversalResult};
 use crate::model::{ItemId, RelationshipType};
 
 /// Diagram header line: a bottom-to-top layout, so that an edge drawn from
@@ -54,9 +54,15 @@ pub fn traversal_to_mermaid(result: &TraversalResult, graph: &KnowledgeGraph) ->
 ///
 /// The picture contains the item and every item it is directly related to,
 /// whichever side declared the relation; see [`render`] for the layout.
+/// The related items are limited to the type filter of `options`; the
+/// origin is always drawn.
 #[must_use]
-pub fn neighborhood_to_mermaid(graph: &KnowledgeGraph, origin: &ItemId) -> String {
-    let related = graph.direct_relationships(origin);
+pub fn neighborhood_to_mermaid(
+    graph: &KnowledgeGraph,
+    origin: &ItemId,
+    options: &TraversalOptions,
+) -> String {
+    let related = graph.direct_relationships(origin, options);
     let members = related
         .iter()
         .flat_map(|(_, items)| items)
@@ -289,10 +295,9 @@ flowchart BT
         assert_eq!(output.matches("-->").count(), 3);
     }
 
-    #[test]
-    fn renders_direct_neighborhood_including_peers() {
-        // Without a traversal the picture is the item and every item it is
-        // directly related to, whichever side declared the relation.
+    /// A requirement deriving from an architecture, required by a peer
+    /// requirement and satisfied by a design.
+    fn neighborhood_graph() -> KnowledgeGraph {
         let items = vec![
             create_test_item("SYSARCH-001", builtin::SYSTEM_ARCHITECTURE),
             create_test_item_with_relationships(
@@ -311,10 +316,17 @@ flowchart BT
                 vec![Relationship::new(id("SWREQ-001"), builtin::SATISFIES)],
             ),
         ];
-        let graph = KnowledgeGraphBuilder::new()
+        KnowledgeGraphBuilder::new()
             .add_items(items)
             .build()
-            .unwrap();
+            .unwrap()
+    }
+
+    #[test]
+    fn renders_direct_neighborhood_including_peers() {
+        // Without a traversal the picture is the item and every item it is
+        // directly related to, whichever side declared the relation.
+        let graph = neighborhood_graph();
 
         let expected = "\
 flowchart BT
@@ -330,7 +342,32 @@ flowchart BT
     class SWREQ-001,SWREQ-002 software_requirement
     class SYSARCH-001 system_architecture
 ";
-        assert_eq!(neighborhood_to_mermaid(&graph, &id("SWREQ-001")), expected);
+        assert_eq!(
+            neighborhood_to_mermaid(&graph, &id("SWREQ-001"), &TraversalOptions::new()),
+            expected
+        );
+    }
+
+    #[test]
+    fn neighborhood_keeps_only_requested_types() {
+        let graph = neighborhood_graph();
+
+        // The origin is always drawn; the related items are limited to the
+        // requested types, so the peer requirement and the architecture drop.
+        let expected = "\
+flowchart BT
+    SWDD-001[\"SWDD-001<br>Test SWDD-001\"]
+    SWREQ-001[\"SWREQ-001<br>Test SWREQ-001\"]
+    SWDD-001 -->|satisfies| SWREQ-001
+    class SWREQ-001 origin
+    class SWDD-001 software_detailed_design
+    class SWREQ-001 software_requirement
+";
+        let options = TraversalOptions::new().with_types(vec![builtin::SOFTWARE_DETAILED_DESIGN]);
+        assert_eq!(
+            neighborhood_to_mermaid(&graph, &id("SWREQ-001"), &options),
+            expected
+        );
     }
 
     #[test]

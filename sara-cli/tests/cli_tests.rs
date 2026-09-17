@@ -281,6 +281,81 @@ mod query_command {
     }
 
     #[test]
+    fn test_query_depth_requires_a_direction() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // A depth limit only makes sense for a traversal, so asking for one
+        // without a direction is an argument error rather than a no-op.
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("SOL-001")
+            .arg("--depth")
+            .arg("1")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("--upstream"))
+            .stderr(predicate::str::contains("--downstream"));
+    }
+
+    #[test]
+    fn test_query_type_filters_direct_relationships() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // UC-001 refines SOL-001 and is refined by SCEN-001; only the
+        // solution passes the filter.
+        sara()
+            .current_dir(&fixtures)
+            .arg("--no-color")
+            .arg("query")
+            .arg("UC-001")
+            .arg("--type")
+            .arg("solution")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("SOL-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
+    }
+
+    #[test]
+    fn test_query_mermaid_type_filters_direct_relationships() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("UC-001")
+            .arg("--type")
+            .arg("solution")
+            .arg("--format")
+            .arg("mermaid")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("UC-001 -->|refines| SOL-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
+    }
+
+    #[test]
+    fn test_query_rejects_unknown_type() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        // An unknown type is an argument error naming the accepted ids,
+        // not a silently unfiltered result.
+        sara()
+            .current_dir(&fixtures)
+            .arg("query")
+            .arg("SOL-001")
+            .arg("--downstream")
+            .arg("--type")
+            .arg("bogus")
+            .assert()
+            .failure()
+            .stderr(predicate::str::contains("bogus"))
+            .stderr(predicate::str::contains("use_case"))
+            .stdout(predicate::str::contains("SCEN-001").not());
+    }
+
+    #[test]
     fn test_query_mermaid_prints_raw_flowchart() {
         let fixtures = fixtures_path().join("valid_graph");
 
@@ -1038,7 +1113,9 @@ mod query_formats {
             .arg("--depth")
             .arg("1")
             .assert()
-            .success();
+            .success()
+            .stdout(predicate::str::contains("UC-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
     }
 
     #[test]
@@ -1053,7 +1130,9 @@ mod query_formats {
             .arg("--type")
             .arg("use_case")
             .assert()
-            .success();
+            .success()
+            .stdout(predicate::str::contains("UC-001"))
+            .stdout(predicate::str::contains("SCEN-001").not());
     }
 }
 
