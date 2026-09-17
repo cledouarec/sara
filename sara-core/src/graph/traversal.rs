@@ -74,6 +74,13 @@ impl TraversalOptions {
         self.type_filter = types;
         self
     }
+
+    /// Whether an item passes the type filter; an empty filter accepts
+    /// every type.
+    #[must_use]
+    pub fn accepts(&self, item: &Item) -> bool {
+        self.type_filter.is_empty() || self.type_filter.contains(&item.item_type)
+    }
 }
 
 /// Traverses the graph upstream (toward Solution).
@@ -160,8 +167,7 @@ impl<'a> Walk<'a> {
             return;
         };
 
-        let matches_filter = self.options.type_filter.is_empty()
-            || self.options.type_filter.contains(&item.item_type);
+        let matches_filter = self.options.accepts(item);
 
         let next_display_parent = if matches_filter {
             self.items.push(TraversalNode {
