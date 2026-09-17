@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.11.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.10.1...sara-cli-v0.11.0) - 2026-09-17
+
+### Added
+
+- *(query)* add a mermaid output format (by @cledouarec)
+
+### Fixed
+
+- *(query)* show a shared ancestor under each of its parents (by @cledouarec)
+
+### Contributors
+
+* @cledouarec
+
 ## [0.10.1](https://github.com/cledouarec/sara/compare/sara-cli-v0.10.0...sara-cli-v0.10.1) - 2026-09-16
 
 ### Other
