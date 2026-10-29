@@ -188,12 +188,9 @@ fn main() -> ExitCode {
                 let _ = sara_core::schema::install(schema);
             }
             Err(e) => {
-                output::print_warning(
-                    &cfg.output,
-                    &format!(
-                        "Failed to load model schema: {}; continuing with the built-in model",
-                        e
-                    ),
+                tracing::warn!(
+                    "Failed to load model schema: {}; continuing with the built-in model",
+                    e
                 );
             }
         }
