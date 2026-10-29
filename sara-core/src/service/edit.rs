@@ -234,12 +234,23 @@ impl EditService {
         ItemContext::from_item(item)
     }
 
-    /// Validates edit options against the item type.
+    /// Validates edit options against the edited item.
+    ///
+    /// Fields must be declared by the item's type. Relations must be
+    /// declared by the type or already held by the item, so a link written
+    /// from the item's side outside its type's relations stays editable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SaraError::EditFailed`] for a field the type does not
+    /// declare, an enum value the field does not allow, or a relation that is
+    /// neither declared by the type nor held by the item.
     pub fn validate_options(
         &self,
         opts: &EditOptions,
-        item_type: ItemType,
+        item: &ItemContext,
     ) -> Result<(), SaraError> {
+        let item_type = item.item_type;
         for (name, input) in &opts.fields {
             let Some(field) = item_type.declared_field(name) else {
                 return Err(SaraError::EditFailed(format!(
@@ -262,7 +273,8 @@ impl EditService {
 
         let declared = item_type.declared_relations();
         for relation in opts.relations.keys() {
-            if !declared.contains(relation) {
+            let held = item.traceability.iter().any(|(rel, _)| rel == *relation);
+            if !declared.contains(relation) && !held {
                 return Err(SaraError::EditFailed(format!(
                     "--{} is not a relation declared by {}",
                     relation.as_str().replace('_', "-"),
@@ -477,7 +489,7 @@ impl EditService {
         let item_ctx = self.get_item_context(item);
 
         // Validate options
-        self.validate_options(&opts, item_ctx.item_type)?;
+        self.validate_options(&opts, &item_ctx)?;
 
         // Merge values
         let new_values = self.merge_values(opts, &item_ctx);
@@ -573,6 +585,11 @@ mod tests {
         assert_eq!(ctx.item_type, builtin::SOLUTION);
     }
 
+    /// Returns the edit context of a test item of the given type.
+    fn context_of(item_type: ItemType) -> ItemContext {
+        ItemContext::from_item(&create_test_item("ITEM-001", item_type))
+    }
+
     #[test]
     fn test_validate_options_undeclared_field() {
         let service = EditService::new();
@@ -582,14 +599,18 @@ mod tests {
             .maybe_text_field("specification", Some("new spec".to_string()));
         assert!(
             service
-                .validate_options(&opts, builtin::SYSTEM_REQUIREMENT)
+                .validate_options(&opts, &context_of(builtin::SYSTEM_REQUIREMENT))
                 .is_ok()
         );
 
         // Invalid: specification on solution type (declares no fields)
         let opts = EditOptions::new("SOL-001")
             .maybe_text_field("specification", Some("new spec".to_string()));
-        assert!(service.validate_options(&opts, builtin::SOLUTION).is_err());
+        assert!(
+            service
+                .validate_options(&opts, &context_of(builtin::SOLUTION))
+                .is_err()
+        );
     }
 
     #[test]
@@ -600,7 +621,7 @@ mod tests {
             EditOptions::new("ADR-001").maybe_text_field("status", Some("accepted".to_string()));
         assert!(
             service
-                .validate_options(&opts, builtin::ARCHITECTURE_DECISION_RECORD)
+                .validate_options(&opts, &context_of(builtin::ARCHITECTURE_DECISION_RECORD))
                 .is_ok()
         );
 
@@ -608,7 +629,7 @@ mod tests {
             EditOptions::new("ADR-001").maybe_text_field("status", Some("bogus".to_string()));
         assert!(
             service
-                .validate_options(&opts, builtin::ARCHITECTURE_DECISION_RECORD)
+                .validate_options(&opts, &context_of(builtin::ARCHITECTURE_DECISION_RECORD))
                 .is_err()
         );
     }
@@ -620,12 +641,20 @@ mod tests {
         // Valid: refines on use case
         let opts =
             EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]);
-        assert!(service.validate_options(&opts, builtin::USE_CASE).is_ok());
+        assert!(
+            service
+                .validate_options(&opts, &context_of(builtin::USE_CASE))
+                .is_ok()
+        );
 
         // Invalid: refines on solution (declares no relation)
         let opts = EditOptions::new("SOL-001")
             .with_relation(builtin::REFINES, vec!["SOL-002".to_string()]);
-        assert!(service.validate_options(&opts, builtin::SOLUTION).is_err());
+        assert!(
+            service
+                .validate_options(&opts, &context_of(builtin::SOLUTION))
+                .is_err()
+        );
     }
 
     #[test]
@@ -1007,6 +1036,41 @@ Body to preserve.
         assert_eq!(
             fs::read_to_string(dir.path().join("UC-001.md")).unwrap(),
             content
+        );
+    }
+
+    #[test]
+    fn test_edit_updates_relation_declared_outside_the_type() {
+        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001")
+                    .with_relation(builtin::DERIVES, vec!["SYSREQ-002".to_string()]),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace("  - \"SYSREQ-001\"\n", "  - \"SYSREQ-002\"\n")
+        );
+    }
+
+    #[test]
+    fn test_edit_clears_relation_declared_outside_the_type() {
+        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_relation(builtin::DERIVES, Vec::new()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace("derives:\n  - \"SYSREQ-001\"\n", "")
         );
     }
 }
