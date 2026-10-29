@@ -7,9 +7,10 @@ use std::process::ExitCode;
 use std::time::{Duration, Instant};
 
 use clap::Args;
-use sara_core::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
+use sara_core::graph::KnowledgeGraph;
 use sara_core::model::{Item, ItemType};
-use sara_core::validation::{ValidationReport, pre_validate, validate};
+use sara_core::service::check_items;
+use sara_core::validation::ValidationReport;
 use serde::Serialize;
 
 use sara_core::config::{Config, OutputConfig};
@@ -103,28 +104,15 @@ pub fn run(args: &CheckArgs, config: &Config) -> Result<ExitCode, Box<dyn Error>
         return Ok(ExitCode::SUCCESS);
     }
 
-    let pre_report = pre_validate(&items, strict);
-    if !pre_report.is_valid() {
-        let parse_time = start.elapsed();
-        return handle_output(args, None, &pre_report, &parse_time, output_config);
-    }
-
-    let graph = KnowledgeGraphBuilder::new().add_items(items).build()?;
-
-    let report = validate(&graph, strict);
-    let report = consolidate_reports(report, pre_report);
+    let outcome = check_items(items, strict)?;
     let parse_time = start.elapsed();
-    handle_output(args, Some(&graph), &report, &parse_time, output_config)
-}
-
-/// Consolidates two validation reports, keeping all data from the main report
-/// and prepending issues from the pre-validation report.
-fn consolidate_reports(
-    mut report: ValidationReport,
-    pre_report: ValidationReport,
-) -> ValidationReport {
-    report.merge(pre_report);
-    report
+    handle_output(
+        args,
+        outcome.graph.as_ref(),
+        &outcome.report,
+        &parse_time,
+        output_config,
+    )
 }
 
 /// Handles output based on format and validation results.
