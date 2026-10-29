@@ -3,7 +3,8 @@
 //! Provides functionality to initialize new requirement items or add frontmatter
 //! to existing documents.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
@@ -438,6 +439,10 @@ impl InitService {
     }
 
     /// Creates a new file with the generated document.
+    ///
+    /// The file is created exclusively: if anything exists at its path by
+    /// then, including a symbolic link leading nowhere, creation fails rather
+    /// than writing through it.
     fn create_new_file(
         &self,
         opts: &InitOptions,
@@ -449,7 +454,11 @@ impl InitService {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&opts.file, document)?;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&opts.file)?
+            .write_all(document.as_bytes())?;
         Ok(())
     }
 }
@@ -839,5 +848,24 @@ mod tests {
         let result = service.init(None, &opts).unwrap();
 
         assert!(!result.needs_specification);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_init_does_not_write_through_a_dangling_symlink() {
+        // Writing through the link would create its target, wherever it is.
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let target = outside.path().join("pwned.md");
+        let file = dir.path().join("evil.md");
+        std::os::unix::fs::symlink(&target, &file).unwrap();
+        let opts = InitOptions::new(file, TypeConfig::new(builtin::SOLUTION))
+            .with_id("SOL-001")
+            .with_name("Hub");
+
+        let result = InitService::new().init(None, &opts);
+
+        assert!(result.is_err());
+        assert!(!target.exists());
     }
 }
