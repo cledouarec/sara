@@ -98,16 +98,18 @@ impl ValidationReport {
             .collect()
     }
 
-    /// Merges another report into this one.
+    /// Merges another validation pass over the same items into this report.
     ///
     /// Issues from the other report are prepended to this report's issues.
-    /// Counters are summed. Items by type are combined (preferring non-empty).
+    /// Both passes checked the same items, so each counter keeps the larger
+    /// value rather than their sum. Items by type are combined (preferring
+    /// non-empty).
     pub fn merge(&mut self, other: ValidationReport) {
         let mut merged_issues = other.issues;
         merged_issues.append(&mut self.issues);
         self.issues = merged_issues;
-        self.items_checked += other.items_checked;
-        self.relationships_checked += other.relationships_checked;
+        self.items_checked = self.items_checked.max(other.items_checked);
+        self.relationships_checked = self.relationships_checked.max(other.relationships_checked);
         // Prefer the non-empty items_by_type map
         if self.items_by_type.is_empty() && !other.items_by_type.is_empty() {
             self.items_by_type = other.items_by_type;
@@ -240,5 +242,21 @@ mod tests {
         assert_eq!(report.items_checked, 10);
         assert_eq!(report.relationships_checked, 15);
         assert_eq!(report.error_count(), 1);
+    }
+
+    #[test]
+    fn test_merge_counts_items_checked_once() {
+        // Pre-validation and graph validation are two passes over the same
+        // items, so merging them must not add up their counters.
+        let mut report = ValidationReportBuilder::new()
+            .items_checked(7)
+            .relationships_checked(12)
+            .build();
+        let pre_report = ValidationReportBuilder::new().items_checked(7).build();
+
+        report.merge(pre_report);
+
+        assert_eq!(report.items_checked, 7);
+        assert_eq!(report.relationships_checked, 12);
     }
 }

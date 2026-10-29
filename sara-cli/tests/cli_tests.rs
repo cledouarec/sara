@@ -122,6 +122,23 @@ mod check_command {
     }
 
     #[test]
+    fn test_check_json_counts_each_item_once() {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        let output = sara()
+            .arg("check")
+            .arg("-r")
+            .arg(&fixtures)
+            .arg("--format")
+            .arg("json")
+            .output()
+            .unwrap();
+
+        let result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(result["items_checked"], 7);
+    }
+
+    #[test]
     fn test_check_warns_about_skipped_files() {
         let fixtures = fixtures_path().join("corrupt_file");
 
