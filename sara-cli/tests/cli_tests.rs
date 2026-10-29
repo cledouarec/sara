@@ -1504,6 +1504,39 @@ mod global_options {
             .assert()
             .success();
     }
+
+    #[test]
+    fn test_logs_are_written_to_stderr() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("sara.toml");
+        std::fs::write(&config_path, "not = [valid").unwrap();
+
+        sara()
+            .arg("--config")
+            .arg(&config_path)
+            .arg("schema")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Failed to load config file").not())
+            .stderr(predicate::str::contains("Failed to load config file"));
+    }
+
+    #[test]
+    fn test_model_schema_failure_is_logged_to_stderr() {
+        let temp_dir = tempfile::TempDir::new().unwrap();
+        let config_path = temp_dir.path().join("sara.toml");
+        std::fs::write(&config_path, "model_schema = \"missing.yaml\"\n").unwrap();
+
+        sara()
+            .current_dir(temp_dir.path())
+            .arg("--config")
+            .arg(&config_path)
+            .arg("schema")
+            .assert()
+            .success()
+            .stdout(predicate::str::contains("Failed to load model schema").not())
+            .stderr(predicate::str::contains("Failed to load model schema"));
+    }
 }
 
 mod custom_schema {

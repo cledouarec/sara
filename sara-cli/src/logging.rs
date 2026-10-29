@@ -1,5 +1,6 @@
 //! Logging configuration for the CLI.
 
+use std::io::{self, IsTerminal};
 use std::sync::OnceLock;
 
 use tracing_subscriber::registry::Registry;
@@ -40,7 +41,9 @@ static RELOAD_HANDLE: OnceLock<reload::Handle<EnvFilter, Registry>> = OnceLock::
 ///
 /// Called before the command line is parsed so configuration loading can log
 /// directly; [`set_verbosity`] adjusts the level once the flags are known.
-/// An environment filter (`RUST_LOG`) takes precedence when set.
+/// An environment filter (`RUST_LOG`) takes precedence when set. Logs go to
+/// standard error, colored only on a terminal, so standard output carries
+/// nothing but the command's own output.
 pub fn init() {
     let filter = EnvFilter::try_from_default_env()
         .unwrap_or_else(|_| EnvFilter::new(Verbosity::Normal.as_filter()));
@@ -48,6 +51,8 @@ pub fn init() {
 
     let subscriber = tracing_subscriber::registry().with(
         fmt::layer()
+            .with_writer(io::stderr)
+            .with_ansi(io::stderr().is_terminal())
             .with_target(false)
             .with_level(true)
             .with_filter(filter),
