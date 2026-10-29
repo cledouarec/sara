@@ -11,6 +11,7 @@ use crate::graph::{KnowledgeGraph, KnowledgeGraphBuilder};
 use crate::model::{ItemId, Relationship, RelationshipType};
 use crate::repository::{ScanWarning, parse_repositories};
 
+pub mod check;
 pub mod diff;
 pub mod edit;
 pub mod init;
@@ -33,6 +34,8 @@ fn ids_to_relationships(ids: &[String], rel_type: RelationshipType) -> Vec<Relat
         .collect()
 }
 
+// Check service exports
+pub use check::{CheckOutcome, check_items};
 // Diff service exports
 pub use diff::{DiffError, DiffOptions, DiffResult, DiffService};
 // Edit service exports
