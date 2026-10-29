@@ -414,7 +414,7 @@ fn run_non_interactive_edit(
     config: &OutputConfig,
 ) -> Result<ExitCode, Box<dyn Error>> {
     // Validate type-specific fields (FR-058)
-    if let Err(e) = service.validate_options(&opts, item.item_type) {
+    if let Err(e) = service.validate_options(&opts, item) {
         print_error(config, &format!("{}", e));
         return Ok(ExitCode::FAILURE);
     }
