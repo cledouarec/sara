@@ -286,7 +286,7 @@ fn continues_entry(line: &str) -> bool {
 
 /// Returns the line ending of the first line of `content`: `\r\n` when it
 /// ends so, `\n` otherwise.
-fn line_ending(content: &str) -> &'static str {
+pub(crate) fn line_ending(content: &str) -> &'static str {
     let first = content.split_inclusive('\n').next().unwrap_or_default();
     if first.ends_with("\r\n") {
         "\r\n"
