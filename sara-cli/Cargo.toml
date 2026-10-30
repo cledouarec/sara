@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 sara-core = { path = "../sara-core", version = "0.11.3" }
+sara-mcp = { path = "../sara-mcp", version = "0.11.3", optional = true }
 clap.workspace = true
 colored.workspace = true
 console.workspace = true
@@ -25,6 +26,12 @@ serde.workspace = true
 serde_json.workspace = true
 inquire.workspace = true
 thiserror.workspace = true
+
+[features]
+default = ["mcp"]
+# `sara mcp`: serves the knowledge graph to AI agents over the Model
+# Context Protocol.
+mcp = ["dep:sara-mcp"]
 
 [dev-dependencies]
 assert_cmd.workspace = true
