@@ -2,8 +2,10 @@
 //!
 //! Doc comments become the descriptions of the JSON Schemas clients see.
 
+use std::collections::BTreeMap;
+
 use sara_core::model::ItemType;
-use sara_core::service::parse_item_type;
+use sara_core::service::{FieldInput, parse_item_type};
 use schemars::JsonSchema;
 use serde::Deserialize;
 
@@ -149,6 +151,33 @@ pub struct ValidateParams {
     /// repositories skipped during the scan. Defaults to the project's
     /// configuration.
     pub strict: Option<bool>,
+}
+
+/// Parameters of `sara_create_item`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct CreateItemParams {
+    /// Type of the new item, by type id or ID prefix, such as
+    /// `software_requirement` or `SWREQ`.
+    #[serde(rename = "type")]
+    pub item_type: String,
+    /// Markdown file to write, relative to the project directory, inside one
+    /// of the repositories. It must not exist yet, or have no frontmatter.
+    pub file: String,
+    /// Name of the item. Defaults to the first heading of an existing file,
+    /// or to the file name.
+    pub name: Option<String>,
+    /// Id of the item. Generated from the model's id format when absent,
+    /// continuing the sequence of existing ids.
+    pub id: Option<String>,
+    /// Description of the item.
+    pub description: Option<String>,
+    /// Values of fields the type declares, by field name.
+    #[serde(default)]
+    pub fields: BTreeMap<String, FieldInput>,
+    /// Targets of relations the type declares, by relation id, such as
+    /// `{"derives_from": ["SYSARCH-001"]}`.
+    #[serde(default)]
+    pub relations: BTreeMap<String, Vec<String>>,
 }
 
 /// Resolves one item type name given by a client, by type id or ID prefix.

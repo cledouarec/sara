@@ -19,7 +19,9 @@
 //!
 //! [Model Context Protocol]: https://modelcontextprotocol.io
 
+mod inputs;
 mod params;
+mod paths;
 mod server;
 mod views;
 
