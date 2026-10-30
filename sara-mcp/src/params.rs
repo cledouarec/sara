@@ -193,3 +193,23 @@ pub fn parse_one_item_type(name: &str) -> Result<ItemType, String> {
         )
     })
 }
+
+/// Parameters of `sara_update_item`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct UpdateItemParams {
+    /// Id of the item to change, such as `SYSREQ-001`.
+    pub id: String,
+    /// New name of the item.
+    pub name: Option<String>,
+    /// New description of the item.
+    pub description: Option<String>,
+    /// New values of fields the type declares, by field name; each replaces
+    /// the current value.
+    #[serde(default)]
+    pub fields: BTreeMap<String, FieldInput>,
+    /// New targets by relation id; each list replaces the targets written in
+    /// this item's file, and an empty list removes the relation. Accepts the
+    /// relations the type declares and those the file already holds.
+    #[serde(default)]
+    pub relations: BTreeMap<String, Vec<String>>,
+}
