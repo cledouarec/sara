@@ -28,6 +28,6 @@ pub use diff::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDif
 pub use knowledge_graph::{KnowledgeGraph, KnowledgeGraphBuilder, LookupResult};
 pub use relation_group::RelationGroup;
 pub use traversal::{
-    TraversalDirection, TraversalNode, TraversalOptions, TraversalResult, traverse_downstream,
-    traverse_upstream,
+    Reach, ReachLink, ReachedItem, TraversalDirection, TraversalNode, TraversalOptions,
+    TraversalResult, reach, traverse_downstream, traverse_upstream,
 };
