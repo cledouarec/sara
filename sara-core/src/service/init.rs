@@ -14,7 +14,9 @@ use crate::graph::KnowledgeGraph;
 use crate::model::{
     FieldValue, Item, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
 };
-use crate::parser::{InputFormat, extract_name_from_content, has_frontmatter, parse_metadata};
+use crate::parser::{
+    InputFormat, extract_name_from_content, has_frontmatter, line_ending, parse_metadata,
+};
 use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
 /// Options for initializing a new item or adding frontmatter to an existing file.
@@ -423,16 +425,21 @@ impl InitService {
 
     /// Updates an existing file by adding or replacing frontmatter.
     ///
-    /// Returns true if frontmatter was replaced, false if it was added.
+    /// The frontmatter is written with the line ending of the file's first
+    /// line. Returns true if frontmatter was replaced, false if it was added.
     fn update_existing_file(&self, opts: &InitOptions, item: &Item) -> Result<bool, InitError> {
         let content = fs::read_to_string(&opts.file)?;
-        let frontmatter = generator::generate_metadata(item, OutputFormat::Markdown);
+        let line_ending = line_ending(&content);
+        let frontmatter: String = generator::generate_metadata(item, OutputFormat::Markdown)
+            .lines()
+            .map(|line| format!("{line}{line_ending}"))
+            .collect();
 
         let (new_content, replaced) = if has_frontmatter(&content) && opts.force {
             let body = remove_frontmatter(&content);
-            (format!("{}\n{}", frontmatter, body), true)
+            (format!("{frontmatter}{body}"), true)
         } else {
-            (format!("{}\n{}", frontmatter, content), false)
+            (format!("{frontmatter}{content}"), false)
         };
 
         ensure_readable(&new_content, &opts.file)?;
@@ -480,21 +487,18 @@ fn remove_frontmatter(content: &str) -> &str {
     let mut in_frontmatter = false;
     let mut byte_offset = 0;
 
-    for line in content.lines() {
-        // Advance past the line and its newline delimiter.
-        let line_end = byte_offset + line.len() + 1;
+    for line in content.split_inclusive('\n') {
+        // Advance past the line and its line ending, `\n` or `\r\n`.
+        byte_offset += line.len();
 
         if line.trim() == "---" {
             if !in_frontmatter {
                 in_frontmatter = true;
             } else {
                 // Found closing delimiter; return everything after it.
-                let end = line_end.min(content.len());
-                return &content[end..];
+                return &content[byte_offset..];
             }
         }
-
-        byte_offset = line_end;
     }
 
     content
@@ -745,6 +749,12 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_frontmatter_with_crlf_line_endings() {
+        let content = "---\r\nid: test\r\nname: \"Test\"\r\n---\r\n# Body\r\n";
+        assert_eq!(remove_frontmatter(content), "# Body\r\n");
+    }
+
+    #[test]
     fn test_init_new_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
@@ -788,6 +798,21 @@ mod tests {
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("id: \"UC-001\""));
         assert!(content.contains("# My Document"));
+    }
+
+    #[test]
+    fn test_init_existing_file_keeps_its_crlf_line_endings() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("existing.md");
+        fs::write(&file_path, "# My Document\r\n\r\nSome content here.\r\n").unwrap();
+
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(builtin::USE_CASE))
+            .with_id("UC-001");
+        InitService::new().init(None, &opts).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.starts_with("---\r\nid: \"UC-001\"\r\n"));
+        assert!(!content.replace("\r\n", "").contains('\n'));
     }
 
     #[test]

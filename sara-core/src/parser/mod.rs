@@ -19,6 +19,8 @@ pub use frontmatter::{
 #[doc(inline)]
 pub use markdown::extract_name_from_content;
 
+pub(crate) use frontmatter::line_ending;
+
 use crate::error::SaraError;
 use crate::model::Item;
 
