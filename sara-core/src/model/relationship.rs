@@ -83,25 +83,30 @@ impl RelationshipType {
             .unwrap_or(*self)
     }
 
+    /// Returns the direction of this relation in the model hierarchy.
+    ///
+    /// `None` when the active schema does not declare the relation.
+    #[must_use]
+    pub fn direction(&self) -> Option<RelationDirection> {
+        self.def().map(|def| def.direction)
+    }
+
     /// Check if this is an upstream relationship (toward the hierarchy root).
     #[must_use]
     pub fn is_upstream(&self) -> bool {
-        self.def()
-            .is_some_and(|def| def.direction == RelationDirection::Upstream)
+        self.direction() == Some(RelationDirection::Upstream)
     }
 
     /// Check if this is a downstream relationship (away from the root).
     #[must_use]
     pub fn is_downstream(&self) -> bool {
-        self.def()
-            .is_some_and(|def| def.direction == RelationDirection::Downstream)
+        self.direction() == Some(RelationDirection::Downstream)
     }
 
     /// Check if this is a peer relationship (between items of the same type).
     #[must_use]
     pub fn is_peer(&self) -> bool {
-        self.def()
-            .is_some_and(|def| def.direction == RelationDirection::Peer)
+        self.direction() == Some(RelationDirection::Peer)
     }
 
     /// Check if this is a primary relationship (not an inverse).
@@ -200,6 +205,29 @@ mod tests {
 
         assert!(builtin::DEPENDS_ON.is_peer());
         assert!(builtin::IS_REQUIRED_BY.is_peer());
+
+        assert_eq!(
+            builtin::REFINES.direction(),
+            Some(RelationDirection::Upstream)
+        );
+        assert_eq!(
+            builtin::IS_REFINED_BY.direction(),
+            Some(RelationDirection::Downstream)
+        );
+        assert_eq!(
+            builtin::DEPENDS_ON.direction(),
+            Some(RelationDirection::Peer)
+        );
+    }
+
+    #[test]
+    fn test_undeclared_relationship_has_no_direction() {
+        let relation = RelationshipType::from_static("undeclared");
+
+        assert_eq!(relation.direction(), None);
+        assert!(!relation.is_upstream());
+        assert!(!relation.is_downstream());
+        assert!(!relation.is_peer());
     }
 
     #[test]

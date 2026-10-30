@@ -21,10 +21,12 @@
 
 pub mod diff;
 mod knowledge_graph;
+mod relation_group;
 pub mod traversal;
 
 pub use diff::{DiffStats, GraphDiff, ItemDiff, ItemModification, RelationshipDiff};
 pub use knowledge_graph::{KnowledgeGraph, KnowledgeGraphBuilder, LookupResult};
+pub use relation_group::RelationGroup;
 pub use traversal::{
     TraversalDirection, TraversalNode, TraversalOptions, TraversalResult, traverse_downstream,
     traverse_upstream,
