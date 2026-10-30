@@ -21,6 +21,7 @@
 
 mod params;
 mod server;
+mod views;
 
 use std::io;
 use std::path::PathBuf;

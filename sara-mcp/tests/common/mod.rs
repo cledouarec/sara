@@ -65,6 +65,16 @@ pub fn text(result: &CallToolResult) -> String {
         .collect()
 }
 
+/// Calls the tool `name` and returns its structured result, panicking when
+/// there is none.
+pub async fn structured(client: &Client, name: &str, arguments: Value) -> Value {
+    let result = call(client, name, arguments).await;
+    match result.structured_content {
+        Some(structured) => structured,
+        None => panic!("{name} returned no structured content: {}", text(&result)),
+    }
+}
+
 /// Returns the description of the tool `name`, panicking when absent.
 pub async fn tool(client: &Client, name: &str) -> Tool {
     client
