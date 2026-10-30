@@ -138,6 +138,60 @@ mod check_command {
         assert_eq!(result["items_checked"], 7);
     }
 
+    /// Returns the items of `sara check --format json` on the valid graph.
+    fn checked_items() -> Vec<serde_json::Value> {
+        let fixtures = fixtures_path().join("valid_graph");
+
+        let output = sara()
+            .arg("check")
+            .arg("-r")
+            .arg(&fixtures)
+            .arg("--format")
+            .arg("json")
+            .output()
+            .unwrap();
+
+        let mut result: serde_json::Value = serde_json::from_slice(&output.stdout).unwrap();
+        serde_json::from_value(result["items"].take()).unwrap()
+    }
+
+    /// Returns the checked item with the given id.
+    fn checked_item<'a>(items: &'a [serde_json::Value], id: &str) -> &'a serde_json::Value {
+        items.iter().find(|item| item["id"] == id).unwrap()
+    }
+
+    #[test]
+    fn test_check_json_writes_field_values_as_text() {
+        let items = checked_items();
+
+        assert_eq!(
+            checked_item(&items, "SYSREQ-001")["fields"]["specification"],
+            "The system SHALL authenticate users within 2 seconds under normal load."
+        );
+    }
+
+    #[test]
+    fn test_check_json_items_use_the_client_shape() {
+        let items = checked_items();
+        let requirement = checked_item(&items, "SYSREQ-001");
+
+        assert_eq!(requirement["type"], "system_requirement");
+        assert!(
+            requirement["file"]
+                .as_str()
+                .unwrap()
+                .ends_with("SYSREQ-001.md")
+        );
+        assert_eq!(
+            requirement["relations"],
+            serde_json::json!({ "derives_from": ["SCEN-001"] })
+        );
+        for internal in ["item_type", "source", "relationships", "attributes"] {
+            assert!(requirement.get(internal).is_none(), "{internal}");
+        }
+        assert!(checked_item(&items, "SOL-001").get("relations").is_none());
+    }
+
     #[test]
     fn test_check_warns_about_skipped_files() {
         let fixtures = fixtures_path().join("corrupt_file");

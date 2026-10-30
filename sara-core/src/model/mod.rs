@@ -6,6 +6,7 @@ mod field;
 mod item;
 mod metadata;
 mod relationship;
+mod summary;
 
 pub use builder::ItemBuilder;
 pub use edit::{EditSummary, FieldChange, TraceabilityLinks};
@@ -17,3 +18,4 @@ pub use item::{
 pub use metadata::SourceLocation;
 pub(crate) use metadata::serialize_path;
 pub use relationship::{Relationship, RelationshipRules, RelationshipType};
+pub use summary::ItemSummary;
