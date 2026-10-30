@@ -1,5 +1,6 @@
 //! The MCP protocol handler serving a Sara knowledge graph.
 
+use std::env;
 use std::fmt::Write;
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -12,16 +13,20 @@ use sara_core::graph::{KnowledgeGraph, LookupResult, TraversalDirection, impact,
 use sara_core::model::{Item, ItemSummary, ItemType};
 use sara_core::repository::{ScanResult, parse_repositories};
 use sara_core::schema;
-use sara_core::service::{check_items, load_graph, read_body};
+use sara_core::service::{
+    InitError, InitOptions, InitResult, InitService, TypeConfig, check_items, load_graph, read_body,
+};
 use tokio::sync::RwLock;
 use tokio::task::spawn_blocking;
 
 use crate::ServerOptions;
+use crate::inputs::{field_inputs, relation_inputs};
 use crate::params::{
-    AnalyzeImpactParams, GetItemParams, IMPACT_LIMIT, MAX_IMPACT_ORIGINS, SEARCH_LIMIT,
-    SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams, ValidateParams,
-    parse_item_types, type_list,
+    AnalyzeImpactParams, CreateItemParams, GetItemParams, IMPACT_LIMIT, MAX_IMPACT_ORIGINS,
+    SEARCH_LIMIT, SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams, ValidateParams,
+    parse_item_types, parse_one_item_type, type_list,
 };
+use crate::paths::resolve_item_file;
 use crate::views::{ImpactView, ItemView, SearchResults, TraceView, ValidationView};
 
 /// Name the server announces to MCP clients.
@@ -258,6 +263,70 @@ impl SaraServer {
         .await
     }
 
+    /// Creates an item: writes a new Markdown file from the type's template,
+    /// or adds a frontmatter to an existing Markdown file that has none. The
+    /// id follows the model's id format unless given. Fields, relations and
+    /// targets are checked first, and the file must be inside a repository,
+    /// so nothing is written on a mistake. Required fields not given hold the
+    /// model's placeholder and are listed in defaulted_fields: set them with
+    /// sara_update_item. Write the body with your own file tools afterwards,
+    /// then call sara_validate.
+    #[tool(
+        name = "sara_create_item",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = false,
+            idempotent_hint = false,
+            open_world_hint = false
+        )
+    )]
+    async fn create_item(
+        &self,
+        Parameters(params): Parameters<CreateItemParams>,
+    ) -> Result<Json<InitResult>, String> {
+        let item_type = parse_one_item_type(&params.item_type)?;
+        let fields = field_inputs(item_type, params.fields)?;
+        let repositories = self.options.repositories.clone();
+        let allowed: Vec<_> = item_type
+            .declared_relations()
+            .into_iter()
+            .filter(|relation| !relation.is_downstream())
+            .collect();
+
+        self.write_graph(move |graph| {
+            // Checked under the write lock, so no other request changes the
+            // file system between the check and the write.
+            let base = env::current_dir()
+                .map_err(|e| format!("cannot read the working directory: {e}"))?;
+            let file = resolve_item_file(&params.file, &repositories, &base)?;
+            let relations = relation_inputs(graph, item_type, params.relations, &allowed)?;
+            let mut config = TypeConfig::new(item_type);
+            for (name, input) in fields {
+                config = config.field(name, input);
+            }
+            for (relation, targets) in relations {
+                config = config.relation(relation.as_str(), targets);
+            }
+            let options = InitOptions::new(file, config)
+                .maybe_id(params.id)
+                .maybe_name(params.name)
+                .maybe_description(params.description);
+
+            let initialized = InitService::new()
+                .init(Some(graph), &options)
+                .map_err(|error| match error {
+                    InitError::FrontmatterExists(path) => format!(
+                        "{} already holds an item; change it with sara_update_item.",
+                        path.display()
+                    ),
+                    other => other.to_string(),
+                })?;
+
+            Ok(Json(initialized))
+        })
+        .await
+    }
+
     /// Runs `query` on the graph freshly loaded from the repositories, while
     /// other requests may read the files too.
     async fn read_graph<T: Send + 'static>(
@@ -266,6 +335,16 @@ impl SaraServer {
     ) -> Result<T, String> {
         let _guard = self.lock.read().await;
         self.with_graph(query).await
+    }
+
+    /// Runs `task` on the graph freshly loaded from the repositories, while
+    /// no other request reads or writes the files.
+    async fn write_graph<T: Send + 'static>(
+        &self,
+        task: impl FnOnce(&KnowledgeGraph) -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        let _guard = self.lock.write().await;
+        self.with_graph(task).await
     }
 
     /// Runs `task` on the configured repositories while other requests may
@@ -325,7 +404,8 @@ impl SaraServer {
              Read one item, its links and its body with sara_get_item. \
              Follow its traceability chains with sara_trace_item. \
              Before changing an item, list what it impacts with sara_analyze_impact. \
-             Check the whole graph with sara_validate.",
+             Check the whole graph with sara_validate. \
+             Create an item with sara_create_item, then write its body with your file tools.",
             type_list(),
             repositories.join(", ")
         )

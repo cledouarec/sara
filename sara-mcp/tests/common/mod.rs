@@ -3,6 +3,7 @@
 // Each test binary uses only some of these helpers.
 #![allow(dead_code)]
 
+use std::fs;
 use std::path::{Path, PathBuf};
 
 use rmcp::model::{CallToolRequestParams, CallToolResult, Tool};
@@ -10,6 +11,7 @@ use rmcp::service::RunningService;
 use rmcp::{RoleClient, ServiceExt};
 use sara_mcp::{SaraServer, ServerOptions};
 use serde_json::Value;
+use tempfile::TempDir;
 
 /// Capacity of the in-memory pipe between the client and the server.
 const PIPE_CAPACITY: usize = 64 * 1024;
@@ -86,6 +88,16 @@ pub async fn tool(client: &Client, name: &str) -> Tool {
         .unwrap_or_else(|| panic!("tool {name} is listed"))
 }
 
+/// Copies a shared fixture repository into a new temporary directory.
+pub fn copy_fixture(name: &str) -> TempDir {
+    let dir = TempDir::new().expect("temporary directory");
+    for entry in fs::read_dir(fixture(name)).expect("fixture directory") {
+        let entry = entry.expect("fixture entry");
+        fs::copy(entry.path(), dir.path().join(entry.file_name())).expect("fixture copy");
+    }
+    dir
+}
+
 /// Starts a server on the repository at `path` and connects to it.
 pub async fn connect_to_dir(path: &Path) -> Client {
     connect(ServerOptions {
@@ -93,4 +105,12 @@ pub async fn connect_to_dir(path: &Path) -> Client {
         strict: false,
     })
     .await
+}
+
+/// Starts a server on a copy of a shared fixture repository, which tools
+/// may change, and connects to it.
+pub async fn connect_to_copy(name: &str) -> (TempDir, Client) {
+    let repository = copy_fixture(name);
+    let client = connect_to_dir(repository.path()).await;
+    (repository, client)
 }
