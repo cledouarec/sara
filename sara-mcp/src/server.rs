@@ -8,16 +8,19 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
-use sara_core::graph::{KnowledgeGraph, LookupResult, search};
-use sara_core::model::{Item, ItemType};
+use sara_core::graph::{KnowledgeGraph, LookupResult, TraversalDirection, reach, search};
+use sara_core::model::{Item, ItemSummary, ItemType};
 use sara_core::schema;
 use sara_core::service::{load_graph, read_body};
 use tokio::sync::RwLock;
 use tokio::task::spawn_blocking;
 
 use crate::ServerOptions;
-use crate::params::{GetItemParams, SEARCH_LIMIT, SearchItemsParams, parse_item_types, type_list};
-use crate::views::{ItemView, SearchResults};
+use crate::params::{
+    GetItemParams, SEARCH_LIMIT, SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams,
+    parse_item_types, type_list,
+};
+use crate::views::{ItemView, SearchResults, TraceView};
 
 /// Name the server announces to MCP clients.
 const SERVER_NAME: &str = "sara";
@@ -136,6 +139,51 @@ impl SaraServer {
         .await
     }
 
+    /// Follows traceability links transitively from an item: `upstream`
+    /// toward the solution (the items it refines, derives from or
+    /// satisfies, and theirs), `downstream` toward detailed designs (the
+    /// items refining, deriving from or satisfying it, and theirs), or both.
+    /// Each reached item appears once, at its shortest distance, with every
+    /// link followed, so shared parents are not repeated. Peer links such as
+    /// depends_on are not followed: see sara_analyze_impact.
+    #[tool(
+        name = "sara_trace_item",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn trace_item(
+        &self,
+        Parameters(params): Parameters<TraceItemParams>,
+    ) -> Result<Json<TraceView>, String> {
+        let limit = TRACE_LIMIT.resolve(params.limit);
+
+        self.read_graph(move |graph| {
+            let item = find_item(graph, &params.id)?;
+            let origins = [item.id.clone()];
+            let chain = |direction| {
+                let mut reached = reach(graph, &origins, direction, params.max_depth);
+                reached.truncate(limit);
+                reached
+            };
+            let wants = |direction| {
+                params.direction == direction || params.direction == TraceDirection::Both
+            };
+
+            Ok(Json(TraceView {
+                origin: ItemSummary::from(item),
+                upstream: wants(TraceDirection::Upstream)
+                    .then(|| chain(TraversalDirection::Upstream)),
+                downstream: wants(TraceDirection::Downstream)
+                    .then(|| chain(TraversalDirection::Downstream)),
+            }))
+        })
+        .await
+    }
+
     /// Runs `query` on the graph freshly loaded from the repositories, while
     /// other requests may read the files too.
     async fn read_graph<T: Send + 'static>(
@@ -190,7 +238,8 @@ impl SaraServer {
              Repositories holding the items: {}.\n\n\
              Find items by their content with sara_search_items. \
              Read sara_describe_model for the fields and relations of each type. \
-             Read one item, its links and its body with sara_get_item.",
+             Read one item, its links and its body with sara_get_item. \
+             Follow its traceability chains with sara_trace_item.",
             type_list(),
             repositories.join(", ")
         )

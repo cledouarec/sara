@@ -34,6 +34,12 @@ pub const SEARCH_LIMIT: Limit = Limit {
     max: 100,
 };
 
+/// Items `sara_trace_item` returns per direction.
+pub const TRACE_LIMIT: Limit = Limit {
+    default: 100,
+    max: 500,
+};
+
 /// Returns `true`, the default of optional boolean switches.
 fn enabled() -> bool {
     true
@@ -83,6 +89,36 @@ pub fn type_list() -> String {
         .map(|item_type| format!("{} ({})", item_type.as_str(), item_type.prefix()))
         .collect::<Vec<_>>()
         .join(", ")
+}
+
+/// Directions `sara_trace_item` follows from the item.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum TraceDirection {
+    /// Toward the solution: the items the item refines, derives from or
+    /// satisfies, and so on.
+    Upstream,
+    /// Toward detailed designs: the items refining, deriving from or
+    /// satisfying the item, and so on.
+    Downstream,
+    /// Both directions.
+    #[default]
+    Both,
+}
+
+/// Parameters of `sara_trace_item`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct TraceItemParams {
+    /// Id of the item to trace from, such as `SYSREQ-001`.
+    pub id: String,
+    /// Directions to follow: `upstream`, `downstream` or `both`. Defaults to
+    /// `both`.
+    #[serde(default)]
+    pub direction: TraceDirection,
+    /// Most links to follow away from the item. Unlimited by default.
+    pub max_depth: Option<usize>,
+    /// Most items to return per direction, from 1 to 500. Defaults to 100.
+    pub limit: Option<usize>,
 }
 
 /// Resolves one item type name given by a client, by type id or ID prefix.

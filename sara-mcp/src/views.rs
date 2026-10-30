@@ -4,8 +4,8 @@
 //! as they are. A view only puts several of them together and adds what a
 //! tool computes on top: paging, counts by type, the validity of a check.
 
-use sara_core::graph::{KnowledgeGraph, RelationGroup, SearchHit, TraversalOptions};
-use sara_core::model::Item;
+use sara_core::graph::{KnowledgeGraph, Reach, RelationGroup, SearchHit, TraversalOptions};
+use sara_core::model::{Item, ItemSummary};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -71,4 +71,17 @@ impl SearchResults {
             hits,
         }
     }
+}
+
+/// Traceability chains of an item.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct TraceView {
+    /// The traced item.
+    pub origin: ItemSummary,
+    /// Items the traced item traces up to, toward the solution.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub upstream: Option<Reach>,
+    /// Items tracing down from the traced item, toward detailed designs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub downstream: Option<Reach>,
 }
