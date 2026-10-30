@@ -4,9 +4,40 @@
 //! as they are. A view only puts several of them together and adds what a
 //! tool computes on top: paging, counts by type, the validity of a check.
 
-use sara_core::graph::SearchHit;
+use sara_core::graph::{KnowledgeGraph, RelationGroup, SearchHit, TraversalOptions};
+use sara_core::model::Item;
 use schemars::JsonSchema;
 use serde::Serialize;
+
+/// Full view of one item.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ItemView {
+    /// The item, with the relations its file declares.
+    #[serde(flatten)]
+    pub item: Item,
+    /// Human-readable name of the item type.
+    pub type_name: &'static str,
+    /// Items directly linked to this one, in both directions, by relation;
+    /// a linked item missing from `relations` is linked from its own file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub links: Vec<RelationGroup>,
+    /// Markdown body of the item, after its frontmatter.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body: Option<String>,
+}
+
+impl ItemView {
+    /// Builds the view of `item`, with its direct links in `graph` and the
+    /// given body.
+    pub fn new(graph: &KnowledgeGraph, item: &Item, body: Option<String>) -> Self {
+        Self {
+            item: item.clone(),
+            type_name: item.item_type.display_name(),
+            links: graph.direct_relationships(&item.id, &TraversalOptions::new()),
+            body,
+        }
+    }
+}
 
 /// One page of search hits.
 #[derive(Debug, Serialize, JsonSchema)]

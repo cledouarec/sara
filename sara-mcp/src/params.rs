@@ -34,6 +34,21 @@ pub const SEARCH_LIMIT: Limit = Limit {
     max: 100,
 };
 
+/// Returns `true`, the default of optional boolean switches.
+fn enabled() -> bool {
+    true
+}
+
+/// Parameters of `sara_get_item`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct GetItemParams {
+    /// Id of the item, such as `SYSREQ-001`.
+    pub id: String,
+    /// Whether to include the Markdown body of the item. Defaults to true.
+    #[serde(default = "enabled")]
+    pub include_body: bool,
+}
+
 /// Parameters of `sara_search_items`.
 #[derive(Debug, Deserialize, JsonSchema)]
 pub struct SearchItemsParams {
