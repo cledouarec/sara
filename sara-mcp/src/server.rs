@@ -5,17 +5,19 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use rmcp::handler::server::router::tool::ToolRouter;
+use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
-use sara_core::graph::KnowledgeGraph;
+use sara_core::graph::{KnowledgeGraph, search};
 use sara_core::model::ItemType;
 use sara_core::schema;
-use sara_core::service::load_graph;
+use sara_core::service::{load_graph, read_body};
 use tokio::sync::RwLock;
 use tokio::task::spawn_blocking;
 
 use crate::ServerOptions;
-use crate::params::type_list;
+use crate::params::{SEARCH_LIMIT, SearchItemsParams, parse_item_types, type_list};
+use crate::views::SearchResults;
 
 /// Name the server announces to MCP clients.
 const SERVER_NAME: &str = "sara";
@@ -72,6 +74,35 @@ impl SaraServer {
         Ok(text)
     }
 
+    /// Searches items by the words of `query` in their id, name,
+    /// description, fields and Markdown body, best matches first; with an
+    /// empty query, lists items by id. Each word counts once, for the most
+    /// significant place it appears in, and items holding more of the words
+    /// rank first. Hits are compact and paged: read an item in full with
+    /// sara_get_item.
+    #[tool(
+        name = "sara_search_items",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn search_items(
+        &self,
+        Parameters(params): Parameters<SearchItemsParams>,
+    ) -> Result<Json<SearchResults>, String> {
+        let types = parse_item_types(&params.types)?;
+        let limit = SEARCH_LIMIT.resolve(params.limit);
+
+        self.read_graph(move |graph| {
+            let hits = search(graph, &params.query, &types, |item| read_body(item).ok());
+            Ok(Json(SearchResults::page(hits, params.offset, limit)))
+        })
+        .await
+    }
+
     /// Runs `query` on the graph freshly loaded from the repositories, while
     /// other requests may read the files too.
     async fn read_graph<T: Send + 'static>(
@@ -124,6 +155,7 @@ impl SaraServer {
              is an item, linked to other items by traceability relations.\n\n\
              Item types (id and ID prefix): {}.\n\
              Repositories holding the items: {}.\n\n\
+             Find items by their content with sara_search_items. \
              Read sara_describe_model for the fields and relations of each type.",
             type_list(),
             repositories.join(", ")
