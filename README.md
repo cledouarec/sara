@@ -54,6 +54,9 @@ SARA is a command-line tool that manages Architecture documents and Requirements
   - [Field Types](#field-types)
   - [Declaring Relations](#declaring-relations)
   - [Custom Document Templates](#custom-document-templates)
+- [AI Agents (MCP)](#ai-agents-mcp)
+  - [Configuring an Agent](#configuring-an-agent)
+  - [Tools](#tools)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -93,6 +96,7 @@ Your requirements are too important to be trapped in a proprietary system. And y
 - **Version Comparison** - Compare knowledge graphs between Git commits or branches
 - **Document Initialization** - Generate YAML frontmatter templates for new documents
 - **Custom Model Schema** - Define your own document types, fields and relations in YAML, without recompiling
+- **AI Agents (MCP)** - Serve the knowledge graph to AI coding agents through the Model Context Protocol
 
 ## Installation
 
@@ -156,6 +160,7 @@ sara --version
 | `sara diff <REF1> <REF2>` | Compare graphs between Git references |
 | `sara edit <ID>` | Edit existing document metadata by item ID |
 | `sara init <FILE>` | Initialize metadata in a Markdown file |
+| `sara mcp` | Serve the knowledge graph to AI agents over the Model Context Protocol |
 | `sara query <ID>` | Query items and traceability chains |
 | `sara report coverage` | Generate coverage report |
 | `sara report matrix` | Generate traceability matrix |
@@ -820,6 +825,57 @@ paths = ["./templates"]  # picks up ./templates/<type_id>.tera files
 ```
 
 The `frontmatter.tera` partial renders the YAML header from the declared fields and relations; every declared field value is also available as a variable in the body.
+
+## AI Agents (MCP)
+
+`sara mcp` serves the knowledge graph to AI coding agents such as Claude Code, Codex CLI, Gemini CLI or Cursor, and to any other [Model Context Protocol](https://modelcontextprotocol.io) client. Instead of reading and cross-referencing Markdown files, the agent asks SARA for the items, links and checks it needs, which keeps its context small and accurate.
+
+The server talks over standard input and output. Start it in the project directory, where it reads `sara.toml` like any other command: relative paths in `sara.toml` are resolved from the working directory, so `-c`/`--config` alone is not enough from elsewhere. If your client cannot set the server's working directory (often a `cwd` setting), pass absolute repository paths with `-r`/`--repository`.
+
+### Configuring an Agent
+
+Claude Code:
+
+```bash
+claude mcp add sara -- sara mcp
+```
+
+Codex CLI (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.sara]
+command = "sara"
+args = ["mcp"]
+```
+
+Gemini CLI (`.gemini/settings.json`), Cursor (`.cursor/mcp.json`) and most other clients:
+
+```json
+{
+  "mcpServers": {
+    "sara": { "command": "sara", "args": ["mcp"] }
+  }
+}
+```
+
+### Tools
+
+| Tool | Description |
+|------|-------------|
+| `sara_search_items` | Find items by the words of a query in their id, name, description, fields and body, best matches first; list items when the query is empty |
+| `sara_get_item` | Read one item: fields, file, direct links in both directions and Markdown body |
+| `sara_trace_item` | Follow traceability links upstream, downstream or both, each item reported once |
+| `sara_analyze_impact` | List the items a change may impact, through downstream links and dependencies |
+| `sara_validate` | Check the whole graph, like `sara check` |
+| `sara_describe_model` | Describe the item types, fields and relations of the active model |
+| `sara_create_item` | Create an item in a new Markdown file, or in an existing one without frontmatter |
+| `sara_update_item` | Change the name, description, fields or relations of an item, rewriting only those entries |
+
+Read tools never modify files. Write tools check every input before writing and only write Markdown files inside the configured repositories.
+
+The server reads the files again on every request, so it always sees the agent's own edits. The model schema is loaded once at startup: restart the server after changing `model_schema`.
+
+The MCP server is part of the default `sara` binary. To build the CLI without it, run `cargo install sara-cli --no-default-features`.
 
 ## Contributing
 
