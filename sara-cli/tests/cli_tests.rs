@@ -2037,3 +2037,96 @@ relations: []
             .failure();
     }
 }
+
+#[cfg(feature = "mcp")]
+mod mcp_command {
+    use std::io::{BufRead, BufReader, Write};
+    use std::process::{ChildStdin, ChildStdout, Stdio};
+
+    use serde_json::{Value, json};
+
+    use super::*;
+
+    /// Tools the server must offer.
+    const TOOLS: [&str; 8] = [
+        "sara_analyze_impact",
+        "sara_create_item",
+        "sara_describe_model",
+        "sara_get_item",
+        "sara_search_items",
+        "sara_trace_item",
+        "sara_update_item",
+        "sara_validate",
+    ];
+
+    /// Sends one JSON-RPC message on the server's standard input.
+    fn send(stdin: &mut ChildStdin, message: &Value) {
+        writeln!(stdin, "{message}").unwrap();
+        stdin.flush().unwrap();
+    }
+
+    /// Reads one line of the server's standard output, which must be a
+    /// JSON-RPC message.
+    fn receive(stdout: &mut BufReader<ChildStdout>) -> Value {
+        let mut line = String::new();
+        stdout.read_line(&mut line).unwrap();
+        serde_json::from_str(&line).unwrap_or_else(|e| panic!("not JSON ({e}): {line:?}"))
+    }
+
+    #[test]
+    fn test_mcp_serves_the_tools_over_stdio() {
+        let mut server = std::process::Command::new(env!("CARGO_BIN_EXE_sara"))
+            .arg("mcp")
+            .arg("-r")
+            .arg(fixtures_path().join("valid_graph"))
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null())
+            .spawn()
+            .unwrap();
+        let mut stdin = server.stdin.take().unwrap();
+        let mut stdout = BufReader::new(server.stdout.take().unwrap());
+
+        send(
+            &mut stdin,
+            &json!({
+                "jsonrpc": "2.0",
+                "id": 1,
+                "method": "initialize",
+                "params": {
+                    "protocolVersion": "2025-11-25",
+                    "capabilities": {},
+                    "clientInfo": { "name": "cli-test", "version": "0" },
+                },
+            }),
+        );
+        let initialized = receive(&mut stdout);
+        assert_eq!(initialized["result"]["serverInfo"]["name"], "sara");
+
+        send(
+            &mut stdin,
+            &json!({ "jsonrpc": "2.0", "method": "notifications/initialized" }),
+        );
+        send(
+            &mut stdin,
+            &json!({ "jsonrpc": "2.0", "id": 2, "method": "tools/list" }),
+        );
+        let listed = receive(&mut stdout);
+        let mut tools: Vec<&str> = listed["result"]["tools"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|tool| tool["name"].as_str().unwrap())
+            .collect();
+        tools.sort_unstable();
+        assert_eq!(tools, TOOLS);
+
+        drop(stdin);
+        assert!(server.wait().unwrap().success());
+        for line in stdout.lines() {
+            let line = line.unwrap();
+            serde_json::from_str::<Value>(&line)
+                .unwrap_or_else(|e| panic!("not JSON ({e}): {line:?}"));
+        }
+    }
+}

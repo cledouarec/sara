@@ -1987,6 +1987,7 @@ dependencies = [
  "inquire",
  "predicates",
  "sara-core",
+ "sara-mcp",
  "serde",
  "serde_json",
  "tempfile",
