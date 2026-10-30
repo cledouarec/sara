@@ -142,6 +142,15 @@ pub struct AnalyzeImpactParams {
     pub limit: Option<usize>,
 }
 
+/// Parameters of `sara_validate`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct ValidateParams {
+    /// Whether to report warnings as errors and fail on files or
+    /// repositories skipped during the scan. Defaults to the project's
+    /// configuration.
+    pub strict: Option<bool>,
+}
+
 /// Resolves one item type name given by a client, by type id or ID prefix.
 ///
 /// # Errors

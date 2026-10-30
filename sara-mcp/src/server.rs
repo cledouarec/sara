@@ -10,17 +10,19 @@ use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use sara_core::graph::{KnowledgeGraph, LookupResult, TraversalDirection, impact, reach, search};
 use sara_core::model::{Item, ItemSummary, ItemType};
+use sara_core::repository::{ScanResult, parse_repositories};
 use sara_core::schema;
-use sara_core::service::{load_graph, read_body};
+use sara_core::service::{check_items, load_graph, read_body};
 use tokio::sync::RwLock;
 use tokio::task::spawn_blocking;
 
 use crate::ServerOptions;
 use crate::params::{
     AnalyzeImpactParams, GetItemParams, IMPACT_LIMIT, MAX_IMPACT_ORIGINS, SEARCH_LIMIT,
-    SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams, parse_item_types, type_list,
+    SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams, ValidateParams,
+    parse_item_types, type_list,
 };
-use crate::views::{ImpactView, ItemView, SearchResults, TraceView};
+use crate::views::{ImpactView, ItemView, SearchResults, TraceView, ValidationView};
 
 /// Name the server announces to MCP clients.
 const SERVER_NAME: &str = "sara";
@@ -228,6 +230,34 @@ impl SaraServer {
         .await
     }
 
+    /// Checks the whole graph: broken references, duplicate ids, cycles,
+    /// invalid relationships, missing or invalid fields, orphan items and
+    /// malformed ids, plus the files and repositories the scan skipped.
+    /// Each issue names the items or files involved. Call it after creating
+    /// or editing items.
+    #[tool(
+        name = "sara_validate",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn validate(
+        &self,
+        Parameters(params): Parameters<ValidateParams>,
+    ) -> Result<Json<ValidationView>, String> {
+        let strict = params.strict.unwrap_or(self.options.strict);
+
+        self.read_repositories(move |repositories| {
+            let ScanResult { items, warnings } = parse_repositories(repositories);
+            let outcome = check_items(items, strict).map_err(|e| e.to_string())?;
+            Ok(Json(ValidationView::new(outcome.report, warnings, strict)))
+        })
+        .await
+    }
+
     /// Runs `query` on the graph freshly loaded from the repositories, while
     /// other requests may read the files too.
     async fn read_graph<T: Send + 'static>(
@@ -236,6 +266,16 @@ impl SaraServer {
     ) -> Result<T, String> {
         let _guard = self.lock.read().await;
         self.with_graph(query).await
+    }
+
+    /// Runs `task` on the configured repositories while other requests may
+    /// read the files too.
+    async fn read_repositories<T: Send + 'static>(
+        &self,
+        task: impl FnOnce(&[PathBuf]) -> Result<T, String> + Send + 'static,
+    ) -> Result<T, String> {
+        let _guard = self.lock.read().await;
+        self.on_repositories(task).await
     }
 
     /// Loads the graph from the repositories and runs `task` on it; the
@@ -284,7 +324,8 @@ impl SaraServer {
              Read sara_describe_model for the fields and relations of each type. \
              Read one item, its links and its body with sara_get_item. \
              Follow its traceability chains with sara_trace_item. \
-             Before changing an item, list what it impacts with sara_analyze_impact.",
+             Before changing an item, list what it impacts with sara_analyze_impact. \
+             Check the whole graph with sara_validate.",
             type_list(),
             repositories.join(", ")
         )
