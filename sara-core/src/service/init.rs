@@ -11,8 +11,10 @@ use indexmap::IndexMap;
 
 use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldValue, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation};
-use crate::parser::{extract_name_from_content, has_frontmatter};
+use crate::model::{
+    FieldValue, Item, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
+};
+use crate::parser::{InputFormat, extract_name_from_content, has_frontmatter, parse_metadata};
 use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
 /// Options for initializing a new item or adding frontmatter to an existing file.
@@ -259,13 +261,15 @@ impl InitService {
 
         let item_type = opts.item_type();
 
-        // Resolve ID and name
+        // Resolve ID and name; the scanner reads only valid identifiers.
         let id = self.resolve_id(graph, opts);
-        self.ensure_id_is_free(graph, &id, &opts.file)?;
+        let item_id =
+            ItemId::new(id.as_str()).map_err(|e| InitError::InvalidOption(e.to_string()))?;
+        self.ensure_id_is_free(graph, &item_id, &opts.file)?;
         let name = self.resolve_name(opts, &id)?;
 
         // Build an Item from init options
-        let item = self.build_item(opts, &id, &name);
+        let item = self.build_item(opts, item_id, &name)?;
 
         // Write the file
         let (updated_existing, replaced_frontmatter) = self.write_file(opts, &item)?;
@@ -310,10 +314,10 @@ impl InitService {
     fn ensure_id_is_free(
         &self,
         graph: Option<&KnowledgeGraph>,
-        id: &str,
+        id: &ItemId,
         file: &Path,
     ) -> Result<(), InitError> {
-        let Some(existing) = graph.and_then(|g| g.get(&ItemId::new_unchecked(id))) else {
+        let Some(existing) = graph.and_then(|g| g.get(id)) else {
             return Ok(());
         };
 
@@ -323,7 +327,7 @@ impl InitService {
         }
 
         Err(InitError::DuplicateId {
-            id: id.to_string(),
+            id: id.as_str().to_string(),
             file: existing_file,
         })
     }
@@ -352,7 +356,10 @@ impl InitService {
     }
 
     /// Builds an `Item` from init options for document generation.
-    fn build_item(&self, opts: &InitOptions, id: &str, name: &str) -> crate::model::Item {
+    ///
+    /// Fails when the options leave a required value missing, such as an
+    /// empty list for a required list field.
+    fn build_item(&self, opts: &InitOptions, id: ItemId, name: &str) -> Result<Item, InitError> {
         let source = SourceLocation {
             repository: PathBuf::new(),
             file_path: opts.file.clone(),
@@ -360,7 +367,7 @@ impl InitService {
         };
 
         let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
+            .id(id)
             .item_type(opts.item_type())
             .name(name)
             .source(source);
@@ -396,17 +403,15 @@ impl InitService {
             builder = builder.relationships(relationships);
         }
 
-        builder.build().expect("Failed to build item for init")
+        builder
+            .build()
+            .map_err(|e| InitError::InvalidOption(e.to_string()))
     }
 
     /// Writes the file, either updating existing or creating new.
     ///
     /// Returns (updated_existing, replaced_frontmatter).
-    fn write_file(
-        &self,
-        opts: &InitOptions,
-        item: &crate::model::Item,
-    ) -> Result<(bool, bool), InitError> {
+    fn write_file(&self, opts: &InitOptions, item: &Item) -> Result<(bool, bool), InitError> {
         if opts.file.exists() {
             let replaced = self.update_existing_file(opts, item)?;
             Ok((true, replaced))
@@ -419,11 +424,7 @@ impl InitService {
     /// Updates an existing file by adding or replacing frontmatter.
     ///
     /// Returns true if frontmatter was replaced, false if it was added.
-    fn update_existing_file(
-        &self,
-        opts: &InitOptions,
-        item: &crate::model::Item,
-    ) -> Result<bool, InitError> {
+    fn update_existing_file(&self, opts: &InitOptions, item: &Item) -> Result<bool, InitError> {
         let content = fs::read_to_string(&opts.file)?;
         let frontmatter = generator::generate_metadata(item, OutputFormat::Markdown);
 
@@ -434,6 +435,7 @@ impl InitService {
             (format!("{}\n{}", frontmatter, content), false)
         };
 
+        ensure_readable(&new_content, &opts.file)?;
         fs::write(&opts.file, new_content)?;
         Ok(replaced)
     }
@@ -443,12 +445,9 @@ impl InitService {
     /// The file is created exclusively: if anything exists at its path by
     /// then, including a symbolic link leading nowhere, creation fails rather
     /// than writing through it.
-    fn create_new_file(
-        &self,
-        opts: &InitOptions,
-        item: &crate::model::Item,
-    ) -> Result<(), InitError> {
+    fn create_new_file(&self, opts: &InitOptions, item: &Item) -> Result<(), InitError> {
         let document = generator::generate_document(item, OutputFormat::Markdown);
+        ensure_readable(&document, &opts.file)?;
 
         if let Some(parent) = opts.file.parent() {
             fs::create_dir_all(parent)?;
@@ -461,6 +460,19 @@ impl InitService {
             .write_all(document.as_bytes())?;
         Ok(())
     }
+}
+
+/// Checks that sara can read back the item in `content`, about to be
+/// written to `file`.
+///
+/// Values are rendered into the frontmatter as given; some field types,
+/// such as dates, are written unquoted, so a value can break the YAML.
+fn ensure_readable(content: &str, file: &Path) -> Result<(), InitError> {
+    parse_metadata(content, file, Path::new(""), InputFormat::Markdown)
+        .map(|_| ())
+        .map_err(|e| {
+            InitError::InvalidOption(format!("the generated document would not be readable: {e}"))
+        })
 }
 
 /// Removes YAML frontmatter delimited by `---` from `content`.
@@ -848,6 +860,42 @@ mod tests {
         let result = service.init(None, &opts).unwrap();
 
         assert!(!result.needs_specification);
+    }
+
+    #[test]
+    fn test_init_rejects_an_id_the_scanner_cannot_read() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("SOL-9.md");
+        let opts = InitOptions::new(file.clone(), TypeConfig::new(builtin::SOLUTION))
+            .with_id("SOL-\"9")
+            .with_name("Hub");
+
+        let result = InitService::new().init(None, &opts);
+
+        assert!(
+            matches!(result, Err(InitError::InvalidOption(_))),
+            "{result:?}"
+        );
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn test_init_reports_an_empty_required_list() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ADR-001.md");
+        let config = TypeConfig::new(builtin::ARCHITECTURE_DECISION_RECORD)
+            .field("deciders", FieldInput::List(Vec::new()));
+        let opts = InitOptions::new(file.clone(), config)
+            .with_id("ADR-001")
+            .with_name("Decision");
+
+        let result = InitService::new().init(None, &opts);
+
+        assert!(
+            matches!(result, Err(InitError::InvalidOption(_))),
+            "{result:?}"
+        );
+        assert!(!file.exists());
     }
 
     #[cfg(unix)]
