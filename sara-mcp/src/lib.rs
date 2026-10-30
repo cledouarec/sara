@@ -66,6 +66,21 @@ pub enum ServeError {
 /// Blocks the calling thread on a multi-threaded async runtime of its own,
 /// so callers need no runtime.
 ///
+/// # Examples
+///
+/// ```no_run
+/// use std::path::PathBuf;
+///
+/// use sara_mcp::{ServerOptions, serve_stdio};
+///
+/// fn main() -> Result<(), sara_mcp::ServeError> {
+///     serve_stdio(ServerOptions {
+///         repositories: vec![PathBuf::from("docs")],
+///         strict: false,
+///     })
+/// }
+/// ```
+///
 /// # Errors
 ///
 /// Returns [`ServeError::Runtime`] when the runtime cannot start,
