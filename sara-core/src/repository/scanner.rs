@@ -1,5 +1,6 @@
 //! File scanner for discovering Markdown files.
 
+use std::ffi::OsStr;
 use std::fmt;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,6 +10,23 @@ use rayon::prelude::*;
 use crate::error::SaraError;
 use crate::model::Item;
 use crate::parser::{InputFormat, has_frontmatter, parse_metadata};
+
+/// Extensions of the Markdown files read as items.
+const MARKDOWN_EXTENSIONS: [&str; 2] = ["md", "markdown"];
+
+/// Whether `path` has the extension of a Markdown file read as an item.
+#[must_use]
+pub fn is_markdown_file(path: &Path) -> bool {
+    path.extension()
+        .and_then(OsStr::to_str)
+        .is_some_and(|extension| MARKDOWN_EXTENSIONS.contains(&extension))
+}
+
+/// Whether a file or directory `name` is hidden: it starts with a dot.
+#[must_use]
+pub fn is_hidden(name: &OsStr) -> bool {
+    name.to_string_lossy().starts_with('.')
+}
 
 /// Scans a directory for Markdown files and returns their paths.
 pub fn scan_directory(path: &Path) -> Result<Vec<PathBuf>, SaraError> {
@@ -28,20 +46,12 @@ fn scan_directory_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), 
 
         if path.is_dir() {
             // Skip hidden directories
-            if path
-                .file_name()
-                .is_some_and(|n| n.to_string_lossy().starts_with('.'))
-            {
+            if path.file_name().is_some_and(is_hidden) {
                 continue;
             }
             scan_directory_recursive(&path, files)?;
-        } else if path.is_file() {
-            // Check for Markdown extension
-            if let Some(ext) = path.extension()
-                && (ext == "md" || ext == "markdown")
-            {
-                files.push(path);
-            }
+        } else if path.is_file() && is_markdown_file(&path) {
+            files.push(path);
         }
     }
 

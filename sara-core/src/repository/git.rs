@@ -4,6 +4,7 @@
 //! Markdown items at arbitrary Git references. Pure Rust — no libgit2 or
 //! OpenSSL dependency.
 
+use std::ffi::OsStr;
 use std::path::{Component, Path, PathBuf};
 
 use gix::bstr::ByteSlice;
@@ -13,6 +14,8 @@ use gix::{Commit, Repository, Tree};
 use crate::error::SaraError;
 use crate::model::Item;
 use crate::parser::InputFormat;
+
+use super::scanner::{is_hidden, is_markdown_file};
 
 /// Wraps a gix error into [`SaraError::Gix`].
 fn gix_err<E>(e: E) -> SaraError
@@ -265,16 +268,14 @@ impl GitReader {
                 .to_str()
                 .map_err(|_| SaraError::Git("Invalid file name".to_string()))?;
 
-            if name.starts_with('.') {
+            if is_hidden(OsStr::new(name)) {
                 continue;
             }
 
             let path = prefix.join(name);
 
             match entry.mode().kind() {
-                EntryKind::Blob | EntryKind::BlobExecutable
-                    if name.ends_with(".md") || name.ends_with(".markdown") =>
-                {
+                EntryKind::Blob | EntryKind::BlobExecutable if is_markdown_file(&path) => {
                     files.push(path);
                 }
                 EntryKind::Tree => {
