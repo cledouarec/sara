@@ -8,19 +8,22 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
-use sara_core::graph::{KnowledgeGraph, search};
-use sara_core::model::ItemType;
+use sara_core::graph::{KnowledgeGraph, LookupResult, search};
+use sara_core::model::{Item, ItemType};
 use sara_core::schema;
 use sara_core::service::{load_graph, read_body};
 use tokio::sync::RwLock;
 use tokio::task::spawn_blocking;
 
 use crate::ServerOptions;
-use crate::params::{SEARCH_LIMIT, SearchItemsParams, parse_item_types, type_list};
-use crate::views::SearchResults;
+use crate::params::{GetItemParams, SEARCH_LIMIT, SearchItemsParams, parse_item_types, type_list};
+use crate::views::{ItemView, SearchResults};
 
 /// Name the server announces to MCP clients.
 const SERVER_NAME: &str = "sara";
+
+/// Hint appended to the errors about an unknown item.
+const SEARCH_HINT: &str = "Use sara_search_items to find items by their content.";
 
 /// Protocol handler serving a Sara knowledge graph to MCP clients.
 ///
@@ -72,6 +75,36 @@ impl SaraServer {
             let _ = writeln!(text, "  {}: {count}", item_type.as_str());
         }
         Ok(text)
+    }
+
+    /// Returns one item: its type, name, description, source file, field
+    /// values, the relations its file declares (`relations`, in the form
+    /// sara_update_item takes), its direct links in both directions (`links`)
+    /// and, unless `include_body` is false, its Markdown body. A linked item
+    /// missing from `relations` is linked from its own file.
+    #[tool(
+        name = "sara_get_item",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn get_item(
+        &self,
+        Parameters(params): Parameters<GetItemParams>,
+    ) -> Result<Json<ItemView>, String> {
+        self.read_graph(move |graph| {
+            let item = find_item(graph, &params.id)?;
+            let body = if params.include_body {
+                Some(read_body(item).map_err(|e| e.to_string())?)
+            } else {
+                None
+            };
+            Ok(Json(ItemView::new(graph, item, body)))
+        })
+        .await
     }
 
     /// Searches items by the words of `query` in their id, name,
@@ -156,7 +189,8 @@ impl SaraServer {
              Item types (id and ID prefix): {}.\n\
              Repositories holding the items: {}.\n\n\
              Find items by their content with sara_search_items. \
-             Read sara_describe_model for the fields and relations of each type.",
+             Read sara_describe_model for the fields and relations of each type. \
+             Read one item, its links and its body with sara_get_item.",
             type_list(),
             repositories.join(", ")
         )
@@ -169,5 +203,22 @@ impl ServerHandler for SaraServer {
         ServerConfig::new(ServerCapabilities::builder().enable_tools().build())
             .with_server_info(Implementation::new(SERVER_NAME, env!("CARGO_PKG_VERSION")))
             .with_instructions(self.instructions())
+    }
+}
+
+/// Looks up an item by id, or explains how to find the right one.
+pub(crate) fn find_item<'a>(graph: &'a KnowledgeGraph, id: &str) -> Result<&'a Item, String> {
+    match graph.lookup(id) {
+        LookupResult::Found(item) => Ok(item),
+        LookupResult::NotFound { suggestions } if suggestions.is_empty() => {
+            Err(format!("No item has the id '{id}'. {SEARCH_HINT}"))
+        }
+        LookupResult::NotFound { suggestions } => {
+            let suggestions: Vec<&str> = suggestions.iter().map(|id| id.as_str()).collect();
+            Err(format!(
+                "No item has the id '{id}'; did you mean {}? {SEARCH_HINT}",
+                suggestions.join(", ")
+            ))
+        }
     }
 }
