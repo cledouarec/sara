@@ -10,11 +10,12 @@ use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
 use sara_core::graph::{KnowledgeGraph, LookupResult, TraversalDirection, impact, reach, search};
-use sara_core::model::{Item, ItemSummary, ItemType};
+use sara_core::model::{Item, ItemSummary, ItemType, RelationshipType, TraceabilityLinks};
 use sara_core::repository::{ScanResult, parse_repositories};
 use sara_core::schema;
 use sara_core::service::{
-    InitError, InitOptions, InitResult, InitService, TypeConfig, check_items, load_graph, read_body,
+    EditOptions, EditResult, EditService, InitError, InitOptions, InitResult, InitService,
+    TypeConfig, check_items, load_graph, read_body,
 };
 use tokio::sync::RwLock;
 use tokio::task::spawn_blocking;
@@ -23,8 +24,8 @@ use crate::ServerOptions;
 use crate::inputs::{field_inputs, relation_inputs};
 use crate::params::{
     AnalyzeImpactParams, CreateItemParams, GetItemParams, IMPACT_LIMIT, MAX_IMPACT_ORIGINS,
-    SEARCH_LIMIT, SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams, ValidateParams,
-    parse_item_types, parse_one_item_type, type_list,
+    SEARCH_LIMIT, SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams,
+    UpdateItemParams, ValidateParams, parse_item_types, parse_one_item_type, type_list,
 };
 use crate::paths::resolve_item_file;
 use crate::views::{ImpactView, ItemView, SearchResults, TraceView, ValidationView};
@@ -327,6 +328,60 @@ impl SaraServer {
         .await
     }
 
+    /// Changes an item's frontmatter: name, description, field values and
+    /// relation targets. Only the given entries are rewritten; everything
+    /// else in the file stays as is, including links written there from the
+    /// downstream side, keys unknown to the model, comments and the Markdown
+    /// body. A relation list replaces the targets written in this item's
+    /// file and an empty list removes the relation. Links written in the
+    /// linked item's file are not changed and are listed in kept_links. Call
+    /// sara_validate afterwards.
+    #[tool(
+        name = "sara_update_item",
+        annotations(
+            read_only_hint = false,
+            destructive_hint = true,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn update_item(
+        &self,
+        Parameters(params): Parameters<UpdateItemParams>,
+    ) -> Result<Json<EditResult>, String> {
+        self.write_graph(move |graph| {
+            let item = find_item(graph, &params.id)?;
+            let fields = field_inputs(item.item_type, params.fields)?;
+            let allowed: Vec<RelationshipType> = TraceabilityLinks::from_item(item)
+                .iter()
+                .map(|(relation, _)| relation)
+                .collect();
+            let relations = relation_inputs(graph, item.item_type, params.relations, &allowed)?;
+
+            let mut options = EditOptions::new(item.id.as_str())
+                .maybe_name(params.name)
+                .maybe_description(params.description);
+            for (name, input) in fields {
+                options = options.with_field(name, input);
+            }
+            for (relation, targets) in relations {
+                options = options.with_relation(relation, targets);
+            }
+            if !options.has_updates() {
+                return Err(
+                    "Nothing to change: give a name, a description, fields or relations."
+                        .to_string(),
+                );
+            }
+
+            EditService::new()
+                .edit(graph, options)
+                .map(Json)
+                .map_err(|e| e.to_string())
+        })
+        .await
+    }
+
     /// Runs `query` on the graph freshly loaded from the repositories, while
     /// other requests may read the files too.
     async fn read_graph<T: Send + 'static>(
@@ -405,7 +460,8 @@ impl SaraServer {
              Follow its traceability chains with sara_trace_item. \
              Before changing an item, list what it impacts with sara_analyze_impact. \
              Check the whole graph with sara_validate. \
-             Create an item with sara_create_item, then write its body with your file tools.",
+             Create an item with sara_create_item, then write its body with your file tools. \
+             Change an item's frontmatter with sara_update_item.",
             type_list(),
             repositories.join(", ")
         )
