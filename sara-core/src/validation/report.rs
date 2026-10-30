@@ -2,19 +2,51 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use super::rule::Severity;
 use crate::error::SaraError;
 use crate::model::ItemType;
 
-/// A validation issue with its severity.
-#[derive(Debug, Serialize)]
+/// A problem found while validating the graph, with its severity.
+///
+/// It serializes as its severity, the kind of its error and the error
+/// message.
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "schemars",
+    derive(schemars::JsonSchema),
+    schemars(with = "IssueJson")
+)]
 pub struct ValidationIssue {
     /// Severity of the issue.
     pub severity: Severity,
     /// The underlying validation error.
     pub error: SaraError,
+}
+
+impl Serialize for ValidationIssue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        IssueJson {
+            severity: self.severity,
+            kind: self.error.kind(),
+            message: self.error.to_string(),
+        }
+        .serialize(serializer)
+    }
+}
+
+/// JSON form of a validation issue.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+struct IssueJson {
+    /// Severity of the problem.
+    severity: Severity,
+    /// Kind of problem, such as `BrokenReference`, `DuplicateIdentifier`,
+    /// `CircularReference` or `OrphanItem`.
+    kind: &'static str,
+    /// Description of the problem, naming the items or files involved.
+    message: String,
 }
 
 impl ValidationIssue {
@@ -179,6 +211,27 @@ impl ValidationReportBuilder {
 mod tests {
     use super::*;
     use crate::model::ItemId;
+
+    #[test]
+    fn test_issue_serializes_severity_kind_and_message() {
+        let issue = ValidationIssue::error(SaraError::BrokenReference {
+            from: ItemId::new_unchecked("UC-001"),
+            to: ItemId::new_unchecked("SOL-999"),
+        });
+
+        let value = serde_yaml::to_value(&issue).unwrap();
+
+        let keys: Vec<&str> = value
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str().unwrap())
+            .collect();
+        assert_eq!(keys, ["severity", "kind", "message"]);
+        assert_eq!(value["severity"], "error");
+        assert_eq!(value["kind"], "BrokenReference");
+        assert_eq!(value["message"], issue.error.to_string().as_str());
+    }
 
     #[test]
     fn test_empty_report_is_valid() {

@@ -6,9 +6,10 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use rayon::prelude::*;
+use serde::Serialize;
 
 use crate::error::SaraError;
-use crate::model::Item;
+use crate::model::{Item, serialize_path};
 use crate::parser::{InputFormat, has_frontmatter, parse_metadata};
 
 /// Extensions of the Markdown files read as items.
@@ -62,9 +63,11 @@ fn scan_directory_recursive(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), 
 ///
 /// Unreadable or unparseable files do not abort a scan; each one is recorded
 /// so callers can report the problem instead of silently dropping items.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct ScanWarning {
     /// The file or repository path that was skipped.
+    #[serde(serialize_with = "serialize_path")]
     pub path: PathBuf,
     /// Why the path was skipped.
     pub reason: String,
@@ -266,5 +269,20 @@ mod tests {
         assert!(scan.items.is_empty());
         assert_eq!(scan.warnings.len(), 1);
         assert_eq!(scan.warnings[0].path, missing);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_scan_warning_serializes_a_non_utf8_path() {
+        use std::os::unix::ffi::OsStrExt;
+
+        let warning = ScanWarning {
+            path: PathBuf::from(OsStr::from_bytes(b"docs/bad-\xff.md")),
+            reason: "unreadable".to_string(),
+        };
+
+        let yaml = serde_yaml::to_string(&warning).unwrap();
+
+        assert!(yaml.contains("docs/bad-\u{fffd}.md"), "{yaml}");
     }
 }

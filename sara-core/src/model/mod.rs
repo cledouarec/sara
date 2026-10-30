@@ -15,4 +15,5 @@ pub use item::{
     TraceabilityConfig,
 };
 pub use metadata::SourceLocation;
+pub(crate) use metadata::serialize_path;
 pub use relationship::{Relationship, RelationshipRules, RelationshipType};
