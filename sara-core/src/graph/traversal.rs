@@ -187,49 +187,56 @@ impl<'a> Walk<'a> {
         }
 
         self.on_path.insert(node_idx);
-        for (target_idx, rel_type) in self.neighbors(node_idx) {
+        for (target_idx, rel_type) in neighbors(inner, node_idx, self.direction) {
             if !self.on_path.contains(&target_idx) {
                 self.visit(target_idx, next_depth, Some(rel_type), next_display_parent);
             }
         }
         self.on_path.remove(&node_idx);
     }
+}
 
-    /// Returns the neighbors reached from a node in the walk direction, with
-    /// the relationship seen from that node.
-    fn neighbors(&self, node_idx: NodeIndex) -> Vec<(NodeIndex, RelationshipType)> {
-        match self.direction {
-            TraversalDirection::Upstream => {
-                // Follow outgoing edges with upstream relationship types
-                self.inner
-                    .edges_directed(node_idx, Direction::Outgoing)
-                    .filter(|e| e.weight().is_upstream())
-                    .map(|e| (e.target(), *e.weight()))
-                    .collect()
+/// Returns the neighbors reached from a node in the given direction, with
+/// the relationship seen from that node.
+///
+/// A link declared from both sides, or from the side that also gets a
+/// materialized inverse edge, reaches the same neighbor through several
+/// edges; each neighbor is returned once, with its first relationship.
+fn neighbors(
+    inner: &DiGraph<Item, RelationshipType>,
+    node_idx: NodeIndex,
+    direction: TraversalDirection,
+) -> Vec<(NodeIndex, RelationshipType)> {
+    let mut edges = Vec::new();
+    match direction {
+        TraversalDirection::Upstream => {
+            // Follow outgoing edges with upstream relationship types
+            for edge in inner.edges_directed(node_idx, Direction::Outgoing) {
+                if edge.weight().is_upstream() {
+                    edges.push((edge.target(), *edge.weight()));
+                }
             }
-            TraversalDirection::Downstream => {
-                // Follow incoming edges (items that point to us via upstream relationships)
-                // OR outgoing edges with downstream relationship types
-                let mut edges = Vec::new();
-
-                // Items that refine/derive from/satisfy this item
-                for edge in self.inner.edges_directed(node_idx, Direction::Incoming) {
-                    if edge.weight().is_upstream() {
-                        edges.push((edge.source(), edge.weight().inverse()));
-                    }
+        }
+        TraversalDirection::Downstream => {
+            // Items that refine/derive from/satisfy this item
+            for edge in inner.edges_directed(node_idx, Direction::Incoming) {
+                if edge.weight().is_upstream() {
+                    edges.push((edge.source(), edge.weight().inverse()));
                 }
+            }
 
-                // Or explicit downstream references from this item
-                for edge in self.inner.edges_directed(node_idx, Direction::Outgoing) {
-                    if edge.weight().is_downstream() {
-                        edges.push((edge.target(), *edge.weight()));
-                    }
+            // Or explicit downstream references from this item
+            for edge in inner.edges_directed(node_idx, Direction::Outgoing) {
+                if edge.weight().is_downstream() {
+                    edges.push((edge.target(), *edge.weight()));
                 }
-
-                edges
             }
         }
     }
+
+    let mut seen = HashSet::new();
+    edges.retain(|(target_idx, _)| seen.insert(*target_idx));
+    edges
 }
 
 #[cfg(test)]
@@ -239,7 +246,9 @@ mod tests {
     use crate::graph::KnowledgeGraphBuilder;
     use crate::model::Relationship;
     use crate::schema::builtin;
-    use crate::test_utils::{create_test_item, create_test_item_with_relationships};
+    use crate::test_utils::{
+        create_test_adr, create_test_item, create_test_item_with_relationships,
+    };
 
     #[test]
     fn test_upstream_traversal() {
@@ -485,5 +494,121 @@ mod tests {
         // Only Solution items should be included
         assert_eq!(result.items.len(), 1);
         assert_eq!(result.items[0].item_id, ItemId::new_unchecked("SOL-001"));
+    }
+
+    /// Returns the ids of the reported items, in report order.
+    fn reported_ids(result: &TraversalResult) -> Vec<&str> {
+        result
+            .items
+            .iter()
+            .map(|node| node.item_id.as_str())
+            .collect()
+    }
+
+    /// Builds the graph where SOL-001 and UC-001 both declare their link.
+    fn link_declared_on_both_sides() -> KnowledgeGraph {
+        let sol = create_test_item_with_relationships(
+            "SOL-001",
+            builtin::SOLUTION,
+            vec![Relationship::new(
+                ItemId::new_unchecked("UC-001"),
+                builtin::IS_REFINED_BY,
+            )],
+        );
+        let uc = create_test_item_with_relationships(
+            "UC-001",
+            builtin::USE_CASE,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SOL-001"),
+                builtin::REFINES,
+            )],
+        );
+
+        KnowledgeGraphBuilder::new()
+            .add_item(sol)
+            .add_item(uc)
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_child_declared_downstream_is_reported_once() {
+        // The parent declares the link, so the builder also adds the
+        // inverse `refines` edge: the child is reachable through two edges.
+        let sol = create_test_item_with_relationships(
+            "SOL-001",
+            builtin::SOLUTION,
+            vec![Relationship::new(
+                ItemId::new_unchecked("UC-001"),
+                builtin::IS_REFINED_BY,
+            )],
+        );
+        let uc = create_test_item("UC-001", builtin::USE_CASE);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(sol)
+            .add_item(uc)
+            .build()
+            .unwrap();
+
+        let result = traverse_downstream(
+            &graph,
+            &ItemId::new_unchecked("SOL-001"),
+            &TraversalOptions::new(),
+        )
+        .unwrap();
+
+        assert_eq!(reported_ids(&result), ["SOL-001", "UC-001"]);
+    }
+
+    #[test]
+    fn test_justifying_adr_is_reported_once_downstream() {
+        // An ADR is a detached type: its upstream `justifies` link also gets
+        // an inverse edge, so the ADR is reachable through two edges.
+        let arch = create_test_item("SYSARCH-001", builtin::SYSTEM_ARCHITECTURE);
+        let adr = create_test_adr("ADR-001", &["SYSARCH-001"], &[]);
+
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(arch)
+            .add_item(adr)
+            .build()
+            .unwrap();
+
+        let result = traverse_downstream(
+            &graph,
+            &ItemId::new_unchecked("SYSARCH-001"),
+            &TraversalOptions::new(),
+        )
+        .unwrap();
+
+        assert_eq!(reported_ids(&result), ["SYSARCH-001", "ADR-001"]);
+    }
+
+    #[test]
+    fn test_link_declared_on_both_sides_is_reported_once_upstream() {
+        let graph = link_declared_on_both_sides();
+
+        let result = traverse_upstream(
+            &graph,
+            &ItemId::new_unchecked("UC-001"),
+            &TraversalOptions::new(),
+        )
+        .unwrap();
+
+        assert_eq!(reported_ids(&result), ["UC-001", "SOL-001"]);
+    }
+
+    #[test]
+    fn test_link_declared_on_both_sides_is_reported_once_downstream() {
+        let graph = link_declared_on_both_sides();
+
+        let result = traverse_downstream(
+            &graph,
+            &ItemId::new_unchecked("SOL-001"),
+            &TraversalOptions::new(),
+        )
+        .unwrap();
+
+        assert_eq!(reported_ids(&result), ["SOL-001", "UC-001"]);
     }
 }
