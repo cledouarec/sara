@@ -4,8 +4,12 @@
 //! as they are. A view only puts several of them together and adds what a
 //! tool computes on top: paging, counts by type, the validity of a check.
 
-use sara_core::graph::{KnowledgeGraph, Reach, RelationGroup, SearchHit, TraversalOptions};
-use sara_core::model::{Item, ItemSummary};
+use std::collections::BTreeMap;
+
+use sara_core::graph::{
+    KnowledgeGraph, Reach, ReachedItem, RelationGroup, SearchHit, TraversalOptions,
+};
+use sara_core::model::{Item, ItemId, ItemSummary, RelationshipType};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -84,4 +88,85 @@ pub struct TraceView {
     /// Items tracing down from the traced item, toward detailed designs.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub downstream: Option<Reach>,
+}
+
+/// Items a change may impact.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ImpactView {
+    /// The items about to change.
+    pub origins: Vec<ItemSummary>,
+    /// Number of impacted items, including those beyond the limit.
+    pub total: usize,
+    /// Number of impacted items by item type id, over all of them.
+    pub by_type: BTreeMap<String, usize>,
+    /// Whether the depth limit or the item limit left items out.
+    pub truncated: bool,
+    /// Impacted items, nearest first.
+    pub items: Vec<ImpactedItem>,
+}
+
+impl ImpactView {
+    /// Summarizes `reach`, the items depending on `origins`, keeping the
+    /// first `limit` of them.
+    pub fn new(
+        graph: &KnowledgeGraph,
+        origins: Vec<ItemSummary>,
+        mut reach: Reach,
+        limit: usize,
+    ) -> Self {
+        let total = reach.items.len();
+        let mut by_type = BTreeMap::new();
+        for reached in &reach.items {
+            *by_type
+                .entry(reached.item.item_type.as_str().to_string())
+                .or_insert(0) += 1;
+        }
+
+        // Items come nearest first, so truncation keeps every item nearer
+        // than a kept one, and links come from the nearest items, so the
+        // first one leading to an item comes from the item that reached it.
+        reach.truncate(limit);
+        let Reach {
+            items,
+            links,
+            truncated,
+        } = reach;
+        let items = items
+            .into_iter()
+            .filter_map(|reached| {
+                let item = graph.get(&reached.item.id)?;
+                let link = links.iter().find(|link| link.to == reached.item.id)?;
+                Some(ImpactedItem {
+                    file: item.source.full_path().display().to_string(),
+                    from: link.from.clone(),
+                    relation: link.relationship,
+                    reached,
+                })
+            })
+            .collect();
+
+        Self {
+            origins,
+            total,
+            by_type,
+            truncated,
+            items,
+        }
+    }
+}
+
+/// An item a change may impact, and how the change reaches it.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ImpactedItem {
+    /// The impacted item and its distance from the changed items.
+    #[serde(flatten)]
+    pub reached: ReachedItem,
+    /// Path of the Markdown file holding the item.
+    pub file: String,
+    /// Item through which the change reaches this one.
+    #[schemars(with = "String")]
+    pub from: ItemId,
+    /// Relation linking `from` to this item, read from `from`.
+    #[schemars(with = "String")]
+    pub relation: RelationshipType,
 }
