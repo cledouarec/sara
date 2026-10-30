@@ -65,7 +65,7 @@ pub fn neighborhood_to_mermaid(
     let related = graph.direct_relationships(origin, options);
     let members = related
         .iter()
-        .flat_map(|(_, items)| items)
+        .flat_map(|group| &group.items)
         .map(|item| &item.id)
         .chain([origin]);
     render(graph, origin, members)

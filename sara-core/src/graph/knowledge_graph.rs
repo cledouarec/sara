@@ -8,8 +8,8 @@ use petgraph::visit::EdgeRef;
 use strsim::levenshtein;
 
 use crate::error::SaraError;
-use crate::graph::TraversalOptions;
-use crate::model::{Item, ItemId, ItemType, RelationshipType};
+use crate::graph::{RelationGroup, TraversalOptions};
+use crate::model::{Item, ItemId, ItemSummary, ItemType, RelationshipType};
 
 /// Result of looking up an item.
 #[derive(Debug)]
@@ -157,7 +157,7 @@ impl KnowledgeGraph {
         &self,
         id: &ItemId,
         options: &TraversalOptions,
-    ) -> Vec<(RelationshipType, Vec<&Item>)> {
+    ) -> Vec<RelationGroup> {
         let Some(idx) = self.index.get(id) else {
             return Vec::new();
         };
@@ -184,15 +184,20 @@ impl KnowledgeGraph {
 
         RelationshipType::all()
             .into_iter()
-            .filter_map(|rel_type| {
+            .filter_map(|relation| {
                 let mut items: Vec<&Item> = related
                     .iter()
-                    .filter(|(rel, _)| *rel == rel_type)
+                    .filter(|(rel, _)| *rel == relation)
                     .map(|(_, item)| *item)
                     .collect();
                 items.sort_by_key(|item| item.id.as_str());
                 items.dedup_by(|a, b| a.id == b.id);
-                (!items.is_empty()).then_some((rel_type, items))
+                (!items.is_empty()).then(|| RelationGroup {
+                    relation,
+                    label: relation.display_name(),
+                    direction: relation.direction(),
+                    items: items.into_iter().map(ItemSummary::from).collect(),
+                })
             })
             .collect()
     }
@@ -538,13 +543,13 @@ mod tests {
     }
 
     /// Reduces relation groups to (relation id, item ids) pairs for assertions.
-    fn group_ids<'a>(groups: &'a [(RelationshipType, Vec<&Item>)]) -> Vec<(&'a str, Vec<&'a str>)> {
+    fn group_ids(groups: &[RelationGroup]) -> Vec<(&str, Vec<&str>)> {
         groups
             .iter()
-            .map(|(rel_type, items)| {
+            .map(|group| {
                 (
-                    rel_type.as_str(),
-                    items.iter().map(|item| item.id.as_str()).collect(),
+                    group.relation.as_str(),
+                    group.items.iter().map(|item| item.id.as_str()).collect(),
                 )
             })
             .collect()
