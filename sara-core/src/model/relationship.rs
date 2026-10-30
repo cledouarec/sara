@@ -1,6 +1,6 @@
 //! Relationship types and structures for the knowledge graph.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::item::{ItemId, ItemType};
 use crate::schema::{self, RelationDef, RelationDirection};
@@ -127,18 +127,10 @@ impl Serialize for RelationshipType {
     }
 }
 
-impl<'de> Deserialize<'de> for RelationshipType {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let id = String::deserialize(deserializer)?;
-        Self::from_id(&id)
-            .ok_or_else(|| serde::de::Error::custom(format!("unknown relation `{id}`")))
-    }
-}
-
 /// Represents a relationship from an Item to another item.
 ///
 /// The source item is implied by the `Item` containing this relationship.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relationship {
     /// Target item ID.
     pub to: ItemId,

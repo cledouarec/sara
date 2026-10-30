@@ -23,7 +23,7 @@ strsim.workspace = true
 uuid.workspace = true
 chrono.workspace = true
 tera.workspace = true
-schemars = { workspace = true, optional = true }
+schemars = { workspace = true, optional = true, features = ["indexmap2"] }
 
 [features]
 # JSON Schemas of the types that tool interfaces, such as the MCP server,

@@ -3,7 +3,12 @@
 //! Defines the typed [`FieldValue`] enum used to store the runtime value of
 //! schema-declared fields in an item's attribute map.
 
-use serde::{Deserialize, Serialize};
+#[cfg(feature = "schemars")]
+use std::borrow::Cow;
+
+#[cfg(feature = "schemars")]
+use schemars::{JsonSchema, Schema, SchemaGenerator, json_schema};
+use serde::{Serialize, Serializer};
 
 use super::item::ItemId;
 
@@ -18,7 +23,10 @@ use super::item::ItemId;
 /// - [`FieldValue::ItemRef`]: a single reference to another item's id.
 /// - [`FieldValue::List`]: an ordered list of values (deciders, depends_on).
 /// - [`FieldValue::Date`]: an ISO-8601 date held as a string.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///
+/// It serializes as clients read it: a list as an array of its entries'
+/// text, any other value as its text.
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FieldValue {
     /// Free-form text.
     Text(String),
@@ -111,8 +119,40 @@ impl std::fmt::Display for FieldValue {
     }
 }
 
+impl Serialize for FieldValue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        match self {
+            Self::List(values) => serializer.collect_seq(values.iter().map(ToString::to_string)),
+            scalar => serializer.collect_str(scalar),
+        }
+    }
+}
+
+#[cfg(feature = "schemars")]
+impl JsonSchema for FieldValue {
+    fn inline_schema() -> bool {
+        true
+    }
+
+    fn schema_name() -> Cow<'static, str> {
+        Cow::Borrowed("FieldValue")
+    }
+
+    fn json_schema(_generator: &mut SchemaGenerator) -> Schema {
+        json_schema!({
+            "description": "A string, or a list of strings for a list field.",
+            "anyOf": [
+                { "type": "string" },
+                { "type": "array", "items": { "type": "string" } }
+            ]
+        })
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use serde_yaml::Value;
+
     use super::*;
 
     #[test]
@@ -126,5 +166,38 @@ mod tests {
             Some(&"proposed".to_string())
         );
         assert!(FieldValue::Text("spec".to_string()).as_enum().is_none());
+    }
+
+    #[test]
+    fn test_field_value_serializes_scalars_as_strings() {
+        let scalars = [
+            FieldValue::text("spec"),
+            FieldValue::Enum("proposed".to_string()),
+            FieldValue::ItemRef(ItemId::new_unchecked("SYSREQ-001")),
+            FieldValue::Date("2026-10-30".to_string()),
+        ];
+
+        let values: Vec<Value> = scalars
+            .iter()
+            .map(|scalar| serde_yaml::to_value(scalar).unwrap())
+            .collect();
+
+        assert_eq!(
+            values,
+            ["spec", "proposed", "SYSREQ-001", "2026-10-30"].map(Value::from)
+        );
+    }
+
+    #[test]
+    fn test_field_value_serializes_lists_as_strings() {
+        let list = FieldValue::List(vec![
+            FieldValue::text("alice"),
+            FieldValue::text_list(["bob", "carol"]),
+        ]);
+
+        assert_eq!(
+            serde_yaml::to_value(&list).unwrap(),
+            Value::from(vec!["alice", "bob, carol"])
+        );
     }
 }

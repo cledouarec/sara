@@ -2,10 +2,10 @@
 
 use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize, Serializer};
+use serde::Serializer;
 
 /// Tracks the file origin of an item for error reporting.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SourceLocation {
     /// Repository path (absolute).
     pub repository: PathBuf,
@@ -14,7 +14,6 @@ pub struct SourceLocation {
     pub file_path: PathBuf,
 
     /// Optional Git commit/branch if reading from history.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
 }
 
