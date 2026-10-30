@@ -87,21 +87,6 @@ pub fn extract_body(content: &str) -> String {
     }
 }
 
-/// Updates the YAML frontmatter in content while preserving the body (FR-064).
-///
-/// The `new_frontmatter` must include the `---` delimiters.
-/// Returns the updated content with new frontmatter and preserved body.
-pub fn update_frontmatter(content: &str, new_frontmatter: &str) -> String {
-    let body = extract_body(content);
-    let frontmatter_trimmed = new_frontmatter.trim_end();
-
-    if body.is_empty() {
-        format!("{}\n", frontmatter_trimmed)
-    } else {
-        format!("{}\n{}", frontmatter_trimmed, body)
-    }
-}
-
 /// One change to a top-level key of a frontmatter block.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FrontmatterEdit {
@@ -397,41 +382,6 @@ Some markdown here."#;
         let content = "---\nid: test\n---";
         let body = extract_body(content);
         assert!(body.is_empty());
-    }
-
-    #[test]
-    fn test_update_frontmatter() {
-        let content = r#"---
-id: "SOL-001"
-type: solution
-name: "Old Name"
----
-# Body Content
-
-Some markdown here."#;
-
-        let new_frontmatter = r#"---
-id: "SOL-001"
-type: solution
-name: "New Name"
----"#;
-
-        let updated = update_frontmatter(content, new_frontmatter);
-
-        assert!(updated.starts_with("---\n"));
-        assert!(updated.contains("name: \"New Name\""));
-        assert!(updated.contains("# Body Content"));
-        assert!(updated.contains("Some markdown here."));
-    }
-
-    #[test]
-    fn test_update_frontmatter_no_body() {
-        let content = "---\nid: test\n---";
-        let new_frontmatter = "---\nid: test\nname: Updated\n---";
-
-        let updated = update_frontmatter(content, new_frontmatter);
-
-        assert_eq!(updated, "---\nid: test\nname: Updated\n---\n");
     }
 
     /// Sets `key` to the given rendered entry.

@@ -176,10 +176,7 @@ fn custom_relation_flows_through_the_whole_pipeline() {
         .validate_options(&edit, test_case)
         .expect("verifies is declared by test_case");
     let merged = service.merge_values(edit, &ctx);
-    let yaml = service.build_frontmatter_yaml("TC-001", test_case, &merged);
-    assert!(yaml.contains("verifies:"));
-    assert!(yaml.contains("- \"SYSREQ-002\""));
-    assert!(!yaml.contains("SYSREQ-001"));
+    assert_eq!(merged.traceability.get(verifies), ["SYSREQ-002"]);
 
     let invalid =
         EditOptions::new("TC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]);
