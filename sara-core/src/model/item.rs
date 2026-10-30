@@ -3,10 +3,11 @@
 use std::fmt;
 
 use indexmap::IndexMap;
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Serialize, Serializer};
 
 use crate::error::SaraError;
 use crate::model::field::FieldValue;
+use crate::model::metadata::{SourceLocation, serialize_path};
 use crate::model::relationship::{Relationship, RelationshipType};
 use crate::schema::{self, FieldDef, IdFormat, ItemTypeDef, RelationDirection};
 
@@ -266,7 +267,7 @@ impl<'de> Deserialize<'de> for ItemType {
 }
 
 /// Unique identifier for an item across all repositories.
-#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize)]
 #[serde(transparent)]
 pub struct ItemId(String);
 
@@ -329,7 +330,7 @@ impl AsRef<str> for ItemId {
 /// Each declared field of the active schema maps to a [`FieldValue`] entry
 /// keyed by the field's canonical snake_case name. The map preserves
 /// declaration order so that template output remains stable.
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize)]
 #[serde(transparent)]
 pub struct ItemAttributes {
     fields: IndexMap<String, FieldValue>,
@@ -376,34 +377,99 @@ impl ItemAttributes {
     }
 }
 
-use crate::model::metadata::SourceLocation;
-
-/// Represents a single document/node in the knowledge graph.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+/// An item of the knowledge graph: a Markdown file whose frontmatter declares
+/// an id, a type and a name.
+///
+/// It serializes as clients read it: the core fields under their frontmatter
+/// names, the path of its file, the relations its file declares and the
+/// values of its fields.
+// The core keys mirror `FIELD_ID`, `FIELD_TYPE`, `FIELD_NAME` and
+// `FIELD_DESCRIPTION`; serde attributes cannot reference constants, so a
+// guard test pins the correspondence.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct Item {
-    /// Unique identifier.
+    /// Item id, such as `SYSREQ-001`.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub id: ItemId,
 
-    /// Type of this item.
+    /// Item type id, as declared in the model.
+    #[serde(rename = "type")]
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub item_type: ItemType,
 
-    /// Human-readable name.
+    /// Item name.
     pub name: String,
 
-    /// Optional description.
+    /// Item description.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
 
-    /// Source file location.
+    /// Location of the file holding the item.
+    #[serde(rename = "file", serialize_with = "serialize_file")]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(
+            with = "String",
+            description = "Path of the Markdown file holding the item."
+        )
+    )]
     pub source: SourceLocation,
 
-    /// All relationships from this item to other items.
-    #[serde(default)]
+    /// Relationships declared in the item's file.
+    #[serde(
+        rename = "relations",
+        default,
+        skip_serializing_if = "Vec::is_empty",
+        serialize_with = "serialize_relations"
+    )]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(
+            with = "IndexMap<String, Vec<String>>",
+            description = "Ids of the items the item's file links to, by relation id."
+        )
+    )]
     pub relationships: Vec<Relationship>,
 
-    /// Type-specific attributes.
-    #[serde(default)]
+    /// Values of the type-specific fields the item sets.
+    #[serde(
+        rename = "fields",
+        default,
+        skip_serializing_if = "ItemAttributes::is_empty"
+    )]
+    #[cfg_attr(
+        feature = "schemars",
+        schemars(
+            with = "IndexMap<String, FieldValue>",
+            description = "Values of the fields the item sets, by field name."
+        )
+    )]
     pub attributes: ItemAttributes,
+}
+
+/// Serializes the location of an item as the path of its file.
+fn serialize_file<S: Serializer>(
+    source: &SourceLocation,
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    serialize_path(&source.full_path(), serializer)
+}
+
+/// Serializes relationships as the ids of their targets by relation, in the
+/// order the relations first appear.
+fn serialize_relations<S: Serializer>(
+    relationships: &[Relationship],
+    serializer: S,
+) -> Result<S::Ok, S::Error> {
+    let mut targets: IndexMap<RelationshipType, Vec<&ItemId>> = IndexMap::new();
+    for relationship in relationships {
+        targets
+            .entry(relationship.relationship_type)
+            .or_default()
+            .push(&relationship.to);
+    }
+    serializer.collect_map(targets)
 }
 
 impl Item {
@@ -433,9 +499,79 @@ impl Item {
 mod tests {
     use super::*;
 
+    use serde_yaml::Value;
+
     use crate::graph::KnowledgeGraphBuilder;
+    use crate::model::ItemBuilder;
     use crate::schema::builtin;
     use crate::test_utils::create_test_item;
+
+    /// Returns the keys of a serialized mapping, in order.
+    fn keys(value: &Value) -> Vec<&str> {
+        value
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str().unwrap())
+            .collect()
+    }
+
+    #[test]
+    fn test_item_serializes_its_client_keys() {
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SYSREQ-001"))
+            .item_type(builtin::SYSTEM_REQUIREMENT)
+            .name("Response time")
+            .description("Fast enough")
+            .source(SourceLocation::new("/repo", "SYSREQ-001.md"))
+            .relationships(vec![
+                Relationship::new(ItemId::new_unchecked("SCEN-001"), builtin::DERIVES_FROM),
+                Relationship::new(ItemId::new_unchecked("SCEN-002"), builtin::DERIVES_FROM),
+            ])
+            .attribute(
+                "specification",
+                FieldValue::text("The system SHALL respond."),
+            )
+            .build()
+            .unwrap();
+
+        let value = serde_yaml::to_value(&item).unwrap();
+
+        assert_eq!(
+            keys(&value),
+            [
+                FIELD_ID,
+                FIELD_TYPE,
+                FIELD_NAME,
+                FIELD_DESCRIPTION,
+                "file",
+                "relations",
+                "fields"
+            ]
+        );
+        assert_eq!(value[FIELD_TYPE], "system_requirement");
+        assert_eq!(
+            value["file"],
+            item.source.full_path().display().to_string().as_str()
+        );
+        assert_eq!(
+            value["relations"]["derives_from"],
+            Value::from(vec!["SCEN-001", "SCEN-002"])
+        );
+        assert_eq!(
+            value["fields"]["specification"],
+            "The system SHALL respond."
+        );
+    }
+
+    #[test]
+    fn test_item_leaves_out_its_empty_parts() {
+        let item = create_test_item("SOL-001", builtin::SOLUTION);
+
+        let value = serde_yaml::to_value(&item).unwrap();
+
+        assert_eq!(keys(&value), [FIELD_ID, FIELD_TYPE, FIELD_NAME, "file"]);
+    }
 
     #[test]
     fn test_item_id_valid() {

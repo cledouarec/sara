@@ -4,4 +4,6 @@ pub mod git;
 mod scanner;
 
 pub use git::{GitReader, GitRef, get_repo_root, is_git_repo};
-pub use scanner::{ScanResult, ScanWarning, parse_directory, parse_repositories};
+pub use scanner::{
+    ScanResult, ScanWarning, is_hidden, is_markdown_file, parse_directory, parse_repositories,
+};

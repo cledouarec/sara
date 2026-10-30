@@ -1,11 +1,11 @@
 //! Metadata structures for items and source tracking.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
-use serde::{Deserialize, Serialize};
+use serde::Serializer;
 
 /// Tracks the file origin of an item for error reporting.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
 pub struct SourceLocation {
     /// Repository path (absolute).
     pub repository: PathBuf,
@@ -14,7 +14,6 @@ pub struct SourceLocation {
     pub file_path: PathBuf,
 
     /// Optional Git commit/branch if reading from history.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
 }
 
@@ -45,6 +44,14 @@ impl SourceLocation {
     pub fn full_path(&self) -> PathBuf {
         self.repository.join(&self.file_path)
     }
+}
+
+/// Serializes a path as text, replacing what is not valid UTF-8.
+///
+/// Paths are names found on disk; serializing one as a plain path would
+/// fail, and with it the whole output, on a name that is not valid UTF-8.
+pub(crate) fn serialize_path<S: Serializer>(path: &Path, serializer: S) -> Result<S::Ok, S::Error> {
+    serializer.collect_str(&path.display())
 }
 
 #[cfg(test)]

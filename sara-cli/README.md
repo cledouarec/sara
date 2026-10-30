@@ -22,6 +22,7 @@ cargo install sara-cli
 | `sara diff <REF1> <REF2>` | Compare graphs between Git references |
 | `sara edit <ID>` | Edit existing document metadata by item ID |
 | `sara init <FILE>` | Initialize metadata in a Markdown file |
+| `sara mcp` | Serve the knowledge graph to AI agents over the Model Context Protocol |
 | `sara query <ID>` | Query items and traceability chains |
 | `sara report coverage` | Generate coverage report |
 | `sara report matrix` | Generate traceability matrix |
@@ -48,6 +49,12 @@ sara report matrix --format csv -o matrix.csv
 |----------|-------------|
 | `SARA_CONFIG` | Path to configuration file |
 | `NO_COLOR` | Disable colored output when set |
+
+## Cargo Features
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `mcp` | Yes | `sara mcp`, the Model Context Protocol server for AI agents |
 
 ## Documentation
 

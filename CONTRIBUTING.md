@@ -71,6 +71,15 @@ sara-cli/        # Binary crate (CLI interface)
 │   ├── commands/    # CLI subcommands
 │   └── output/      # Output formatting
 
+sara-mcp/        # Library crate (MCP server for AI agents)
+├── src/
+│   ├── server.rs    # Protocol handler and tools
+│   ├── params.rs    # Tool parameters
+│   ├── views.rs     # Tool results
+│   ├── inputs.rs    # Checks of write tool inputs
+│   └── paths.rs     # Guard on the files write tools create
+└── tests/           # Tools tested through an in-process client
+
 tests/           # Integration tests
 └── fixtures/    # Test documents
 ```

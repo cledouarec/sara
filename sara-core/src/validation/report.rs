@@ -2,19 +2,51 @@
 
 use std::collections::HashMap;
 
-use serde::Serialize;
+use serde::{Serialize, Serializer};
 
 use super::rule::Severity;
 use crate::error::SaraError;
 use crate::model::ItemType;
 
-/// A validation issue with its severity.
-#[derive(Debug, Serialize)]
+/// A problem found while validating the graph, with its severity.
+///
+/// It serializes as its severity, the kind of its error and the error
+/// message.
+#[derive(Debug)]
+#[cfg_attr(
+    feature = "schemars",
+    derive(schemars::JsonSchema),
+    schemars(with = "IssueJson")
+)]
 pub struct ValidationIssue {
     /// Severity of the issue.
     pub severity: Severity,
     /// The underlying validation error.
     pub error: SaraError,
+}
+
+impl Serialize for ValidationIssue {
+    fn serialize<S: Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        IssueJson {
+            severity: self.severity,
+            kind: self.error.kind(),
+            message: self.error.to_string(),
+        }
+        .serialize(serializer)
+    }
+}
+
+/// JSON form of a validation issue.
+#[derive(Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+struct IssueJson {
+    /// Severity of the problem.
+    severity: Severity,
+    /// Kind of problem, such as `BrokenReference`, `DuplicateIdentifier`,
+    /// `CircularReference` or `OrphanItem`.
+    kind: &'static str,
+    /// Description of the problem, naming the items or files involved.
+    message: String,
 }
 
 impl ValidationIssue {
@@ -98,16 +130,18 @@ impl ValidationReport {
             .collect()
     }
 
-    /// Merges another report into this one.
+    /// Merges another validation pass over the same items into this report.
     ///
     /// Issues from the other report are prepended to this report's issues.
-    /// Counters are summed. Items by type are combined (preferring non-empty).
+    /// Both passes checked the same items, so each counter keeps the larger
+    /// value rather than their sum. Items by type are combined (preferring
+    /// non-empty).
     pub fn merge(&mut self, other: ValidationReport) {
         let mut merged_issues = other.issues;
         merged_issues.append(&mut self.issues);
         self.issues = merged_issues;
-        self.items_checked += other.items_checked;
-        self.relationships_checked += other.relationships_checked;
+        self.items_checked = self.items_checked.max(other.items_checked);
+        self.relationships_checked = self.relationships_checked.max(other.relationships_checked);
         // Prefer the non-empty items_by_type map
         if self.items_by_type.is_empty() && !other.items_by_type.is_empty() {
             self.items_by_type = other.items_by_type;
@@ -179,6 +213,27 @@ mod tests {
     use crate::model::ItemId;
 
     #[test]
+    fn test_issue_serializes_severity_kind_and_message() {
+        let issue = ValidationIssue::error(SaraError::BrokenReference {
+            from: ItemId::new_unchecked("UC-001"),
+            to: ItemId::new_unchecked("SOL-999"),
+        });
+
+        let value = serde_yaml::to_value(&issue).unwrap();
+
+        let keys: Vec<&str> = value
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str().unwrap())
+            .collect();
+        assert_eq!(keys, ["severity", "kind", "message"]);
+        assert_eq!(value["severity"], "error");
+        assert_eq!(value["kind"], "BrokenReference");
+        assert_eq!(value["message"], issue.error.to_string().as_str());
+    }
+
+    #[test]
     fn test_empty_report_is_valid() {
         let report = ValidationReport::new();
         assert!(report.is_valid());
@@ -240,5 +295,21 @@ mod tests {
         assert_eq!(report.items_checked, 10);
         assert_eq!(report.relationships_checked, 15);
         assert_eq!(report.error_count(), 1);
+    }
+
+    #[test]
+    fn test_merge_counts_items_checked_once() {
+        // Pre-validation and graph validation are two passes over the same
+        // items, so merging them must not add up their counters.
+        let mut report = ValidationReportBuilder::new()
+            .items_checked(7)
+            .relationships_checked(12)
+            .build();
+        let pre_report = ValidationReportBuilder::new().items_checked(7).build();
+
+        report.merge(pre_report);
+
+        assert_eq!(report.items_checked, 7);
+        assert_eq!(report.relationships_checked, 12);
     }
 }

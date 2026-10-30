@@ -3,15 +3,22 @@
 //! Provides functionality to initialize new requirement items or add frontmatter
 //! to existing documents.
 
-use std::fs;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
+use serde::{Deserialize, Serialize};
 
 use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
-use crate::model::{FieldValue, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation};
-use crate::parser::{extract_name_from_content, has_frontmatter};
+use crate::model::{
+    FieldValue, Item, ItemBuilder, ItemId, ItemType, RelationshipType, SourceLocation,
+    serialize_path,
+};
+use crate::parser::{
+    InputFormat, extract_name_from_content, has_frontmatter, line_ending, parse_metadata,
+};
 use crate::schema::{self, FieldDef, FieldType, RelationDirection};
 
 /// Options for initializing a new item or adding frontmatter to an existing file.
@@ -92,8 +99,13 @@ impl InitOptions {
     }
 }
 
-/// Value provided for one declared field when initializing an item.
-#[derive(Debug, Clone)]
+/// Value given for a declared field: a string, or a list of strings for a list
+/// field.
+///
+/// Reads from JSON or YAML as a plain string or a list of strings.
+#[derive(Debug, Clone, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+#[serde(untagged)]
 pub enum FieldInput {
     /// A single value (text, enum, date or item-reference fields).
     Text(String),
@@ -199,22 +211,37 @@ pub enum InitError {
     Io(#[from] std::io::Error),
 }
 
-/// Result of a successful initialization.
-#[derive(Debug, Clone)]
+/// An item just initialized.
+// The `id`, `name` and `type` keys mirror `FIELD_ID`, `FIELD_NAME` and
+// `FIELD_TYPE`; serde attributes cannot reference constants, so a guard test
+// pins the correspondence.
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct InitResult {
-    /// The resolved ID.
+    /// Id of the item.
     pub id: String,
-    /// The resolved name.
+    /// Name of the item.
     pub name: String,
-    /// The item type.
+    /// Item type id, as declared in the model.
+    #[serde(rename = "type")]
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub item_type: ItemType,
-    /// The file path.
+    /// Path of the Markdown file holding the item.
+    #[serde(serialize_with = "serialize_path")]
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub file: PathBuf,
-    /// Whether an existing file was updated (true) or a new file was created (false).
-    pub updated_existing: bool,
-    /// Whether frontmatter was replaced (only relevant if updated_existing is true).
+    /// Whether a new file was written; false when the frontmatter went into
+    /// an existing file.
+    pub created: bool,
+    /// Whether frontmatter was replaced (only relevant when `created` is false).
+    #[serde(skip)]
     pub replaced_frontmatter: bool,
-    /// Whether specification field needs attention.
+    /// Required fields given no value, which the item holds at their schema
+    /// placeholder.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub defaulted_fields: Vec<String>,
+    /// Whether a required text field holds its placeholder.
+    #[serde(skip)]
     pub needs_specification: bool,
 }
 
@@ -258,39 +285,33 @@ impl InitService {
 
         let item_type = opts.item_type();
 
-        // Resolve ID and name
+        // Resolve ID and name; the scanner reads only valid identifiers.
         let id = self.resolve_id(graph, opts);
-        self.ensure_id_is_free(graph, &id, &opts.file)?;
+        let item_id =
+            ItemId::new(id.as_str()).map_err(|e| InitError::InvalidOption(e.to_string()))?;
+        self.ensure_id_is_free(graph, &item_id, &opts.file)?;
         let name = self.resolve_name(opts, &id)?;
 
         // Build an Item from init options
-        let item = self.build_item(opts, &id, &name);
+        let item = self.build_item(opts, item_id, &name)?;
 
         // Write the file
-        let (updated_existing, replaced_frontmatter) = self.write_file(opts, &item)?;
+        let (created, replaced_frontmatter) = self.write_file(opts, &item)?;
 
-        // Check if specification is needed
-        let needs_specification = self.check_needs_specification(&opts.type_config);
+        let defaulted = defaulted_fields(&opts.type_config);
+        let needs_specification = defaulted
+            .iter()
+            .any(|field| matches!(field.field_type, FieldType::Text));
 
         Ok(InitResult {
             id,
             name,
             item_type,
             file: opts.file.clone(),
-            updated_existing,
+            created,
             replaced_frontmatter,
+            defaulted_fields: defaulted.iter().map(|field| field.name.clone()).collect(),
             needs_specification,
-        })
-    }
-
-    /// Checks whether a required text field fell back to its placeholder.
-    fn check_needs_specification(&self, type_config: &TypeConfig) -> bool {
-        schema::item_type_def(type_config.item_type().as_str()).is_some_and(|def| {
-            def.fields.iter().any(|field| {
-                field.required
-                    && matches!(field.field_type, FieldType::Text)
-                    && !type_config.fields.contains_key(&field.name)
-            })
         })
     }
 
@@ -309,10 +330,10 @@ impl InitService {
     fn ensure_id_is_free(
         &self,
         graph: Option<&KnowledgeGraph>,
-        id: &str,
+        id: &ItemId,
         file: &Path,
     ) -> Result<(), InitError> {
-        let Some(existing) = graph.and_then(|g| g.get(&ItemId::new_unchecked(id))) else {
+        let Some(existing) = graph.and_then(|g| g.get(id)) else {
             return Ok(());
         };
 
@@ -322,7 +343,7 @@ impl InitService {
         }
 
         Err(InitError::DuplicateId {
-            id: id.to_string(),
+            id: id.as_str().to_string(),
             file: existing_file,
         })
     }
@@ -351,7 +372,10 @@ impl InitService {
     }
 
     /// Builds an `Item` from init options for document generation.
-    fn build_item(&self, opts: &InitOptions, id: &str, name: &str) -> crate::model::Item {
+    ///
+    /// Fails when the options leave a required value missing, such as an
+    /// empty list for a required list field.
+    fn build_item(&self, opts: &InitOptions, id: ItemId, name: &str) -> Result<Item, InitError> {
         let source = SourceLocation {
             repository: PathBuf::new(),
             file_path: opts.file.clone(),
@@ -359,7 +383,7 @@ impl InitService {
         };
 
         let mut builder = ItemBuilder::new()
-            .id(ItemId::new_unchecked(id))
+            .id(id)
             .item_type(opts.item_type())
             .name(name)
             .source(source);
@@ -395,63 +419,81 @@ impl InitService {
             builder = builder.relationships(relationships);
         }
 
-        builder.build().expect("Failed to build item for init")
+        builder
+            .build()
+            .map_err(|e| InitError::InvalidOption(e.to_string()))
     }
 
     /// Writes the file, either updating existing or creating new.
     ///
-    /// Returns (updated_existing, replaced_frontmatter).
-    fn write_file(
-        &self,
-        opts: &InitOptions,
-        item: &crate::model::Item,
-    ) -> Result<(bool, bool), InitError> {
+    /// Returns (created, replaced_frontmatter).
+    fn write_file(&self, opts: &InitOptions, item: &Item) -> Result<(bool, bool), InitError> {
         if opts.file.exists() {
             let replaced = self.update_existing_file(opts, item)?;
-            Ok((true, replaced))
+            Ok((false, replaced))
         } else {
             self.create_new_file(opts, item)?;
-            Ok((false, false))
+            Ok((true, false))
         }
     }
 
     /// Updates an existing file by adding or replacing frontmatter.
     ///
-    /// Returns true if frontmatter was replaced, false if it was added.
-    fn update_existing_file(
-        &self,
-        opts: &InitOptions,
-        item: &crate::model::Item,
-    ) -> Result<bool, InitError> {
+    /// The frontmatter is written with the line ending of the file's first
+    /// line. Returns true if frontmatter was replaced, false if it was added.
+    fn update_existing_file(&self, opts: &InitOptions, item: &Item) -> Result<bool, InitError> {
         let content = fs::read_to_string(&opts.file)?;
-        let frontmatter = generator::generate_metadata(item, OutputFormat::Markdown);
+        let line_ending = line_ending(&content);
+        let frontmatter: String = generator::generate_metadata(item, OutputFormat::Markdown)
+            .lines()
+            .map(|line| format!("{line}{line_ending}"))
+            .collect();
 
         let (new_content, replaced) = if has_frontmatter(&content) && opts.force {
             let body = remove_frontmatter(&content);
-            (format!("{}\n{}", frontmatter, body), true)
+            (format!("{frontmatter}{body}"), true)
         } else {
-            (format!("{}\n{}", frontmatter, content), false)
+            (format!("{frontmatter}{content}"), false)
         };
 
+        ensure_readable(&new_content, &opts.file)?;
         fs::write(&opts.file, new_content)?;
         Ok(replaced)
     }
 
     /// Creates a new file with the generated document.
-    fn create_new_file(
-        &self,
-        opts: &InitOptions,
-        item: &crate::model::Item,
-    ) -> Result<(), InitError> {
+    ///
+    /// The file is created exclusively: if anything exists at its path by
+    /// then, including a symbolic link leading nowhere, creation fails rather
+    /// than writing through it.
+    fn create_new_file(&self, opts: &InitOptions, item: &Item) -> Result<(), InitError> {
         let document = generator::generate_document(item, OutputFormat::Markdown);
+        ensure_readable(&document, &opts.file)?;
 
         if let Some(parent) = opts.file.parent() {
             fs::create_dir_all(parent)?;
         }
 
-        fs::write(&opts.file, document)?;
+        OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&opts.file)?
+            .write_all(document.as_bytes())?;
         Ok(())
     }
+}
+
+/// Checks that sara can read back the item in `content`, about to be
+/// written to `file`.
+///
+/// Values are rendered into the frontmatter as given; some field types,
+/// such as dates, are written unquoted, so a value can break the YAML.
+fn ensure_readable(content: &str, file: &Path) -> Result<(), InitError> {
+    parse_metadata(content, file, Path::new(""), InputFormat::Markdown)
+        .map(|_| ())
+        .map_err(|e| {
+            InitError::InvalidOption(format!("the generated document would not be readable: {e}"))
+        })
 }
 
 /// Removes YAML frontmatter delimited by `---` from `content`.
@@ -459,21 +501,18 @@ fn remove_frontmatter(content: &str) -> &str {
     let mut in_frontmatter = false;
     let mut byte_offset = 0;
 
-    for line in content.lines() {
-        // Advance past the line and its newline delimiter.
-        let line_end = byte_offset + line.len() + 1;
+    for line in content.split_inclusive('\n') {
+        // Advance past the line and its line ending, `\n` or `\r\n`.
+        byte_offset += line.len();
 
         if line.trim() == "---" {
             if !in_frontmatter {
                 in_frontmatter = true;
             } else {
                 // Found closing delimiter; return everything after it.
-                let end = line_end.min(content.len());
-                return &content[end..];
+                return &content[byte_offset..];
             }
         }
-
-        byte_offset = line_end;
     }
 
     content
@@ -570,6 +609,17 @@ pub fn parse_item_type(type_str: &str) -> Option<ItemType> {
     })
 }
 
+/// Returns the required fields of the type given no input, which fall back to
+/// their schema placeholder.
+fn defaulted_fields(type_config: &TypeConfig) -> Vec<&'static FieldDef> {
+    type_config
+        .item_type()
+        .declared_fields()
+        .iter()
+        .filter(|field| field.required && !type_config.fields.contains_key(&field.name))
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use tempfile::TempDir;
@@ -577,8 +627,18 @@ mod tests {
     use super::*;
 
     use crate::graph::KnowledgeGraphBuilder;
+    use crate::model::{FIELD_ID, FIELD_NAME, FIELD_TYPE};
     use crate::schema::builtin;
     use crate::test_utils::create_test_item_at;
+
+    #[test]
+    fn test_field_input_reads_a_string_or_a_list() {
+        let single: FieldInput = serde_yaml::from_str("spec").unwrap();
+        let list: FieldInput = serde_yaml::from_str("[alice, bob]").unwrap();
+
+        assert!(matches!(single, FieldInput::Text(text) if text == "spec"));
+        assert!(matches!(list, FieldInput::List(values) if values == ["alice", "bob"]));
+    }
 
     #[test]
     fn test_parse_item_type() {
@@ -724,6 +784,12 @@ mod tests {
     }
 
     #[test]
+    fn test_remove_frontmatter_with_crlf_line_endings() {
+        let content = "---\r\nid: test\r\nname: \"Test\"\r\n---\r\n# Body\r\n";
+        assert_eq!(remove_frontmatter(content), "# Body\r\n");
+    }
+
+    #[test]
     fn test_init_new_file() {
         let temp_dir = TempDir::new().unwrap();
         let file_path = temp_dir.path().join("test.md");
@@ -737,7 +803,7 @@ mod tests {
 
         assert_eq!(result.id, "SOL-001");
         assert_eq!(result.name, "Test Solution");
-        assert!(!result.updated_existing);
+        assert!(result.created);
         assert!(file_path.exists());
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -761,12 +827,27 @@ mod tests {
 
         assert_eq!(result.id, "UC-001");
         assert_eq!(result.name, "My Document"); // Extracted from heading
-        assert!(result.updated_existing);
+        assert!(!result.created);
         assert!(!result.replaced_frontmatter);
 
         let content = fs::read_to_string(&file_path).unwrap();
         assert!(content.contains("id: \"UC-001\""));
         assert!(content.contains("# My Document"));
+    }
+
+    #[test]
+    fn test_init_existing_file_keeps_its_crlf_line_endings() {
+        let temp_dir = TempDir::new().unwrap();
+        let file_path = temp_dir.path().join("existing.md");
+        fs::write(&file_path, "# My Document\r\n\r\nSome content here.\r\n").unwrap();
+
+        let opts = InitOptions::new(file_path.clone(), TypeConfig::new(builtin::USE_CASE))
+            .with_id("UC-001");
+        InitService::new().init(None, &opts).unwrap();
+
+        let content = fs::read_to_string(&file_path).unwrap();
+        assert!(content.starts_with("---\r\nid: \"UC-001\"\r\n"));
+        assert!(!content.replace("\r\n", "").contains('\n'));
     }
 
     #[test]
@@ -803,7 +884,7 @@ mod tests {
         let result = service.init(None, &opts).unwrap();
 
         assert_eq!(result.id, "SOL-001");
-        assert!(result.updated_existing);
+        assert!(!result.created);
         assert!(result.replaced_frontmatter);
 
         let content = fs::read_to_string(&file_path).unwrap();
@@ -823,6 +904,44 @@ mod tests {
         let result = service.init(None, &opts).unwrap();
 
         assert!(result.needs_specification);
+        assert_eq!(result.defaulted_fields, ["specification"]);
+    }
+
+    #[test]
+    fn test_init_result_serializes_what_clients_need() {
+        let temp_dir = TempDir::new().unwrap();
+        let opts = InitOptions::new(
+            temp_dir.path().join("test.md"),
+            TypeConfig::new(builtin::SYSTEM_REQUIREMENT),
+        )
+        .with_id("SYSREQ-001");
+        let result = InitService::new().init(None, &opts).unwrap();
+
+        let value = serde_yaml::to_value(&result).unwrap();
+
+        let keys: Vec<&str> = value
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str().unwrap())
+            .collect();
+        assert_eq!(
+            keys,
+            [
+                FIELD_ID,
+                FIELD_NAME,
+                FIELD_TYPE,
+                "file",
+                "created",
+                "defaulted_fields"
+            ]
+        );
+        assert_eq!(value[FIELD_TYPE], "system_requirement");
+        assert_eq!(value["created"], true);
+        assert_eq!(
+            value["defaulted_fields"],
+            serde_yaml::Value::from(vec!["specification"])
+        );
     }
 
     #[test]
@@ -839,5 +958,61 @@ mod tests {
         let result = service.init(None, &opts).unwrap();
 
         assert!(!result.needs_specification);
+        assert!(result.defaulted_fields.is_empty());
+    }
+
+    #[test]
+    fn test_init_rejects_an_id_the_scanner_cannot_read() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("SOL-9.md");
+        let opts = InitOptions::new(file.clone(), TypeConfig::new(builtin::SOLUTION))
+            .with_id("SOL-\"9")
+            .with_name("Hub");
+
+        let result = InitService::new().init(None, &opts);
+
+        assert!(
+            matches!(result, Err(InitError::InvalidOption(_))),
+            "{result:?}"
+        );
+        assert!(!file.exists());
+    }
+
+    #[test]
+    fn test_init_reports_an_empty_required_list() {
+        let dir = TempDir::new().unwrap();
+        let file = dir.path().join("ADR-001.md");
+        let config = TypeConfig::new(builtin::ARCHITECTURE_DECISION_RECORD)
+            .field("deciders", FieldInput::List(Vec::new()));
+        let opts = InitOptions::new(file.clone(), config)
+            .with_id("ADR-001")
+            .with_name("Decision");
+
+        let result = InitService::new().init(None, &opts);
+
+        assert!(
+            matches!(result, Err(InitError::InvalidOption(_))),
+            "{result:?}"
+        );
+        assert!(!file.exists());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn test_init_does_not_write_through_a_dangling_symlink() {
+        // Writing through the link would create its target, wherever it is.
+        let dir = TempDir::new().unwrap();
+        let outside = TempDir::new().unwrap();
+        let target = outside.path().join("pwned.md");
+        let file = dir.path().join("evil.md");
+        std::os::unix::fs::symlink(&target, &file).unwrap();
+        let opts = InitOptions::new(file, TypeConfig::new(builtin::SOLUTION))
+            .with_id("SOL-001")
+            .with_name("Hub");
+
+        let result = InitService::new().init(None, &opts);
+
+        assert!(result.is_err());
+        assert!(!target.exists());
     }
 }

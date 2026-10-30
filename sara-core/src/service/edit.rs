@@ -6,15 +6,18 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use crate::error::SaraError;
 use crate::generator::{self, OutputFormat};
-use crate::graph::KnowledgeGraph;
+use crate::graph::{KnowledgeGraph, TraversalOptions};
 use crate::model::{
-    FieldChange, Item, ItemAttributes, ItemBuilder, ItemId, ItemType, RelationshipType,
-    SourceLocation, TraceabilityLinks,
+    FIELD_DESCRIPTION, FIELD_NAME, FieldChange, Item, ItemAttributes, ItemBuilder, ItemId,
+    ItemType, RelationshipType, SourceLocation, TraceabilityLinks, serialize_path,
 };
-use crate::parser::update_frontmatter;
+use crate::parser::{
+    FrontmatterEdit, InputFormat, frontmatter_entry, parse_metadata, patch_frontmatter,
+};
 use crate::schema::FieldType;
 
 use super::FieldInput;
@@ -151,15 +154,37 @@ impl EditedValues {
     }
 }
 
-/// Result of a successful edit operation.
-#[derive(Debug)]
+/// An item just edited.
+// The `id` key mirrors `FIELD_ID`; serde attributes cannot reference
+// constants, so a guard test pins the correspondence.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditResult {
-    /// The item ID that was edited.
+    /// Id of the edited item.
+    #[serde(rename = "id")]
     pub item_id: String,
-    /// The file path that was modified.
+    /// Path of the Markdown file holding the item.
+    #[serde(rename = "file", serialize_with = "serialize_path")]
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub file_path: PathBuf,
-    /// The changes that were applied.
+    /// What changed, entry by entry.
     pub changes: Vec<FieldChange>,
+    /// Links that remain although the edit dropped them, because the linked
+    /// item's file declares them: change them in that file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept_links: Vec<KeptLink>,
+}
+
+/// A link an edit leaves in place because the linked item's file declares it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct KeptLink {
+    /// Relation id, read from the edited item.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub relation: RelationshipType,
+    /// Id of the linked item, whose file declares the link.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub id: ItemId,
 }
 
 impl EditResult {
@@ -232,12 +257,23 @@ impl EditService {
         ItemContext::from_item(item)
     }
 
-    /// Validates edit options against the item type.
+    /// Validates edit options against the edited item.
+    ///
+    /// Fields must be declared by the item's type. Relations must be
+    /// declared by the type or already held by the item, so a link written
+    /// from the item's side outside its type's relations stays editable.
+    ///
+    /// # Errors
+    ///
+    /// Returns [`SaraError::EditFailed`] for a field the type does not
+    /// declare, an enum value the field does not allow, or a relation that is
+    /// neither declared by the type nor held by the item.
     pub fn validate_options(
         &self,
         opts: &EditOptions,
-        item_type: ItemType,
+        item: &ItemContext,
     ) -> Result<(), SaraError> {
+        let item_type = item.item_type;
         for (name, input) in &opts.fields {
             let Some(field) = item_type.declared_field(name) else {
                 return Err(SaraError::EditFailed(format!(
@@ -260,7 +296,8 @@ impl EditService {
 
         let declared = item_type.declared_relations();
         for relation in opts.relations.keys() {
-            if !declared.contains(relation) {
+            let held = item.traceability.iter().any(|(rel, _)| rel == *relation);
+            if !declared.contains(relation) && !held {
                 return Err(SaraError::EditFailed(format!(
                     "--{} is not a relation declared by {}",
                     relation.as_str().replace('_', "-"),
@@ -364,6 +401,19 @@ impl EditService {
     }
 
     /// Applies changes to the file.
+    ///
+    /// Only the frontmatter entries whose value changes are rewritten, in
+    /// the format of the document template; every other line of the file is
+    /// kept as is, including links declared from the other side, keys the
+    /// schema does not know, comments and the body. The patched content is
+    /// parsed again before it is written, so a patch that would leave the
+    /// frontmatter unreadable or wrong fails without touching the file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read, parsed, patched or
+    /// written, or when the patched frontmatter would not hold the new
+    /// values.
     pub fn apply_changes(
         &self,
         item_id: &str,
@@ -373,21 +423,37 @@ impl EditService {
     ) -> Result<(), SaraError> {
         let content =
             fs::read_to_string(file_path).map_err(|e| SaraError::EditFailed(e.to_string()))?;
-        let new_yaml = self.build_frontmatter_yaml(item_id, item_type, new_values);
-        let updated_content = update_frontmatter(&content, &new_yaml);
-        fs::write(file_path, updated_content).map_err(|e| SaraError::EditFailed(e.to_string()))?;
-        Ok(())
-    }
+        let current = parse_metadata(&content, file_path, Path::new(""), InputFormat::Markdown)?;
+        let edited = self.build_item_from_values(item_id, item_type, new_values);
+        let rendered = generator::generate_metadata(&edited, OutputFormat::Markdown);
 
-    /// Builds YAML frontmatter string from edit values.
-    pub fn build_frontmatter_yaml(
-        &self,
-        item_id: &str,
-        item_type: ItemType,
-        values: &EditedValues,
-    ) -> String {
-        let item = self.build_item_from_values(item_id, item_type, values);
-        generator::generate_metadata(&item, OutputFormat::Markdown)
+        let edits: Vec<FrontmatterEdit> = changed_keys(&current, &edited, &new_values.traceability)
+            .into_iter()
+            .map(|key| match frontmatter_entry(&rendered, &key) {
+                Some(entry) => FrontmatterEdit::Set { key, entry },
+                None => FrontmatterEdit::Remove { key },
+            })
+            .collect();
+        let patched = patch_frontmatter(&content, &edits, file_path)?;
+
+        let reparsed = parse_metadata(&patched, file_path, Path::new(""), InputFormat::Markdown)
+            .map_err(|e| {
+                SaraError::EditFailed(format!(
+                    "editing {} would leave an unreadable frontmatter ({e}); edit the file directly",
+                    file_path.display()
+                ))
+            })?;
+        let mismatched = changed_keys(&reparsed, &edited, &new_values.traceability);
+        if !mismatched.is_empty() {
+            return Err(SaraError::EditFailed(format!(
+                "editing {} would not update {}; edit the file directly",
+                file_path.display(),
+                mismatched.join(", ")
+            )));
+        }
+
+        fs::write(file_path, patched).map_err(|e| SaraError::EditFailed(e.to_string()))?;
+        Ok(())
     }
 
     /// Builds a temporary `Item` from edit values for frontmatter generation.
@@ -446,7 +512,9 @@ impl EditService {
         let item_ctx = self.get_item_context(item);
 
         // Validate options
-        self.validate_options(&opts, item_ctx.item_type)?;
+        self.validate_options(&opts, &item_ctx)?;
+
+        let kept = kept_links(graph, item, &opts.relations);
 
         // Merge values
         let new_values = self.merge_values(opts, &item_ctx);
@@ -470,8 +538,68 @@ impl EditService {
             item_id: item_ctx.id,
             file_path: item_ctx.file_path,
             changes,
+            kept_links: kept,
         })
     }
+}
+
+/// Returns the links `item` keeps through the relations an edit replaces:
+/// those the linked item's file declares, which editing `item` cannot remove.
+fn kept_links(
+    graph: &KnowledgeGraph,
+    item: &Item,
+    relations: &IndexMap<RelationshipType, Vec<String>>,
+) -> Vec<KeptLink> {
+    let groups = graph.direct_relationships(&item.id, &TraversalOptions::new());
+    relations
+        .iter()
+        .flat_map(|(relation, targets)| {
+            groups
+                .iter()
+                .filter(move |group| group.relation == *relation)
+                .flat_map(|group| group.items.iter())
+                .filter(move |other| {
+                    !item.relationship_ids(*relation).any(|id| *id == other.id)
+                        && !targets.iter().any(|target| target == other.id.as_str())
+                })
+                .map(move |other| KeptLink {
+                    relation: *relation,
+                    id: other.id.clone(),
+                })
+        })
+        .collect()
+}
+
+/// Returns the frontmatter keys whose value differs between `current` and
+/// `edited`.
+///
+/// Only what an edit can change is compared: the name, the description, the
+/// fields the type declares and the relations held in `relations`. Any other
+/// entry of the file is out of the edit's reach and never reported.
+fn changed_keys(current: &Item, edited: &Item, relations: &TraceabilityLinks) -> Vec<String> {
+    let mut keys = Vec::new();
+
+    if current.name != edited.name {
+        keys.push(FIELD_NAME.to_string());
+    }
+    if current.description != edited.description {
+        keys.push(FIELD_DESCRIPTION.to_string());
+    }
+    for field in edited.item_type.declared_fields() {
+        if current.attributes.get(&field.name) != edited.attributes.get(&field.name) {
+            keys.push(field.name.clone());
+        }
+    }
+    for (relation, _) in relations.iter() {
+        if !current
+            .relationship_ids(relation)
+            .eq(edited.relationship_ids(relation))
+        {
+            keys.push(relation.as_str().to_string());
+        }
+    }
+
+    keys
 }
 
 #[cfg(test)]
@@ -480,7 +608,7 @@ mod tests {
 
     use super::*;
 
-    use crate::model::{FieldValue, Relationship};
+    use crate::model::{FIELD_ID, FieldValue, Relationship};
     use crate::schema::builtin;
     use crate::test_utils::{
         create_test_adr, create_test_item, create_test_item_with_name,
@@ -510,6 +638,11 @@ mod tests {
         assert_eq!(ctx.item_type, builtin::SOLUTION);
     }
 
+    /// Returns the edit context of a test item of the given type.
+    fn context_of(item_type: ItemType) -> ItemContext {
+        ItemContext::from_item(&create_test_item("ITEM-001", item_type))
+    }
+
     #[test]
     fn test_validate_options_undeclared_field() {
         let service = EditService::new();
@@ -519,14 +652,18 @@ mod tests {
             .maybe_text_field("specification", Some("new spec".to_string()));
         assert!(
             service
-                .validate_options(&opts, builtin::SYSTEM_REQUIREMENT)
+                .validate_options(&opts, &context_of(builtin::SYSTEM_REQUIREMENT))
                 .is_ok()
         );
 
         // Invalid: specification on solution type (declares no fields)
         let opts = EditOptions::new("SOL-001")
             .maybe_text_field("specification", Some("new spec".to_string()));
-        assert!(service.validate_options(&opts, builtin::SOLUTION).is_err());
+        assert!(
+            service
+                .validate_options(&opts, &context_of(builtin::SOLUTION))
+                .is_err()
+        );
     }
 
     #[test]
@@ -537,7 +674,7 @@ mod tests {
             EditOptions::new("ADR-001").maybe_text_field("status", Some("accepted".to_string()));
         assert!(
             service
-                .validate_options(&opts, builtin::ARCHITECTURE_DECISION_RECORD)
+                .validate_options(&opts, &context_of(builtin::ARCHITECTURE_DECISION_RECORD))
                 .is_ok()
         );
 
@@ -545,7 +682,7 @@ mod tests {
             EditOptions::new("ADR-001").maybe_text_field("status", Some("bogus".to_string()));
         assert!(
             service
-                .validate_options(&opts, builtin::ARCHITECTURE_DECISION_RECORD)
+                .validate_options(&opts, &context_of(builtin::ARCHITECTURE_DECISION_RECORD))
                 .is_err()
         );
     }
@@ -557,12 +694,20 @@ mod tests {
         // Valid: refines on use case
         let opts =
             EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]);
-        assert!(service.validate_options(&opts, builtin::USE_CASE).is_ok());
+        assert!(
+            service
+                .validate_options(&opts, &context_of(builtin::USE_CASE))
+                .is_ok()
+        );
 
         // Invalid: refines on solution (declares no relation)
         let opts = EditOptions::new("SOL-001")
             .with_relation(builtin::REFINES, vec!["SOL-002".to_string()]);
-        assert!(service.validate_options(&opts, builtin::SOLUTION).is_err());
+        assert!(
+            service
+                .validate_options(&opts, &context_of(builtin::SOLUTION))
+                .is_err()
+        );
     }
 
     #[test]
@@ -836,36 +981,208 @@ mod tests {
         assert!(result.is_err());
     }
 
+    /// A scenario whose frontmatter holds entries an edit must not rewrite:
+    /// a link declared from the downstream side, a key unknown to the
+    /// schema, a comment and a folded description.
+    const SCENARIO_FILE: &str = r#"---
+id: "SCEN-001"
+type: scenario
+name: "Adjust Living Room Dimmer"
+description: >
+  Folded text that spans
+  two lines
+refines:
+  - "UC-001"
+# Declared on this side on purpose
+derives:
+  - "SYSREQ-001"
+owner: "alice"
+---
+# Adjust Living Room Dimmer
+
+Body to preserve.
+"#;
+
+    /// A solution declaring the use case that refines it.
+    const HUB_SOLUTION: &str = "---\nid: \"SOL-001\"\ntype: solution\nname: \"Hub\"\nis_refined_by:\n  - \"UC-002\"\n---\n";
+
+    /// A use case declaring no link.
+    const SCENES_USE_CASE: &str = "---\nid: \"UC-002\"\ntype: use_case\nname: \"Scenes\"\n---\n";
+
     #[test]
-    fn test_build_frontmatter_yaml() {
-        let service = EditService::new();
+    fn test_edit_reports_links_the_linked_item_declares() {
+        let (_dir, graph) =
+            repository_with(&[("SOL-001.md", HUB_SOLUTION), ("UC-002.md", SCENES_USE_CASE)]);
 
-        let values = EditedValues::new("Test Solution")
-            .with_description(Some("A test solution".to_string()));
+        let result = EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("UC-002").with_relation(builtin::REFINES, Vec::new()),
+            )
+            .unwrap();
 
-        let yaml = service.build_frontmatter_yaml("SOL-001", builtin::SOLUTION, &values);
+        assert_eq!(
+            result.kept_links,
+            [KeptLink {
+                relation: builtin::REFINES,
+                id: ItemId::new_unchecked("SOL-001"),
+            }]
+        );
 
-        assert!(yaml.contains("id: \"SOL-001\""));
-        assert!(yaml.contains("type: solution"));
-        assert!(yaml.contains("name: \"Test Solution\""));
-        assert!(yaml.contains("description: \"A test solution\""));
+        let value = serde_yaml::to_value(&result).unwrap();
+        let keys: Vec<&str> = value
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str().unwrap())
+            .collect();
+        assert_eq!(keys, [FIELD_ID, "file", "changes", "kept_links"]);
+        assert_eq!(value["kept_links"][0]["relation"], "refines");
+        assert_eq!(value["kept_links"][0]["id"], "SOL-001");
     }
 
     #[test]
-    fn test_build_frontmatter_yaml_preserves_attributes() {
-        let service = EditService::new();
+    fn test_edit_keeps_no_link_the_item_declares() {
+        let solution = "---\nid: \"SOL-001\"\ntype: solution\nname: \"Hub\"\n---\n";
+        let use_case = "---\nid: \"UC-002\"\ntype: use_case\nname: \"Scenes\"\nrefines:\n  - \"SOL-001\"\n---\n";
+        let (_dir, graph) = repository_with(&[("SOL-001.md", solution), ("UC-002.md", use_case)]);
 
-        let item = create_test_item("ADR-001", builtin::ARCHITECTURE_DECISION_RECORD);
-        let ctx = ItemContext::from_item(&item);
-        let values = service.merge_values(EditOptions::new("ADR-001").with_name("Renamed"), &ctx);
+        let result = EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("UC-002").with_relation(builtin::REFINES, Vec::new()),
+            )
+            .unwrap();
 
-        let yaml = service.build_frontmatter_yaml(
-            "ADR-001",
-            builtin::ARCHITECTURE_DECISION_RECORD,
-            &values,
+        assert!(result.kept_links.is_empty(), "{:?}", result.kept_links);
+        let value = serde_yaml::to_value(&result).unwrap();
+        assert!(value.get("kept_links").is_none());
+    }
+
+    /// Writes each `(file name, content)` pair in a new repository and loads
+    /// it.
+    fn repository_with(files: &[(&str, &str)]) -> (TempDir, KnowledgeGraph) {
+        let dir = TempDir::new().unwrap();
+        for (file_name, content) in files {
+            fs::write(dir.path().join(file_name), content).unwrap();
+        }
+        let (graph, warnings) = super::super::load_graph(&[dir.path().to_path_buf()]).unwrap();
+        assert!(
+            warnings.is_empty(),
+            "unexpected scan warnings: {warnings:?}"
+        );
+        (dir, graph)
+    }
+
+    #[test]
+    fn test_edit_rewrites_only_the_edited_key() {
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_name("Dim the lights"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace(
+                "name: \"Adjust Living Room Dimmer\"",
+                "name: \"Dim the lights\""
+            )
+        );
+    }
+
+    #[test]
+    fn test_edit_replaces_folded_description_entry() {
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_description("Short"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace(
+                "description: >\n  Folded text that spans\n  two lines\n",
+                "description: \"Short\"\n"
+            )
+        );
+    }
+
+    #[test]
+    fn test_edit_removes_cleared_relation_entry() {
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_relation(builtin::REFINES, Vec::new()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace("refines:\n  - \"UC-001\"\n", "")
+        );
+    }
+
+    #[test]
+    fn test_edit_leaves_file_untouched_when_patch_breaks_frontmatter() {
+        // The flow sequence continues on a column-0 line, which the patch
+        // does not treat as part of the entry: replacing the entry would
+        // leave that line behind and break the YAML.
+        let content = "---\nid: \"UC-001\"\ntype: use_case\nname: \"Lights\"\nrefines: [\"SOL-001\",\n\"SOL-002\"]\n---\n";
+        let (dir, graph) = repository_with(&[("UC-001.md", content)]);
+
+        let result = EditService::new().edit(
+            &graph,
+            EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]),
         );
 
-        assert!(yaml.contains("name: \"Renamed\""));
-        assert!(yaml.contains("Test Decider"));
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("UC-001.md")).unwrap(),
+            content
+        );
+    }
+
+    #[test]
+    fn test_edit_updates_relation_declared_outside_the_type() {
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001")
+                    .with_relation(builtin::DERIVES, vec!["SYSREQ-002".to_string()]),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace("  - \"SYSREQ-001\"\n", "  - \"SYSREQ-002\"\n")
+        );
+    }
+
+    #[test]
+    fn test_edit_clears_relation_declared_outside_the_type() {
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_relation(builtin::DERIVES, Vec::new()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace("derives:\n  - \"SYSREQ-001\"\n", "")
+        );
     }
 }

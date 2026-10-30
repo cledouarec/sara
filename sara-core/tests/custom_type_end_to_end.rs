@@ -163,6 +163,7 @@ fn custom_type_flows_through_the_whole_pipeline() {
         .expect("init custom type");
     assert_eq!(result.item_type, custom);
     assert!(result.needs_specification, "placeholder text was used");
+    assert_eq!(result.defaulted_fields, ["rationale"]);
     let content = std::fs::read_to_string(&file).expect("read generated file");
     assert!(content.contains("id: \"STKREQ-002\""));
     assert!(content.contains("rationale: \"Explain why the stakeholder needs this.\""));

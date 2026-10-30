@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use super::{Item, RelationshipType};
 
@@ -32,7 +33,8 @@ impl EditSummary {
 }
 
 /// A single field change in an edit operation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FieldChange {
     /// Display label of the changed field or relation.
     pub field: String,
@@ -106,16 +108,24 @@ impl TraceabilityLinks {
         self.links.values().all(Vec::is_empty)
     }
 
-    /// Collects the item's targets for every relation its type declares.
+    /// Collects the item's targets for every relation its type declares,
+    /// then for every other relation the item itself declares.
+    ///
+    /// The latter cover links written from the item's side although its type
+    /// does not list them, such as a scenario declaring `derives`; keeping
+    /// them lets an edit preserve or change them.
     pub fn from_item(item: &Item) -> Self {
         let mut links = Self::new();
-        for relation in item.item_type.declared_relations() {
-            links.set(
-                relation,
-                item.relationship_ids(relation)
-                    .map(|id| id.as_str().to_string())
-                    .collect(),
-            );
+        let held = item.relationships.iter().map(|rel| rel.relationship_type);
+        for relation in item.item_type.declared_relations().into_iter().chain(held) {
+            if !links.links.contains_key(&relation) {
+                links.set(
+                    relation,
+                    item.relationship_ids(relation)
+                        .map(|id| id.as_str().to_string())
+                        .collect(),
+                );
+            }
         }
         links
     }
@@ -189,5 +199,20 @@ mod tests {
 
         let links = TraceabilityLinks::from_item(&item);
         assert_eq!(links.get(builtin::REFINES), ["SOL-001"]);
+    }
+
+    #[test]
+    fn test_traceability_links_from_item_keeps_relations_outside_the_type() {
+        let item = create_test_item_with_relationships(
+            "SCEN-001",
+            builtin::SCENARIO,
+            vec![Relationship::new(
+                ItemId::new_unchecked("SYSREQ-001"),
+                builtin::DERIVES,
+            )],
+        );
+
+        let links = TraceabilityLinks::from_item(&item);
+        assert_eq!(links.get(builtin::DERIVES), ["SYSREQ-001"]);
     }
 }

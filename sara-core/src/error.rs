@@ -72,8 +72,7 @@ use crate::model::{ItemId, ItemType, RelationshipType};
 /// # Ok(())
 /// # }
 /// ```
-#[derive(Debug, Error, serde::Serialize)]
-#[serde(tag = "error_type", content = "details")]
+#[derive(Debug, Error)]
 pub enum SaraError {
     // ==================== Parsing ====================
     /// Invalid frontmatter in a Markdown file.
@@ -235,11 +234,7 @@ pub enum SaraError {
     // ==================== Wrapped Errors ====================
     /// Standard I/O error.
     #[error("I/O error: {0}")]
-    Io(
-        #[serde(skip)]
-        #[from]
-        std::io::Error,
-    ),
+    Io(#[from] std::io::Error),
 
     /// Gitoxide (gix) library error.
     ///
@@ -247,10 +242,37 @@ pub enum SaraError {
     /// boxed variant keeps the enum stable across gix minor bumps while still
     /// preserving `Display` and `source()` for tracing and user reports.
     #[error("Git error: {0}")]
-    Gix(#[serde(skip)] Box<dyn std::error::Error + Send + Sync + 'static>),
+    Gix(Box<dyn std::error::Error + Send + Sync + 'static>),
 }
 
 impl SaraError {
+    /// Returns the name of the error's kind, such as `BrokenReference`.
+    #[must_use]
+    pub fn kind(&self) -> &'static str {
+        match self {
+            Self::InvalidFrontmatter { .. } => "InvalidFrontmatter",
+            Self::MissingFrontmatter { .. } => "MissingFrontmatter",
+            Self::InvalidYaml { .. } => "InvalidYaml",
+            Self::MissingField { .. } => "MissingField",
+            Self::InvalidId { .. } => "InvalidId",
+            Self::BrokenReference { .. } => "BrokenReference",
+            Self::OrphanItem { .. } => "OrphanItem",
+            Self::DuplicateIdentifier { .. } => "DuplicateIdentifier",
+            Self::CircularReference { .. } => "CircularReference",
+            Self::InvalidRelationship { .. } => "InvalidRelationship",
+            Self::InvalidMetadata { .. } => "InvalidMetadata",
+            Self::RedundantRelationship { .. } => "RedundantRelationship",
+            Self::ConfigRead { .. } => "ConfigRead",
+            Self::InvalidConfig { .. } => "InvalidConfig",
+            Self::ItemNotFound { .. } => "ItemNotFound",
+            Self::Git(_) => "Git",
+            Self::NonInteractiveTerminal => "NonInteractiveTerminal",
+            Self::EditFailed(_) => "EditFailed",
+            Self::Io(_) => "Io",
+            Self::Gix(_) => "Gix",
+        }
+    }
+
     /// Formats suggestions as a user-friendly message.
     ///
     /// Returns `None` if this is not an `ItemNotFound` error or if there are no suggestions.
@@ -278,3 +300,22 @@ impl SaraError {
 /// }
 /// ```
 pub type Result<T> = std::result::Result<T, SaraError>;
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_kind_names_the_variant() {
+        let broken = SaraError::BrokenReference {
+            from: ItemId::new_unchecked("UC-001"),
+            to: ItemId::new_unchecked("SOL-999"),
+        };
+
+        assert_eq!(broken.kind(), "BrokenReference");
+        assert_eq!(
+            SaraError::NonInteractiveTerminal.kind(),
+            "NonInteractiveTerminal"
+        );
+    }
+}

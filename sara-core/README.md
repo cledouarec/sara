@@ -95,6 +95,12 @@ Solution
                         -> SW Detailed Design
 ```
 
+## Cargo Features
+
+| Feature | Default | Description |
+|---------|---------|-------------|
+| `schemars` | No | JSON Schemas of the types tool interfaces, such as the MCP server, return to their clients |
+
 ## License
 
 Licensed under the Apache-2.0 License. See [LICENSE](https://github.com/cledouarec/sara/blob/main/LICENSE) for details.

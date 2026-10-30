@@ -262,16 +262,16 @@ fn print_direct_relationships(
     graph: &KnowledgeGraph,
     options: &TraversalOptions,
 ) {
-    for (rel_type, related) in graph.direct_relationships(&item.id, options) {
+    for group in graph.direct_relationships(&item.id, options) {
         let label = colorize(
             config,
-            &format!("{}:", rel_type.display_name()),
+            &format!("{}:", group.label),
             Color::None,
             Style::Bold,
         );
         println!("\n   {label}");
-        for (i, related_item) in related.iter().enumerate() {
-            let branch = format_tree_branch(i == related.len() - 1);
+        for (i, related_item) in group.items.iter().enumerate() {
+            let branch = format_tree_branch(i == group.items.len() - 1);
             let id = colorize(config, related_item.id.as_str(), Color::Cyan, Style::None);
             println!("     {branch} {id}: {name}", name = related_item.name);
         }

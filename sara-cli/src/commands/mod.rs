@@ -5,6 +5,8 @@ mod diff;
 mod edit;
 mod init;
 mod interactive;
+#[cfg(feature = "mcp")]
+mod mcp;
 mod query;
 mod report;
 mod schema;
@@ -123,6 +125,17 @@ pub enum Commands {
     ///   sara init sysreq doc.md --specification "" # Create system requirement
     Init(InitArgs),
 
+    /// Serve the knowledge graph to AI agents over the Model Context Protocol
+    ///
+    /// Runs an MCP server on standard input and output: AI coding agents
+    /// (Claude Code, Codex CLI, Gemini CLI, Cursor...) start it and query the
+    /// graph through its tools instead of reading the Markdown files.
+    ///
+    /// Example agent configuration:
+    ///   claude mcp add sara -- sara mcp
+    #[cfg(feature = "mcp")]
+    Mcp,
+
     /// Query items and traceability chains
     Query(QueryArgs),
 
@@ -170,6 +183,8 @@ pub fn run(cli: &Cli, file_config: Option<&Config>) -> Result<ExitCode, Box<dyn 
         Commands::Diff(args) => diff::run(args, &config),
         Commands::Edit(args) => edit::run(args, &config),
         Commands::Init(args) => init::run(args, &config),
+        #[cfg(feature = "mcp")]
+        Commands::Mcp => mcp::run(&config),
         Commands::Query(args) => query::run(args, &config),
         Commands::Report(args) => report::run(args, &config),
         Commands::Schema(args) => schema::run(args, &config),

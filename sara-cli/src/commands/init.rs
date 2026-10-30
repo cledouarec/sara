@@ -385,19 +385,7 @@ fn run_with_options(
 
 /// Prints the result of a successful initialization.
 fn print_result(config: &OutputConfig, result: &InitResult) {
-    if result.updated_existing {
-        if result.replaced_frontmatter {
-            print_success(
-                config,
-                &format!("Replaced frontmatter in {}", result.file.display()),
-            );
-        } else {
-            print_success(
-                config,
-                &format!("Added frontmatter to {}", result.file.display()),
-            );
-        }
-    } else {
+    if result.created {
         print_success(
             config,
             &format!(
@@ -405,6 +393,16 @@ fn print_result(config: &OutputConfig, result: &InitResult) {
                 result.file.display(),
                 result.item_type.display_name()
             ),
+        );
+    } else if result.replaced_frontmatter {
+        print_success(
+            config,
+            &format!("Replaced frontmatter in {}", result.file.display()),
+        );
+    } else {
+        print_success(
+            config,
+            &format!("Added frontmatter to {}", result.file.display()),
         );
     }
 

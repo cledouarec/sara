@@ -1,6 +1,6 @@
 //! Relationship types and structures for the knowledge graph.
 
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 
 use super::item::{ItemId, ItemType};
 use crate::schema::{self, RelationDef, RelationDirection};
@@ -83,25 +83,30 @@ impl RelationshipType {
             .unwrap_or(*self)
     }
 
+    /// Returns the direction of this relation in the model hierarchy.
+    ///
+    /// `None` when the active schema does not declare the relation.
+    #[must_use]
+    pub fn direction(&self) -> Option<RelationDirection> {
+        self.def().map(|def| def.direction)
+    }
+
     /// Check if this is an upstream relationship (toward the hierarchy root).
     #[must_use]
     pub fn is_upstream(&self) -> bool {
-        self.def()
-            .is_some_and(|def| def.direction == RelationDirection::Upstream)
+        self.direction() == Some(RelationDirection::Upstream)
     }
 
     /// Check if this is a downstream relationship (away from the root).
     #[must_use]
     pub fn is_downstream(&self) -> bool {
-        self.def()
-            .is_some_and(|def| def.direction == RelationDirection::Downstream)
+        self.direction() == Some(RelationDirection::Downstream)
     }
 
     /// Check if this is a peer relationship (between items of the same type).
     #[must_use]
     pub fn is_peer(&self) -> bool {
-        self.def()
-            .is_some_and(|def| def.direction == RelationDirection::Peer)
+        self.direction() == Some(RelationDirection::Peer)
     }
 
     /// Check if this is a primary relationship (not an inverse).
@@ -127,18 +132,10 @@ impl Serialize for RelationshipType {
     }
 }
 
-impl<'de> Deserialize<'de> for RelationshipType {
-    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
-        let id = String::deserialize(deserializer)?;
-        Self::from_id(&id)
-            .ok_or_else(|| serde::de::Error::custom(format!("unknown relation `{id}`")))
-    }
-}
-
 /// Represents a relationship from an Item to another item.
 ///
 /// The source item is implied by the `Item` containing this relationship.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Relationship {
     /// Target item ID.
     pub to: ItemId,
@@ -208,6 +205,29 @@ mod tests {
 
         assert!(builtin::DEPENDS_ON.is_peer());
         assert!(builtin::IS_REQUIRED_BY.is_peer());
+
+        assert_eq!(
+            builtin::REFINES.direction(),
+            Some(RelationDirection::Upstream)
+        );
+        assert_eq!(
+            builtin::IS_REFINED_BY.direction(),
+            Some(RelationDirection::Downstream)
+        );
+        assert_eq!(
+            builtin::DEPENDS_ON.direction(),
+            Some(RelationDirection::Peer)
+        );
+    }
+
+    #[test]
+    fn test_undeclared_relationship_has_no_direction() {
+        let relation = RelationshipType::from_static("undeclared");
+
+        assert_eq!(relation.direction(), None);
+        assert!(!relation.is_upstream());
+        assert!(!relation.is_downstream());
+        assert!(!relation.is_peer());
     }
 
     #[test]

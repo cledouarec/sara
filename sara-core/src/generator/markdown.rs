@@ -378,6 +378,20 @@ fn build_context(item: &Item) -> Context {
         }
     }
 
+    // Relations the item declares beyond those of its type, such as a link
+    // written from its downstream side, follow in their declaration order.
+    for relationship in &item.relationships {
+        let relation = relationship.relationship_type;
+        if entries.iter().any(|entry| entry.name == relation.as_str()) {
+            continue;
+        }
+        let ids: Vec<String> = item
+            .relationship_ids(relation)
+            .map(|id| id.as_str().to_string())
+            .collect();
+        entries.push(FrontmatterEntry::list(relation.as_str(), ids));
+    }
+
     for entry in &entries {
         if entry.kind == EntryKind::List {
             context.insert(entry.name.clone(), &entry.values);
@@ -700,5 +714,27 @@ mod tests {
         };
 
         assert!(discover_overrides(&config).is_err());
+    }
+
+    #[test]
+    fn test_frontmatter_renders_relation_outside_the_type() {
+        // A scenario may declare its link to a requirement from its own
+        // side, although `derives` is not among the scenario's relations.
+        let item = ItemBuilder::new()
+            .id(ItemId::new_unchecked("SCEN-001"))
+            .item_type(builtin::SCENARIO)
+            .name("Dimmer")
+            .source(test_source())
+            .relationships(vec![
+                Relationship::new(ItemId::new_unchecked("UC-001"), builtin::REFINES),
+                Relationship::new(ItemId::new_unchecked("SYSREQ-001"), builtin::DERIVES),
+            ])
+            .build()
+            .unwrap();
+
+        // Templates keep the line endings of the checkout: CRLF on Windows.
+        let frontmatter = generate_frontmatter(&item).replace("\r\n", "\n");
+
+        assert!(frontmatter.contains("refines:\n  - \"UC-001\"\nderives:\n  - \"SYSREQ-001\""));
     }
 }

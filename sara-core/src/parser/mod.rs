@@ -13,9 +13,13 @@ mod yaml;
 use std::path::Path;
 
 #[doc(inline)]
-pub use frontmatter::{has_frontmatter, update_frontmatter};
+pub use frontmatter::{
+    FrontmatterEdit, extract_body, frontmatter_entry, has_frontmatter, patch_frontmatter,
+};
 #[doc(inline)]
 pub use markdown::extract_name_from_content;
+
+pub(crate) use frontmatter::line_ending;
 
 use crate::error::SaraError;
 use crate::model::Item;
