@@ -6,13 +6,14 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use crate::error::SaraError;
 use crate::generator::{self, OutputFormat};
-use crate::graph::KnowledgeGraph;
+use crate::graph::{KnowledgeGraph, TraversalOptions};
 use crate::model::{
     FIELD_DESCRIPTION, FIELD_NAME, FieldChange, Item, ItemAttributes, ItemBuilder, ItemId,
-    ItemType, RelationshipType, SourceLocation, TraceabilityLinks,
+    ItemType, RelationshipType, SourceLocation, TraceabilityLinks, serialize_path,
 };
 use crate::parser::{
     FrontmatterEdit, InputFormat, frontmatter_entry, parse_metadata, patch_frontmatter,
@@ -153,15 +154,37 @@ impl EditedValues {
     }
 }
 
-/// Result of a successful edit operation.
-#[derive(Debug)]
+/// An item just edited.
+// The `id` key mirrors `FIELD_ID`; serde attributes cannot reference
+// constants, so a guard test pins the correspondence.
+#[derive(Debug, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct EditResult {
-    /// The item ID that was edited.
+    /// Id of the edited item.
+    #[serde(rename = "id")]
     pub item_id: String,
-    /// The file path that was modified.
+    /// Path of the Markdown file holding the item.
+    #[serde(rename = "file", serialize_with = "serialize_path")]
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
     pub file_path: PathBuf,
-    /// The changes that were applied.
+    /// What changed, entry by entry.
     pub changes: Vec<FieldChange>,
+    /// Links that remain although the edit dropped them, because the linked
+    /// item's file declares them: change them in that file.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub kept_links: Vec<KeptLink>,
+}
+
+/// A link an edit leaves in place because the linked item's file declares it.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct KeptLink {
+    /// Relation id, read from the edited item.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub relation: RelationshipType,
+    /// Id of the linked item, whose file declares the link.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub id: ItemId,
 }
 
 impl EditResult {
@@ -491,6 +514,8 @@ impl EditService {
         // Validate options
         self.validate_options(&opts, &item_ctx)?;
 
+        let kept = kept_links(graph, item, &opts.relations);
+
         // Merge values
         let new_values = self.merge_values(opts, &item_ctx);
 
@@ -513,8 +538,36 @@ impl EditService {
             item_id: item_ctx.id,
             file_path: item_ctx.file_path,
             changes,
+            kept_links: kept,
         })
     }
+}
+
+/// Returns the links `item` keeps through the relations an edit replaces:
+/// those the linked item's file declares, which editing `item` cannot remove.
+fn kept_links(
+    graph: &KnowledgeGraph,
+    item: &Item,
+    relations: &IndexMap<RelationshipType, Vec<String>>,
+) -> Vec<KeptLink> {
+    let groups = graph.direct_relationships(&item.id, &TraversalOptions::new());
+    relations
+        .iter()
+        .flat_map(|(relation, targets)| {
+            groups
+                .iter()
+                .filter(move |group| group.relation == *relation)
+                .flat_map(|group| group.items.iter())
+                .filter(move |other| {
+                    !item.relationship_ids(*relation).any(|id| *id == other.id)
+                        && !targets.iter().any(|target| target == other.id.as_str())
+                })
+                .map(move |other| KeptLink {
+                    relation: *relation,
+                    id: other.id.clone(),
+                })
+        })
+        .collect()
 }
 
 /// Returns the frontmatter keys whose value differs between `current` and
@@ -555,7 +608,7 @@ mod tests {
 
     use super::*;
 
-    use crate::model::{FieldValue, Relationship};
+    use crate::model::{FIELD_ID, FieldValue, Relationship};
     use crate::schema::builtin;
     use crate::test_utils::{
         create_test_adr, create_test_item, create_test_item_with_name,
@@ -950,10 +1003,69 @@ owner: "alice"
 Body to preserve.
 "#;
 
-    /// Writes `content` as `file_name` in a new repository and loads it.
-    fn repository_with(file_name: &str, content: &str) -> (TempDir, KnowledgeGraph) {
+    /// A solution declaring the use case that refines it.
+    const HUB_SOLUTION: &str = "---\nid: \"SOL-001\"\ntype: solution\nname: \"Hub\"\nis_refined_by:\n  - \"UC-002\"\n---\n";
+
+    /// A use case declaring no link.
+    const SCENES_USE_CASE: &str = "---\nid: \"UC-002\"\ntype: use_case\nname: \"Scenes\"\n---\n";
+
+    #[test]
+    fn test_edit_reports_links_the_linked_item_declares() {
+        let (_dir, graph) =
+            repository_with(&[("SOL-001.md", HUB_SOLUTION), ("UC-002.md", SCENES_USE_CASE)]);
+
+        let result = EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("UC-002").with_relation(builtin::REFINES, Vec::new()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            result.kept_links,
+            [KeptLink {
+                relation: builtin::REFINES,
+                id: ItemId::new_unchecked("SOL-001"),
+            }]
+        );
+
+        let value = serde_yaml::to_value(&result).unwrap();
+        let keys: Vec<&str> = value
+            .as_mapping()
+            .unwrap()
+            .keys()
+            .map(|key| key.as_str().unwrap())
+            .collect();
+        assert_eq!(keys, [FIELD_ID, "file", "changes", "kept_links"]);
+        assert_eq!(value["kept_links"][0]["relation"], "refines");
+        assert_eq!(value["kept_links"][0]["id"], "SOL-001");
+    }
+
+    #[test]
+    fn test_edit_keeps_no_link_the_item_declares() {
+        let solution = "---\nid: \"SOL-001\"\ntype: solution\nname: \"Hub\"\n---\n";
+        let use_case = "---\nid: \"UC-002\"\ntype: use_case\nname: \"Scenes\"\nrefines:\n  - \"SOL-001\"\n---\n";
+        let (_dir, graph) = repository_with(&[("SOL-001.md", solution), ("UC-002.md", use_case)]);
+
+        let result = EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("UC-002").with_relation(builtin::REFINES, Vec::new()),
+            )
+            .unwrap();
+
+        assert!(result.kept_links.is_empty(), "{:?}", result.kept_links);
+        let value = serde_yaml::to_value(&result).unwrap();
+        assert!(value.get("kept_links").is_none());
+    }
+
+    /// Writes each `(file name, content)` pair in a new repository and loads
+    /// it.
+    fn repository_with(files: &[(&str, &str)]) -> (TempDir, KnowledgeGraph) {
         let dir = TempDir::new().unwrap();
-        fs::write(dir.path().join(file_name), content).unwrap();
+        for (file_name, content) in files {
+            fs::write(dir.path().join(file_name), content).unwrap();
+        }
         let (graph, warnings) = super::super::load_graph(&[dir.path().to_path_buf()]).unwrap();
         assert!(
             warnings.is_empty(),
@@ -964,7 +1076,7 @@ Body to preserve.
 
     #[test]
     fn test_edit_rewrites_only_the_edited_key() {
-        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
 
         EditService::new()
             .edit(
@@ -984,7 +1096,7 @@ Body to preserve.
 
     #[test]
     fn test_edit_replaces_folded_description_entry() {
-        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
 
         EditService::new()
             .edit(
@@ -1004,7 +1116,7 @@ Body to preserve.
 
     #[test]
     fn test_edit_removes_cleared_relation_entry() {
-        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
 
         EditService::new()
             .edit(
@@ -1025,7 +1137,7 @@ Body to preserve.
         // does not treat as part of the entry: replacing the entry would
         // leave that line behind and break the YAML.
         let content = "---\nid: \"UC-001\"\ntype: use_case\nname: \"Lights\"\nrefines: [\"SOL-001\",\n\"SOL-002\"]\n---\n";
-        let (dir, graph) = repository_with("UC-001.md", content);
+        let (dir, graph) = repository_with(&[("UC-001.md", content)]);
 
         let result = EditService::new().edit(
             &graph,
@@ -1041,7 +1153,7 @@ Body to preserve.
 
     #[test]
     fn test_edit_updates_relation_declared_outside_the_type() {
-        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
 
         EditService::new()
             .edit(
@@ -1059,7 +1171,7 @@ Body to preserve.
 
     #[test]
     fn test_edit_clears_relation_declared_outside_the_type() {
-        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+        let (dir, graph) = repository_with(&[("SCEN-001.md", SCENARIO_FILE)]);
 
         EditService::new()
             .edit(

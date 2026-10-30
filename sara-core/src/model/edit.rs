@@ -5,6 +5,7 @@
 use std::path::PathBuf;
 
 use indexmap::IndexMap;
+use serde::Serialize;
 
 use super::{Item, RelationshipType};
 
@@ -32,7 +33,8 @@ impl EditSummary {
 }
 
 /// A single field change in an edit operation.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 pub struct FieldChange {
     /// Display label of the changed field or relation.
     pub field: String,
