@@ -1,13 +1,15 @@
 //! Graph traversal operations for upstream/downstream queries.
 
-use std::collections::HashSet;
+use std::collections::hash_map::Entry;
+use std::collections::{HashMap, HashSet, VecDeque};
 
 use petgraph::Direction;
 use petgraph::graph::{DiGraph, NodeIndex};
 use petgraph::visit::EdgeRef;
+use serde::Serialize;
 
 use crate::graph::KnowledgeGraph;
-use crate::model::{Item, ItemId, ItemType, RelationshipType};
+use crate::model::{Item, ItemId, ItemSummary, ItemType, RelationshipType};
 
 /// Result of a traversal operation.
 #[derive(Debug, Clone)]
@@ -234,9 +236,171 @@ fn neighbors(
         }
     }
 
+    first_per_target(edges)
+}
+
+/// Keeps the first edge leading to each target node.
+fn first_per_target(
+    mut edges: Vec<(NodeIndex, RelationshipType)>,
+) -> Vec<(NodeIndex, RelationshipType)> {
     let mut seen = HashSet::new();
     edges.retain(|(target_idx, _)| seen.insert(*target_idx));
     edges
+}
+
+/// Items reached by a breadth-first traversal, each reported once.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct Reach {
+    /// Reached items ordered by depth, then by id, each at its shortest
+    /// distance from the origins. The origins themselves are not included.
+    pub items: Vec<ReachedItem>,
+    /// Links followed during the walk, each once, ordered by the depth of
+    /// the item they start from, then by source and target id.
+    pub links: Vec<ReachLink>,
+    /// Whether the depth limit or the item limit left reachable items out.
+    pub truncated: bool,
+}
+
+impl Reach {
+    /// Keeps the `limit` nearest items and the links between them and the
+    /// origins; marks the reach truncated when it drops items.
+    pub fn truncate(&mut self, limit: usize) {
+        if self.items.len() <= limit {
+            return;
+        }
+        let dropped: HashSet<ItemId> = self
+            .items
+            .drain(limit..)
+            .map(|reached| reached.item.id)
+            .collect();
+        self.links
+            .retain(|link| !dropped.contains(&link.from) && !dropped.contains(&link.to));
+        self.truncated = true;
+    }
+}
+
+/// An item reached by a breadth-first traversal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ReachedItem {
+    /// The reached item.
+    #[serde(flatten)]
+    pub item: ItemSummary,
+    /// Number of links on the shortest path from the origins (at least 1).
+    pub depth: usize,
+}
+
+/// A link followed by a breadth-first traversal.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
+pub struct ReachLink {
+    /// Item the link was followed from.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub from: ItemId,
+    /// The relationship as seen from `from`.
+    #[serde(rename = "relation")]
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub relationship: RelationshipType,
+    /// Item the link leads to.
+    #[cfg_attr(feature = "schemars", schemars(with = "String"))]
+    pub to: ItemId,
+}
+
+/// Collects the items reachable from `origins` in `direction`, each once.
+///
+/// [`traverse_upstream`] and [`traverse_downstream`] unfold every path into
+/// a tree, so an item reachable through several paths appears several
+/// times. This walk visits each item once, at its shortest distance, and
+/// reports every link it followed: shared ancestors and descendants appear a
+/// single time with all their links. Neighbors follow the same rules as
+/// those traversals. Origins absent from the graph are ignored, and
+/// `max_depth` bounds the distance of the reported items.
+#[must_use]
+pub fn reach(
+    graph: &KnowledgeGraph,
+    origins: &[ItemId],
+    direction: TraversalDirection,
+    max_depth: Option<usize>,
+) -> Reach {
+    let inner = graph.inner();
+    breadth_first(graph, origins, max_depth, |node_idx| {
+        neighbors(inner, node_idx, direction)
+    })
+}
+
+/// Breadth-first walk from `origins`, expanding each node through `next`.
+fn breadth_first(
+    graph: &KnowledgeGraph,
+    origins: &[ItemId],
+    max_depth: Option<usize>,
+    next: impl Fn(NodeIndex) -> Vec<(NodeIndex, RelationshipType)>,
+) -> Reach {
+    let mut depths: HashMap<NodeIndex, usize> = HashMap::new();
+    let mut queue = VecDeque::new();
+    for origin in origins {
+        if let Some(node_idx) = graph.node_index(origin)
+            && let Entry::Vacant(entry) = depths.entry(node_idx)
+        {
+            entry.insert(0);
+            queue.push_back(node_idx);
+        }
+    }
+
+    let mut followed = Vec::new();
+    let mut truncated = false;
+    while let Some(node_idx) = queue.pop_front() {
+        let depth = depths[&node_idx];
+        let targets = next(node_idx);
+        if max_depth.is_some_and(|max| depth >= max) {
+            truncated |= !targets.is_empty();
+            continue;
+        }
+
+        for (target_idx, relationship) in targets {
+            followed.push((node_idx, relationship, target_idx));
+            if let Entry::Vacant(entry) = depths.entry(target_idx) {
+                entry.insert(depth + 1);
+                queue.push_back(target_idx);
+            }
+        }
+    }
+
+    let inner = graph.inner();
+    let id_of = |node_idx: NodeIndex| inner[node_idx].id.clone();
+
+    // Every node but the origins, at depth 0, was reached.
+    let mut items: Vec<ReachedItem> = depths
+        .iter()
+        .filter(|&(_, &depth)| depth > 0)
+        .map(|(&node_idx, &depth)| ReachedItem {
+            item: ItemSummary::from(&inner[node_idx]),
+            depth,
+        })
+        .collect();
+    items.sort_by(|a, b| (a.depth, a.item.id.as_str()).cmp(&(b.depth, b.item.id.as_str())));
+
+    followed.sort_by_key(|(from, _, to)| {
+        (
+            depths[from],
+            inner[*from].id.as_str(),
+            inner[*to].id.as_str(),
+        )
+    });
+    let links = followed
+        .into_iter()
+        .map(|(from, relationship, to)| ReachLink {
+            from: id_of(from),
+            relationship,
+            to: id_of(to),
+        })
+        .collect();
+
+    Reach {
+        items,
+        links,
+        truncated,
+    }
 }
 
 #[cfg(test)]
@@ -610,5 +774,225 @@ mod tests {
         .unwrap();
 
         assert_eq!(reported_ids(&result), ["SOL-001", "UC-001"]);
+    }
+
+    /// Returns `(id, depth)` pairs of the reached items, in report order.
+    fn reached(reach: &Reach) -> Vec<(&str, usize)> {
+        reach
+            .items
+            .iter()
+            .map(|reached| (reached.item.id.as_str(), reached.depth))
+            .collect()
+    }
+
+    /// Returns `from -> to` pairs of the followed links, in report order.
+    fn followed(reach: &Reach) -> Vec<(&str, &str)> {
+        reach
+            .links
+            .iter()
+            .map(|link| (link.from.as_str(), link.to.as_str()))
+            .collect()
+    }
+
+    /// Builds a diamond: SCEN-001 refines UC-001 and UC-002, which both
+    /// refine SOL-001.
+    fn diamond() -> KnowledgeGraph {
+        let refines = |id: &str| {
+            vec![Relationship::new(
+                ItemId::new_unchecked(id),
+                builtin::REFINES,
+            )]
+        };
+        let mut scen_refines = refines("UC-001");
+        scen_refines.extend(refines("UC-002"));
+
+        KnowledgeGraphBuilder::new()
+            .add_item(create_test_item("SOL-001", builtin::SOLUTION))
+            .add_item(create_test_item_with_relationships(
+                "UC-001",
+                builtin::USE_CASE,
+                refines("SOL-001"),
+            ))
+            .add_item(create_test_item_with_relationships(
+                "UC-002",
+                builtin::USE_CASE,
+                refines("SOL-001"),
+            ))
+            .add_item(create_test_item_with_relationships(
+                "SCEN-001",
+                builtin::SCENARIO,
+                scen_refines,
+            ))
+            .build()
+            .unwrap()
+    }
+
+    #[test]
+    fn test_reach_downstream_reports_each_item_once() {
+        let graph = diamond();
+
+        let reach = reach(
+            &graph,
+            &[ItemId::new_unchecked("SOL-001")],
+            TraversalDirection::Downstream,
+            None,
+        );
+
+        assert_eq!(
+            reached(&reach),
+            [("UC-001", 1), ("UC-002", 1), ("SCEN-001", 2)]
+        );
+        assert_eq!(
+            followed(&reach),
+            [
+                ("SOL-001", "UC-001"),
+                ("SOL-001", "UC-002"),
+                ("UC-001", "SCEN-001"),
+                ("UC-002", "SCEN-001"),
+            ]
+        );
+        assert!(
+            reach
+                .links
+                .iter()
+                .all(|link| link.relationship == builtin::IS_REFINED_BY)
+        );
+        assert!(!reach.truncated);
+    }
+
+    #[test]
+    fn test_reach_upstream_reports_each_item_once() {
+        let graph = diamond();
+
+        let reach = reach(
+            &graph,
+            &[ItemId::new_unchecked("SCEN-001")],
+            TraversalDirection::Upstream,
+            None,
+        );
+
+        assert_eq!(
+            reached(&reach),
+            [("UC-001", 1), ("UC-002", 1), ("SOL-001", 2)]
+        );
+        assert_eq!(
+            followed(&reach),
+            [
+                ("SCEN-001", "UC-001"),
+                ("SCEN-001", "UC-002"),
+                ("UC-001", "SOL-001"),
+                ("UC-002", "SOL-001"),
+            ]
+        );
+    }
+
+    #[test]
+    fn test_reach_stops_at_max_depth() {
+        let graph = diamond();
+
+        let reach = reach(
+            &graph,
+            &[ItemId::new_unchecked("SOL-001")],
+            TraversalDirection::Downstream,
+            Some(1),
+        );
+
+        assert_eq!(reached(&reach), [("UC-001", 1), ("UC-002", 1)]);
+        assert_eq!(
+            followed(&reach),
+            [("SOL-001", "UC-001"), ("SOL-001", "UC-002")]
+        );
+        assert!(reach.truncated);
+    }
+
+    #[test]
+    fn test_reach_truncate_keeps_the_nearest_items_and_their_links() {
+        let graph = diamond();
+        let mut reach = reach(
+            &graph,
+            &[ItemId::new_unchecked("SOL-001")],
+            TraversalDirection::Downstream,
+            None,
+        );
+
+        reach.truncate(2);
+
+        assert_eq!(reached(&reach), [("UC-001", 1), ("UC-002", 1)]);
+        assert_eq!(
+            followed(&reach),
+            [("SOL-001", "UC-001"), ("SOL-001", "UC-002")]
+        );
+        assert!(reach.truncated);
+    }
+
+    #[test]
+    fn test_reach_serializes_items_links_and_truncation() {
+        let graph = diamond();
+        let reach = reach(
+            &graph,
+            &[ItemId::new_unchecked("SOL-001")],
+            TraversalDirection::Downstream,
+            Some(1),
+        );
+
+        let value = serde_yaml::to_value(&reach).unwrap();
+
+        assert_eq!(value["items"][0]["id"], "UC-001");
+        assert_eq!(value["items"][0]["type"], "use_case");
+        assert_eq!(value["items"][0]["depth"], 1);
+        assert_eq!(value["links"][0]["from"], "SOL-001");
+        assert_eq!(value["links"][0]["relation"], "is_refined_by");
+        assert_eq!(value["truncated"], true);
+    }
+
+    #[test]
+    fn test_reach_truncate_within_the_limit_changes_nothing() {
+        let graph = diamond();
+        let full = reach(
+            &graph,
+            &[ItemId::new_unchecked("SOL-001")],
+            TraversalDirection::Downstream,
+            None,
+        );
+        let mut truncated = full.clone();
+
+        truncated.truncate(3);
+
+        assert_eq!(truncated, full);
+    }
+
+    #[test]
+    fn test_reach_merges_origins_and_excludes_them() {
+        let graph = diamond();
+
+        let reach = reach(
+            &graph,
+            &[
+                ItemId::new_unchecked("UC-001"),
+                ItemId::new_unchecked("UC-002"),
+            ],
+            TraversalDirection::Upstream,
+            None,
+        );
+
+        assert_eq!(reached(&reach), [("SOL-001", 1)]);
+        assert_eq!(
+            followed(&reach),
+            [("UC-001", "SOL-001"), ("UC-002", "SOL-001")]
+        );
+    }
+
+    #[test]
+    fn test_reach_link_serializes_its_relationship_as_relation() {
+        let link = ReachLink {
+            from: ItemId::new_unchecked("SYSREQ-001"),
+            relationship: builtin::IS_SATISFIED_BY,
+            to: ItemId::new_unchecked("SYSARCH-001"),
+        };
+
+        assert_eq!(
+            serde_yaml::to_string(&link).unwrap(),
+            "from: SYSREQ-001\nrelation: is_satisfied_by\nto: SYSARCH-001\n"
+        );
     }
 }
