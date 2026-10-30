@@ -40,6 +40,15 @@ pub const TRACE_LIMIT: Limit = Limit {
     max: 500,
 };
 
+/// Impacted items `sara_analyze_impact` returns.
+pub const IMPACT_LIMIT: Limit = Limit {
+    default: 100,
+    max: 500,
+};
+
+/// Most items `sara_analyze_impact` analyzes at once.
+pub const MAX_IMPACT_ORIGINS: usize = 50;
+
 /// Returns `true`, the default of optional boolean switches.
 fn enabled() -> bool {
     true
@@ -118,6 +127,18 @@ pub struct TraceItemParams {
     /// Most links to follow away from the item. Unlimited by default.
     pub max_depth: Option<usize>,
     /// Most items to return per direction, from 1 to 500. Defaults to 100.
+    pub limit: Option<usize>,
+}
+
+/// Parameters of `sara_analyze_impact`.
+#[derive(Debug, Deserialize, JsonSchema)]
+pub struct AnalyzeImpactParams {
+    /// Ids of the items about to change, from 1 to 50.
+    pub ids: Vec<String>,
+    /// Most links to follow away from the changed items. Unlimited by
+    /// default.
+    pub max_depth: Option<usize>,
+    /// Most impacted items to return, from 1 to 500. Defaults to 100.
     pub limit: Option<usize>,
 }
 

@@ -8,7 +8,7 @@ use rmcp::handler::server::router::tool::ToolRouter;
 use rmcp::handler::server::wrapper::{Json, Parameters};
 use rmcp::model::{Implementation, ServerCapabilities, ServerConfig};
 use rmcp::{ServerHandler, tool, tool_handler, tool_router};
-use sara_core::graph::{KnowledgeGraph, LookupResult, TraversalDirection, reach, search};
+use sara_core::graph::{KnowledgeGraph, LookupResult, TraversalDirection, impact, reach, search};
 use sara_core::model::{Item, ItemSummary, ItemType};
 use sara_core::schema;
 use sara_core::service::{load_graph, read_body};
@@ -17,10 +17,10 @@ use tokio::task::spawn_blocking;
 
 use crate::ServerOptions;
 use crate::params::{
-    GetItemParams, SEARCH_LIMIT, SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams,
-    parse_item_types, type_list,
+    AnalyzeImpactParams, GetItemParams, IMPACT_LIMIT, MAX_IMPACT_ORIGINS, SEARCH_LIMIT,
+    SearchItemsParams, TRACE_LIMIT, TraceDirection, TraceItemParams, parse_item_types, type_list,
 };
-use crate::views::{ItemView, SearchResults, TraceView};
+use crate::views::{ImpactView, ItemView, SearchResults, TraceView};
 
 /// Name the server announces to MCP clients.
 const SERVER_NAME: &str = "sara";
@@ -184,6 +184,50 @@ impl SaraServer {
         .await
     }
 
+    /// Lists the items a change to the given items may impact: every item
+    /// tracing down from them (refining, deriving from, satisfying or
+    /// justified by them, and so on) and every item declaring a dependency
+    /// on them (depends_on, supersedes), transitively. Each impacted item
+    /// comes with its file and the link through which the change reaches
+    /// it. Call it before changing an item to know what to review.
+    #[tool(
+        name = "sara_analyze_impact",
+        annotations(
+            read_only_hint = true,
+            destructive_hint = false,
+            idempotent_hint = true,
+            open_world_hint = false
+        )
+    )]
+    async fn analyze_impact(
+        &self,
+        Parameters(params): Parameters<AnalyzeImpactParams>,
+    ) -> Result<Json<ImpactView>, String> {
+        if params.ids.is_empty() {
+            return Err("Give the ids of the items about to change.".to_string());
+        }
+        if params.ids.len() > MAX_IMPACT_ORIGINS {
+            return Err(format!(
+                "At most {MAX_IMPACT_ORIGINS} items can be analyzed at once; got {}.",
+                params.ids.len()
+            ));
+        }
+        let limit = IMPACT_LIMIT.resolve(params.limit);
+
+        self.read_graph(move |graph| {
+            let changed = params
+                .ids
+                .iter()
+                .map(|id| find_item(graph, id))
+                .collect::<Result<Vec<&Item>, String>>()?;
+            let origins: Vec<_> = changed.iter().map(|item| item.id.clone()).collect();
+            let reached = impact(graph, &origins, params.max_depth);
+            let origins = changed.into_iter().map(ItemSummary::from).collect();
+            Ok(Json(ImpactView::new(graph, origins, reached, limit)))
+        })
+        .await
+    }
+
     /// Runs `query` on the graph freshly loaded from the repositories, while
     /// other requests may read the files too.
     async fn read_graph<T: Send + 'static>(
@@ -239,7 +283,8 @@ impl SaraServer {
              Find items by their content with sara_search_items. \
              Read sara_describe_model for the fields and relations of each type. \
              Read one item, its links and its body with sara_get_item. \
-             Follow its traceability chains with sara_trace_item.",
+             Follow its traceability chains with sara_trace_item. \
+             Before changing an item, list what it impacts with sara_analyze_impact.",
             type_list(),
             repositories.join(", ")
         )
