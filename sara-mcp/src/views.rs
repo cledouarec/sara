@@ -10,6 +10,8 @@ use sara_core::graph::{
     KnowledgeGraph, Reach, ReachedItem, RelationGroup, SearchHit, TraversalOptions,
 };
 use sara_core::model::{Item, ItemId, ItemSummary, RelationshipType};
+use sara_core::repository::ScanWarning;
+use sara_core::validation::{Severity, ValidationIssue, ValidationReport};
 use schemars::JsonSchema;
 use serde::Serialize;
 
@@ -169,4 +171,50 @@ pub struct ImpactedItem {
     /// Relation linking `from` to this item, read from `from`.
     #[schemars(with = "String")]
     pub relation: RelationshipType,
+}
+
+/// Outcome of validating the whole graph.
+#[derive(Debug, Serialize, JsonSchema)]
+pub struct ValidationView {
+    /// Whether the graph passed: no error and, in strict mode, nothing
+    /// skipped during the scan.
+    pub valid: bool,
+    /// Whether warnings counted as errors.
+    pub strict: bool,
+    /// Number of items checked.
+    pub items_checked: usize,
+    /// Number of relationships checked.
+    pub relationships_checked: usize,
+    /// Number of errors found.
+    pub error_count: usize,
+    /// Number of warnings found.
+    pub warning_count: usize,
+    /// Problems found, errors first.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub issues: Vec<ValidationIssue>,
+    /// Files and repositories skipped during the scan.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub scan_warnings: Vec<ScanWarning>,
+}
+
+impl ValidationView {
+    /// Summarizes a validation report and the paths skipped by the scan.
+    pub fn new(report: ValidationReport, scan_warnings: Vec<ScanWarning>, strict: bool) -> Self {
+        let valid = report.is_valid() && (!strict || scan_warnings.is_empty());
+        let error_count = report.error_count();
+        let warning_count = report.warning_count();
+        let mut issues = report.issues;
+        issues.sort_by_key(|issue| issue.severity != Severity::Error);
+
+        Self {
+            valid,
+            strict,
+            items_checked: report.items_checked,
+            relationships_checked: report.relationships_checked,
+            error_count,
+            warning_count,
+            issues,
+            scan_warnings,
+        }
+    }
 }
