@@ -16,6 +16,24 @@ use tempfile::TempDir;
 /// Capacity of the in-memory pipe between the client and the server.
 const PIPE_CAPACITY: usize = 64 * 1024;
 
+/// Keywords [`conformance`] does not check: a schema using one of them could
+/// accept results that break it.
+const UNCHECKED_KEYWORDS: [&str; 10] = [
+    "allOf",
+    "not",
+    "if",
+    "then",
+    "else",
+    "prefixItems",
+    "unevaluatedProperties",
+    "patternProperties",
+    "propertyNames",
+    "dependentSchemas",
+];
+
+/// Keywords whose value maps names to schemas.
+const SCHEMA_MAPS: [&str; 2] = ["properties", "$defs"];
+
 /// A client connected to a server under test.
 pub type Client = RunningService<RoleClient, ()>;
 
@@ -113,4 +131,139 @@ pub async fn connect_to_copy(name: &str) -> (TempDir, Client) {
     let repository = copy_fixture(name);
     let client = connect_to_dir(repository.path()).await;
     (repository, client)
+}
+
+/// Calls the tool `name` and returns its structured result, after checking
+/// that the result conforms to the output schema the tool declares.
+pub async fn call_conforming(client: &Client, name: &str, arguments: Value) -> Value {
+    let schema = tool(client, name)
+        .await
+        .output_schema
+        .map(|schema| Value::Object((*schema).clone()))
+        .unwrap_or_else(|| panic!("{name} declares an output schema"));
+    if let Err(error) = checked_keywords_only(&schema, "$") {
+        panic!("{name} output schema cannot be checked: {error}");
+    }
+    let structured = structured(client, name, arguments).await;
+    if let Err(error) = conformance(&schema, &schema, &structured, "$") {
+        panic!("{name} result does not match its output schema: {error}\n{structured}");
+    }
+    structured
+}
+
+/// Checks that `schema` and its subschemas use none of the
+/// [`UNCHECKED_KEYWORDS`].
+fn checked_keywords_only(schema: &Value, path: &str) -> Result<(), String> {
+    let Value::Object(object) = schema else {
+        return Ok(());
+    };
+    for (key, value) in object {
+        if UNCHECKED_KEYWORDS.contains(&key.as_str()) {
+            return Err(format!("{path}: unchecked keyword `{key}`"));
+        }
+        let key_path = format!("{path}/{key}");
+        match value {
+            Value::Object(map) if SCHEMA_MAPS.contains(&key.as_str()) => {
+                for (name, subschema) in map {
+                    checked_keywords_only(subschema, &format!("{key_path}/{name}"))?;
+                }
+            }
+            Value::Object(_) => checked_keywords_only(value, &key_path)?,
+            Value::Array(branches) => {
+                for (index, branch) in branches.iter().enumerate() {
+                    checked_keywords_only(branch, &format!("{key_path}[{index}]"))?;
+                }
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
+/// Checks `value` against `schema`: types, enumerations, constants, required
+/// and declared properties, map values, array items, `anyOf`/`oneOf` branches
+/// and `$ref`s into the `$defs` of `root`.
+fn conformance(root: &Value, schema: &Value, value: &Value, path: &str) -> Result<(), String> {
+    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+        let name = reference
+            .strip_prefix("#/$defs/")
+            .ok_or_else(|| format!("{path}: unsupported $ref {reference}"))?;
+        return conformance(root, &root["$defs"][name], value, path);
+    }
+    for keyword in ["anyOf", "oneOf"] {
+        if let Some(branches) = schema.get(keyword).and_then(Value::as_array)
+            && !branches
+                .iter()
+                .any(|branch| conformance(root, branch, value, path).is_ok())
+        {
+            return Err(format!("{path}: {value} matches no branch of {keyword}"));
+        }
+    }
+    if let Some(allowed) = schema.get("enum").and_then(Value::as_array)
+        && !allowed.contains(value)
+    {
+        return Err(format!("{path}: {value} is not one of {allowed:?}"));
+    }
+    if let Some(expected) = schema.get("const")
+        && value != expected
+    {
+        return Err(format!("{path}: {value} is not {expected}"));
+    }
+    if let Some(types) = schema.get("type") {
+        let types: Vec<&str> = match types {
+            Value::String(single) => vec![single.as_str()],
+            Value::Array(several) => several.iter().filter_map(Value::as_str).collect(),
+            _ => Vec::new(),
+        };
+        if !types.iter().any(|kind| has_type(kind, value)) {
+            return Err(format!("{path}: {value} is not of type {types:?}"));
+        }
+    }
+    if let Value::Object(object) = value {
+        for key in schema
+            .get("required")
+            .and_then(Value::as_array)
+            .into_iter()
+            .flatten()
+            .filter_map(Value::as_str)
+        {
+            if !object.contains_key(key) {
+                return Err(format!("{path}: missing required property `{key}`"));
+            }
+        }
+        let properties = schema.get("properties").and_then(Value::as_object);
+        for (key, field) in object {
+            let field_path = format!("{path}.{key}");
+            match properties.and_then(|properties| properties.get(key)) {
+                Some(property) => conformance(root, property, field, &field_path)?,
+                None => {
+                    if let Some(additional) =
+                        schema.get("additionalProperties").filter(|a| a.is_object())
+                    {
+                        conformance(root, additional, field, &field_path)?;
+                    }
+                }
+            }
+        }
+    }
+    if let (Value::Array(items), Some(item_schema)) = (value, schema.get("items")) {
+        for (index, item) in items.iter().enumerate() {
+            conformance(root, item_schema, item, &format!("{path}[{index}]"))?;
+        }
+    }
+    Ok(())
+}
+
+/// Whether `value` has the JSON Schema type `kind`.
+fn has_type(kind: &str, value: &Value) -> bool {
+    match kind {
+        "object" => value.is_object(),
+        "array" => value.is_array(),
+        "string" => value.is_string(),
+        "boolean" => value.is_boolean(),
+        "integer" => value.is_i64() || value.is_u64(),
+        "number" => value.is_number(),
+        "null" => value.is_null(),
+        _ => true,
+    }
 }
