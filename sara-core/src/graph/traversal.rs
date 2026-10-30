@@ -239,6 +239,35 @@ fn neighbors(
     first_per_target(edges)
 }
 
+/// Returns the items that depend on a node: its downstream neighbors, then
+/// the items it is a peer prerequisite of, each with the relationship seen
+/// from the node.
+///
+/// A peer dependency may be written on either side: the dependent item
+/// declares a primary relation toward the node (`depends_on`, `supersedes`),
+/// or the node declares the inverse toward the dependent (`is_required_by`,
+/// `superseded_by`).
+fn dependents(
+    inner: &DiGraph<Item, RelationshipType>,
+    node_idx: NodeIndex,
+) -> Vec<(NodeIndex, RelationshipType)> {
+    let mut edges = neighbors(inner, node_idx, TraversalDirection::Downstream);
+    for edge in inner.edges_directed(node_idx, Direction::Incoming) {
+        let relationship = *edge.weight();
+        if relationship.is_peer() && relationship.is_primary() {
+            edges.push((edge.source(), relationship.inverse()));
+        }
+    }
+    for edge in inner.edges_directed(node_idx, Direction::Outgoing) {
+        let relationship = *edge.weight();
+        if relationship.is_peer() && !relationship.is_primary() {
+            edges.push((edge.target(), relationship));
+        }
+    }
+
+    first_per_target(edges)
+}
+
 /// Keeps the first edge leading to each target node.
 fn first_per_target(
     mut edges: Vec<(NodeIndex, RelationshipType)>,
@@ -326,6 +355,23 @@ pub fn reach(
     let inner = graph.inner();
     breadth_first(graph, origins, max_depth, |node_idx| {
         neighbors(inner, node_idx, direction)
+    })
+}
+
+/// Collects the items a change to `origins` may impact, each once.
+///
+/// An item depends on another when it traces down from it, as in a
+/// downstream [`reach`], or when it declares a primary peer relation toward
+/// it, such as `depends_on` or `supersedes`. The walk repeats from every item
+/// found, so the result holds everything that directly or transitively
+/// depends on the origins; items the origins themselves depend on are not
+/// included. Origins absent from the graph are ignored, and `max_depth`
+/// bounds the distance of the reported items.
+#[must_use]
+pub fn impact(graph: &KnowledgeGraph, origins: &[ItemId], max_depth: Option<usize>) -> Reach {
+    let inner = graph.inner();
+    breadth_first(graph, origins, max_depth, |node_idx| {
+        dependents(inner, node_idx)
     })
 }
 
@@ -980,6 +1026,91 @@ mod tests {
             followed(&reach),
             [("UC-001", "SOL-001"), ("UC-002", "SOL-001")]
         );
+    }
+
+    /// Returns a system requirement declaring `depends_on` toward `targets`.
+    fn requirement(id: &str, depends_on: &[&str]) -> Item {
+        create_test_item_with_relationships(
+            id,
+            builtin::SYSTEM_REQUIREMENT,
+            depends_on
+                .iter()
+                .map(|target| {
+                    Relationship::new(ItemId::new_unchecked(*target), builtin::DEPENDS_ON)
+                })
+                .collect(),
+        )
+    }
+
+    #[test]
+    fn test_impact_follows_downstream_links_and_dependent_peers() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(requirement("SYSREQ-001", &[]))
+            .add_item(requirement("SYSREQ-002", &["SYSREQ-001"]))
+            .add_item(requirement("SYSREQ-003", &["SYSREQ-002"]))
+            .add_item(create_test_item_with_relationships(
+                "SYSARCH-001",
+                builtin::SYSTEM_ARCHITECTURE,
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SYSREQ-001"),
+                    builtin::SATISFIES,
+                )],
+            ))
+            .build()
+            .unwrap();
+
+        let impact = impact(&graph, &[ItemId::new_unchecked("SYSREQ-001")], None);
+
+        assert_eq!(
+            reached(&impact),
+            [("SYSARCH-001", 1), ("SYSREQ-002", 1), ("SYSREQ-003", 2)]
+        );
+        let relationships: Vec<RelationshipType> =
+            impact.links.iter().map(|link| link.relationship).collect();
+        assert_eq!(
+            relationships,
+            [
+                builtin::IS_SATISFIED_BY,
+                builtin::IS_REQUIRED_BY,
+                builtin::IS_REQUIRED_BY,
+            ]
+        );
+    }
+
+    #[test]
+    fn test_impact_follows_dependencies_declared_from_the_other_side() {
+        // SYSREQ-001 declares that SYSREQ-002 requires it, so SYSREQ-002
+        // depends on it although SYSREQ-002 declares nothing.
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(create_test_item_with_relationships(
+                "SYSREQ-001",
+                builtin::SYSTEM_REQUIREMENT,
+                vec![Relationship::new(
+                    ItemId::new_unchecked("SYSREQ-002"),
+                    builtin::IS_REQUIRED_BY,
+                )],
+            ))
+            .add_item(requirement("SYSREQ-002", &[]))
+            .build()
+            .unwrap();
+
+        let impact = impact(&graph, &[ItemId::new_unchecked("SYSREQ-001")], None);
+
+        assert_eq!(reached(&impact), [("SYSREQ-002", 1)]);
+        assert_eq!(impact.links[0].relationship, builtin::IS_REQUIRED_BY);
+    }
+
+    #[test]
+    fn test_impact_ignores_items_the_origin_depends_on() {
+        let graph = KnowledgeGraphBuilder::new()
+            .add_item(requirement("SYSREQ-001", &["SYSREQ-002"]))
+            .add_item(requirement("SYSREQ-002", &[]))
+            .build()
+            .unwrap();
+
+        let impact = impact(&graph, &[ItemId::new_unchecked("SYSREQ-001")], None);
+
+        assert!(impact.items.is_empty());
     }
 
     #[test]
