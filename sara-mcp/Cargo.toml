@@ -1,0 +1,24 @@
+[package]
+name = "sara-mcp"
+description = "Model Context Protocol server for Sara - Requirements Knowledge Graph"
+readme = "README.md"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+sara-core = { path = "../sara-core", version = "0.11.2", features = ["schemars"] }
+rmcp.workspace = true
+schemars.workspace = true
+serde.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+
+[dev-dependencies]
+rmcp = { workspace = true, features = ["client"] }
+serde_json.workspace = true
+tempfile.workspace = true
+tokio = { workspace = true, features = ["macros", "io-util"] }
