@@ -11,10 +11,12 @@ use crate::error::SaraError;
 use crate::generator::{self, OutputFormat};
 use crate::graph::KnowledgeGraph;
 use crate::model::{
-    FieldChange, Item, ItemAttributes, ItemBuilder, ItemId, ItemType, RelationshipType,
-    SourceLocation, TraceabilityLinks,
+    FIELD_DESCRIPTION, FIELD_NAME, FieldChange, Item, ItemAttributes, ItemBuilder, ItemId,
+    ItemType, RelationshipType, SourceLocation, TraceabilityLinks,
 };
-use crate::parser::update_frontmatter;
+use crate::parser::{
+    FrontmatterEdit, InputFormat, frontmatter_entry, parse_metadata, patch_frontmatter,
+};
 use crate::schema::FieldType;
 
 use super::FieldInput;
@@ -364,6 +366,19 @@ impl EditService {
     }
 
     /// Applies changes to the file.
+    ///
+    /// Only the frontmatter entries whose value changes are rewritten, in
+    /// the format of the document template; every other line of the file is
+    /// kept as is, including links declared from the other side, keys the
+    /// schema does not know, comments and the body. The patched content is
+    /// parsed again before it is written, so a patch that would leave the
+    /// frontmatter unreadable or wrong fails without touching the file.
+    ///
+    /// # Errors
+    ///
+    /// Returns an error when the file cannot be read, parsed, patched or
+    /// written, or when the patched frontmatter would not hold the new
+    /// values.
     pub fn apply_changes(
         &self,
         item_id: &str,
@@ -373,21 +388,37 @@ impl EditService {
     ) -> Result<(), SaraError> {
         let content =
             fs::read_to_string(file_path).map_err(|e| SaraError::EditFailed(e.to_string()))?;
-        let new_yaml = self.build_frontmatter_yaml(item_id, item_type, new_values);
-        let updated_content = update_frontmatter(&content, &new_yaml);
-        fs::write(file_path, updated_content).map_err(|e| SaraError::EditFailed(e.to_string()))?;
-        Ok(())
-    }
+        let current = parse_metadata(&content, file_path, Path::new(""), InputFormat::Markdown)?;
+        let edited = self.build_item_from_values(item_id, item_type, new_values);
+        let rendered = generator::generate_metadata(&edited, OutputFormat::Markdown);
 
-    /// Builds YAML frontmatter string from edit values.
-    pub fn build_frontmatter_yaml(
-        &self,
-        item_id: &str,
-        item_type: ItemType,
-        values: &EditedValues,
-    ) -> String {
-        let item = self.build_item_from_values(item_id, item_type, values);
-        generator::generate_metadata(&item, OutputFormat::Markdown)
+        let edits: Vec<FrontmatterEdit> = changed_keys(&current, &edited, &new_values.traceability)
+            .into_iter()
+            .map(|key| match frontmatter_entry(&rendered, &key) {
+                Some(entry) => FrontmatterEdit::Set { key, entry },
+                None => FrontmatterEdit::Remove { key },
+            })
+            .collect();
+        let patched = patch_frontmatter(&content, &edits, file_path)?;
+
+        let reparsed = parse_metadata(&patched, file_path, Path::new(""), InputFormat::Markdown)
+            .map_err(|e| {
+                SaraError::EditFailed(format!(
+                    "editing {} would leave an unreadable frontmatter ({e}); edit the file directly",
+                    file_path.display()
+                ))
+            })?;
+        let mismatched = changed_keys(&reparsed, &edited, &new_values.traceability);
+        if !mismatched.is_empty() {
+            return Err(SaraError::EditFailed(format!(
+                "editing {} would not update {}; edit the file directly",
+                file_path.display(),
+                mismatched.join(", ")
+            )));
+        }
+
+        fs::write(file_path, patched).map_err(|e| SaraError::EditFailed(e.to_string()))?;
+        Ok(())
     }
 
     /// Builds a temporary `Item` from edit values for frontmatter generation.
@@ -472,6 +503,38 @@ impl EditService {
             changes,
         })
     }
+}
+
+/// Returns the frontmatter keys whose value differs between `current` and
+/// `edited`.
+///
+/// Only what an edit can change is compared: the name, the description, the
+/// fields the type declares and the relations held in `relations`. Any other
+/// entry of the file is out of the edit's reach and never reported.
+fn changed_keys(current: &Item, edited: &Item, relations: &TraceabilityLinks) -> Vec<String> {
+    let mut keys = Vec::new();
+
+    if current.name != edited.name {
+        keys.push(FIELD_NAME.to_string());
+    }
+    if current.description != edited.description {
+        keys.push(FIELD_DESCRIPTION.to_string());
+    }
+    for field in edited.item_type.declared_fields() {
+        if current.attributes.get(&field.name) != edited.attributes.get(&field.name) {
+            keys.push(field.name.clone());
+        }
+    }
+    for (relation, _) in relations.iter() {
+        if !current
+            .relationship_ids(relation)
+            .eq(edited.relationship_ids(relation))
+        {
+            keys.push(relation.as_str().to_string());
+        }
+    }
+
+    keys
 }
 
 #[cfg(test)]
@@ -836,36 +899,114 @@ mod tests {
         assert!(result.is_err());
     }
 
-    #[test]
-    fn test_build_frontmatter_yaml() {
-        let service = EditService::new();
+    /// A scenario whose frontmatter holds entries an edit must not rewrite:
+    /// a link declared from the downstream side, a key unknown to the
+    /// schema, a comment and a folded description.
+    const SCENARIO_FILE: &str = r#"---
+id: "SCEN-001"
+type: scenario
+name: "Adjust Living Room Dimmer"
+description: >
+  Folded text that spans
+  two lines
+refines:
+  - "UC-001"
+# Declared on this side on purpose
+derives:
+  - "SYSREQ-001"
+owner: "alice"
+---
+# Adjust Living Room Dimmer
 
-        let values = EditedValues::new("Test Solution")
-            .with_description(Some("A test solution".to_string()));
+Body to preserve.
+"#;
 
-        let yaml = service.build_frontmatter_yaml("SOL-001", builtin::SOLUTION, &values);
-
-        assert!(yaml.contains("id: \"SOL-001\""));
-        assert!(yaml.contains("type: solution"));
-        assert!(yaml.contains("name: \"Test Solution\""));
-        assert!(yaml.contains("description: \"A test solution\""));
+    /// Writes `content` as `file_name` in a new repository and loads it.
+    fn repository_with(file_name: &str, content: &str) -> (TempDir, KnowledgeGraph) {
+        let dir = TempDir::new().unwrap();
+        fs::write(dir.path().join(file_name), content).unwrap();
+        let (graph, warnings) = super::super::load_graph(&[dir.path().to_path_buf()]).unwrap();
+        assert!(
+            warnings.is_empty(),
+            "unexpected scan warnings: {warnings:?}"
+        );
+        (dir, graph)
     }
 
     #[test]
-    fn test_build_frontmatter_yaml_preserves_attributes() {
-        let service = EditService::new();
+    fn test_edit_rewrites_only_the_edited_key() {
+        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
 
-        let item = create_test_item("ADR-001", builtin::ARCHITECTURE_DECISION_RECORD);
-        let ctx = ItemContext::from_item(&item);
-        let values = service.merge_values(EditOptions::new("ADR-001").with_name("Renamed"), &ctx);
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_name("Dim the lights"),
+            )
+            .unwrap();
 
-        let yaml = service.build_frontmatter_yaml(
-            "ADR-001",
-            builtin::ARCHITECTURE_DECISION_RECORD,
-            &values,
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace(
+                "name: \"Adjust Living Room Dimmer\"",
+                "name: \"Dim the lights\""
+            )
+        );
+    }
+
+    #[test]
+    fn test_edit_replaces_folded_description_entry() {
+        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_description("Short"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace(
+                "description: >\n  Folded text that spans\n  two lines\n",
+                "description: \"Short\"\n"
+            )
+        );
+    }
+
+    #[test]
+    fn test_edit_removes_cleared_relation_entry() {
+        let (dir, graph) = repository_with("SCEN-001.md", SCENARIO_FILE);
+
+        EditService::new()
+            .edit(
+                &graph,
+                EditOptions::new("SCEN-001").with_relation(builtin::REFINES, Vec::new()),
+            )
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dir.path().join("SCEN-001.md")).unwrap(),
+            SCENARIO_FILE.replace("refines:\n  - \"UC-001\"\n", "")
+        );
+    }
+
+    #[test]
+    fn test_edit_leaves_file_untouched_when_patch_breaks_frontmatter() {
+        // The flow sequence continues on a column-0 line, which the patch
+        // does not treat as part of the entry: replacing the entry would
+        // leave that line behind and break the YAML.
+        let content = "---\nid: \"UC-001\"\ntype: use_case\nname: \"Lights\"\nrefines: [\"SOL-001\",\n\"SOL-002\"]\n---\n";
+        let (dir, graph) = repository_with("UC-001.md", content);
+
+        let result = EditService::new().edit(
+            &graph,
+            EditOptions::new("UC-001").with_relation(builtin::REFINES, vec!["SOL-001".to_string()]),
         );
 
-        assert!(yaml.contains("name: \"Renamed\""));
-        assert!(yaml.contains("Test Decider"));
+        assert!(result.is_err());
+        assert_eq!(
+            fs::read_to_string(dir.path().join("UC-001.md")).unwrap(),
+            content
+        );
     }
 }

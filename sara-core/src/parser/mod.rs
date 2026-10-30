@@ -15,7 +15,6 @@ use std::path::Path;
 #[doc(inline)]
 pub use frontmatter::{
     FrontmatterEdit, extract_body, frontmatter_entry, has_frontmatter, patch_frontmatter,
-    update_frontmatter,
 };
 #[doc(inline)]
 pub use markdown::extract_name_from_content;
