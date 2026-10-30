@@ -9,6 +9,7 @@ use crate::model::Item;
 
 /// Severity level for validation issues.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     /// Validation error that blocks acceptance.

@@ -24,10 +24,8 @@ pub(crate) use active::{item_type_def, relation_def};
 pub(crate) use id_format::IdFormat;
 
 /// The direction of a relation relative to the model hierarchy.
-///
-/// Mirrors the classification currently encoded in
-/// `RelationshipType::is_upstream` / `is_downstream` / `is_peer`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[cfg_attr(feature = "schemars", derive(schemars::JsonSchema))]
 #[serde(rename_all = "snake_case")]
 pub enum RelationDirection {
     /// Toward the root of the hierarchy (e.g. `refines`, `satisfies`).
