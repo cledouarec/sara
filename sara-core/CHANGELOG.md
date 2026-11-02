@@ -7,6 +7,41 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/cledouarec/sara/compare/sara-core-v0.11.3...sara-core-v0.12.0) - 2026-11-02
+
+### Added
+
+- *(edit)* [**breaking**] report and serialize edit results (by @cledouarec)
+- *(init)* [**breaking**] read inputs and report results as JSON (by @cledouarec)
+- *(graph)* add in-memory item search (by @cledouarec)
+- *(graph)* add impact analysis (by @cledouarec)
+- *(graph)* add a breadth-first reach over traceability links (by @cledouarec)
+- *(graph)* [**breaking**] return direct relationships as relation groups (by @cledouarec)
+- *(core)* [**breaking**] serialize items as their client JSON (by @cledouarec)
+- *(core)* [**breaking**] serialize validation results (by @cledouarec)
+- *(core)* derive JSON Schemas of RelationDirection and Severity (by @cledouarec)
+- *(edit)* [**breaking**] accept relations the item already declares (by @cledouarec)
+- *(core)* read an item's markdown body (by @cledouarec)
+- *(parser)* patch top-level frontmatter entries in place (by @cledouarec)
+
+### Changed
+
+- *(repository)* define which files are items in one place (by @cledouarec)
+- *(core)* move the check pipeline into service::check_items (by @cledouarec)
+
+### Fixed
+
+- *(init)* keep the line endings of a CRLF file (by @cledouarec)
+- *(init)* refuse to write an item sara cannot read back (by @cledouarec)
+- *(init)* create new item files exclusively (by @cledouarec)
+- *(edit)* [**breaking**] rewrite only the edited frontmatter keys (by @cledouarec)
+- *(validation)* count checked items once when merging reports (by @cledouarec)
+- *(graph)* list each neighbor once during traversal (by @cledouarec)
+
+### Contributors
+
+* @cledouarec
+
 ## [0.11.0](https://github.com/cledouarec/sara/compare/sara-core-v0.10.1...sara-core-v0.11.0) - 2026-09-17
 
 ### Added
