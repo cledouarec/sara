@@ -7,6 +7,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.0](https://github.com/cledouarec/sara/compare/sara-cli-v0.11.3...sara-cli-v0.12.0) - 2026-11-02
+
+### Added
+
+- *(cli)* add the sara mcp command (by @cledouarec)
+- *(init)* [**breaking**] read inputs and report results as JSON (by @cledouarec)
+- *(graph)* [**breaking**] return direct relationships as relation groups (by @cledouarec)
+- *(core)* [**breaking**] serialize items as their client JSON (by @cledouarec)
+- *(edit)* [**breaking**] accept relations the item already declares (by @cledouarec)
+
+### Changed
+
+- *(core)* move the check pipeline into service::check_items (by @cledouarec)
+
+### Documentation
+
+- document the MCP server (by @cledouarec) - #148
+
+### Fixed
+
+- *(cli)* write logs to stderr (by @cledouarec)
+- *(validation)* count checked items once when merging reports (by @cledouarec)
+
+### Contributors
+
+* @cledouarec
+
 ## [0.11.3](https://github.com/cledouarec/sara/compare/sara-cli-v0.11.2...sara-cli-v0.11.3) - 2026-10-29
 
 ### Other

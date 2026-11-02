@@ -10,7 +10,7 @@ license.workspace = true
 repository.workspace = true
 
 [dependencies]
-sara-core = { path = "../sara-core", version = "0.11.2", features = ["schemars"] }
+sara-core = { path = "../sara-core", version = "0.12.0", features = ["schemars"] }
 rmcp.workspace = true
 schemars.workspace = true
 serde.workspace = true
