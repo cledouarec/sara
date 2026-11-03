@@ -38,6 +38,13 @@
           # and still runs.
           checkFlags = [ "--skip=repository::git::tests::test_is_git_repo" ];
 
+          # buildRustPackage sets RUST_LOG to an empty string, which
+          # EnvFilter::try_from_default_env() accepts as an empty filter and
+          # silences the warnings the stderr logging tests assert on.
+          preCheck = ''
+            unset RUST_LOG
+          '';
+
           meta = {
             description = "Manage architecture documents and requirements as a knowledge graph";
             homepage = "https://github.com/cledouarec/sara";
