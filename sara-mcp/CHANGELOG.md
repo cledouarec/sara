@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.12.2](https://github.com/cledouarec/sara/compare/sara-mcp-v0.12.1...sara-mcp-v0.12.2) - 2026-11-13
+
+### Other
+
+- release v0.12.1 (by @github-actions[bot]) - #157
+
+### Contributors
+
+* @github-actions[bot]
+
 ## [0.12.1](https://github.com/cledouarec/sara/compare/sara-mcp-v0.12.0...sara-mcp-v0.12.1) - 2026-11-11
 
 ### Other
