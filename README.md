@@ -58,6 +58,7 @@ SARA is a command-line tool that manages Architecture documents and Requirements
   - [Configuring an Agent](#configuring-an-agent)
   - [Tools](#tools)
 - [Contributing](#contributing)
+- [Security](#security)
 - [License](#license)
 
 </details>
@@ -882,6 +883,12 @@ The MCP server is part of the default `sara` binary. To build the CLI without it
 Contributions are welcome! Please read our [Contributing Guide](CONTRIBUTING.md)
 for details on how to submit pull requests, coding standards, and development
 setup.
+
+## Security
+
+Please do not report security vulnerabilities through public issues. Read our
+[Security Policy](SECURITY.md) to report them privately and to learn which
+versions receive fixes.
 
 ## License
 
