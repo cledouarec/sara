@@ -68,17 +68,6 @@ jobs:
     - name: Install Rust toolchain
       uses: dtolnay/rust-toolchain@stable
 
-    - name: Cache cargo registry
-      uses: actions/cache@v6
-      with:
-        path: |
-          ~/.cargo/registry
-          ~/.cargo/git
-          target
-        key: ${{ runner.os }}-cargo-test-${{ hashFiles('**/Cargo.lock') }}
-        restore-keys: |
-          ${{ runner.os }}-codeql-    
-
     # Initializes the CodeQL tools for scanning.
     - name: Initialize CodeQL
       uses: github/codeql-action/init@v4
